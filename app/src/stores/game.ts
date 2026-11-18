@@ -48,6 +48,9 @@ export const useGameStore = defineStore("game", {
     // Pilihan di lobby (dipakai single-player dan create room).
     selectedImage: PRESET_IMAGES[0]! as PresetImage,
     selectedCount: 24,
+    // Foto yang di-upload user di sesi ini (M4). URL-nya permanen di
+    // server; daftar ini hanya jalan pintas di lobby, hilang saat reload.
+    uploadedImages: [] as PresetImage[],
     imageUrl: "",
     imageName: "",
     imageW: 0,
@@ -81,6 +84,13 @@ export const useGameStore = defineStore("game", {
     },
   },
   actions: {
+    addUploadedImage(img: PresetImage) {
+      this.uploadedImages = [
+        img,
+        ...this.uploadedImages.filter((u) => u.url !== img.url),
+      ].slice(0, 6);
+    },
+
     async newGame(imageUrl: string, imageName: string, pieceCount: number) {
       this.stopTimer();
       const { w, h } = await loadImageSize(imageUrl);

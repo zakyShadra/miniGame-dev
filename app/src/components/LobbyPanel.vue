@@ -1,11 +1,41 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { PIECE_COUNTS, PRESET_IMAGES, useGameStore } from "../stores/game";
+import { computed, onMounted, ref, watch } from "vue";
+import { PIECE_COUNTS, useGameStore } from "../stores/game";
 import { solvedPosition } from "../../../shared/game/engine";
+import { roundPieceCount } from "../../../shared/game/cutter";
+import { loadImageSize } from "../lib/images";
+import ImagePicker from "./ImagePicker.vue";
 
 const store = useGameStore();
 const starting = ref(false);
 const error = ref("");
+
+// Ukuran gambar terpilih, buat menghitung pembulatan jumlah piece.
+const dims = ref<{ w: number; h: number } | null>(null);
+
+async function refreshDims() {
+  try {
+    dims.value = await loadImageSize(store.selectedImage.url);
+  } catch {
+    dims.value = null;
+  }
+}
+
+watch(() => store.selectedImage.url, refreshDims, { immediate: true });
+
+// Jumlah piece final setelah dibulatkan ke grid bagus (M4). Client
+// mengirim angka final ini ke server supaya keduanya sepakat.
+const rounded = computed(() =>
+  dims.value
+    ? roundPieceCount(store.selectedCount, dims.value.w, dims.value.h)
+    : null,
+);
+
+function onCustomCount(e: Event) {
+  const n = Number((e.target as HTMLInputElement).value);
+  if (!Number.isFinite(n)) return;
+  store.selectedCount = Math.min(500, Math.max(12, Math.round(n)));
+}
 
 // QA hook, dev only: ?autostart=1[&pieces=48][&solve=1] langsung mulai
 // game (dan kalau solve=1, pasang semua piece otomatis buat uji snap +
@@ -43,7 +73,7 @@ async function start() {
     await store.newGame(
       store.selectedImage.url,
       store.selectedImage.name,
-      store.selectedCount,
+      rounded.value?.count ?? store.selectedCount,
     );
   } catch {
     error.value = "Gambar tidak bisa dimuat. Coba gambar lain.";
@@ -60,61 +90,62 @@ async function start() {
     </h1>
     <p class="mt-1 text-sm text-muted">Susun puzzle bareng, santai aja.</p>
 
-    <h2 class="mt-6 text-sm font-semibold text-ink">Pilih gambar</h2>
-    <div class="mt-2 grid grid-cols-3 gap-2">
+    <ImagePicker />
+
+    <h2 class="mt-5 text-sm font-semibold text-ink">Jumlah piece</h2>
+    <div class="mt-2 flex gap-2">
       <button
-        v-for="img in PRESET_IMAGES"
-        :key="img.url"
+        v-for="n in PIECE_COUNTS"
+        :key="n"
         type="button"
-        class="overflow-hidden rounded-xl border-2 transition"
+        class="flex-1 rounded-full py-2 text-sm font-semibold transition"
         :class="
-          store.selectedImage.url === img.url
-            ? 'border-primary'
-            : 'border-transparent hover:border-hairline-strong'
+          store.selectedCount === n
+            ? 'bg-primary text-white'
+            : 'bg-surface-2 text-ink hover:bg-surface-3'
         "
-        @click="store.selectedImage = img"
+        @click="store.selectedCount = n"
       >
-          <img
-            :src="img.url"
-            :alt="img.name"
-            class="aspect-[3/2] w-full object-cover"
-          />
-          <span
-            class="block bg-surface-1 px-1 py-1 text-center text-[11px] font-medium text-body"
-          >
-            {{ img.name }}
-          </span>
-        </button>
-      </div>
-
-      <h2 class="mt-5 text-sm font-semibold text-ink">Jumlah piece</h2>
-      <div class="mt-2 flex gap-2">
-        <button
-          v-for="n in PIECE_COUNTS"
-          :key="n"
-          type="button"
-          class="flex-1 rounded-full py-2 text-sm font-semibold transition"
-          :class="
-            store.selectedCount === n
-              ? 'bg-primary text-white'
-              : 'bg-surface-2 text-ink hover:bg-surface-3'
-          "
-          @click="store.selectedCount = n"
-        >
-          {{ n }}
-        </button>
-      </div>
-
-      <button
-        type="button"
-        :disabled="starting"
-        class="mt-6 w-full rounded-full bg-primary py-3 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-40"
-        @click="start"
-      >
-        {{ starting ? "Menyiapkan..." : "Mulai main sendiri" }}
+        {{ n }}
       </button>
-      <p v-if="error" class="mt-3 text-center text-xs text-red-500">
-        {{ error }}
-      </p>
     </div>
+    <div class="mt-2 flex items-center gap-2">
+      <label
+        for="custom-count"
+        class="shrink-0 text-xs font-medium text-muted"
+      >
+        atau isi sendiri (12-500)
+      </label>
+      <input
+        id="custom-count"
+        type="number"
+        min="12"
+        max="500"
+        step="1"
+        :value="store.selectedCount"
+        class="w-full min-w-0 flex-1 rounded-xl border border-hairline-strong bg-canvas px-3 py-2 text-sm font-semibold text-ink outline-none focus:border-primary tabular-nums"
+        @change="onCustomCount"
+      />
+    </div>
+    <p
+      v-if="rounded && rounded.count !== store.selectedCount"
+      class="mt-1.5 text-xs text-muted"
+    >
+      Dibulatkan ke {{ rounded.count }} piece ({{ rounded.cols }}x{{
+        rounded.rows
+      }}) supaya potongannya rapi.
+    </p>
+
+    <button
+      type="button"
+      :disabled="starting"
+      class="mt-6 w-full rounded-full bg-primary py-3 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-40"
+      @click="start"
+    >
+      {{ starting ? "Menyiapkan..." : "Mulai main sendiri" }}
+    </button>
+    <p v-if="error" class="mt-3 text-center text-xs text-red-500">
+      {{ error }}
+    </p>
+  </div>
 </template>

@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { CURSOR_COLORS, generateRoomCode } from "../lib/party";
 import { loadImageSize } from "../lib/images";
+import { roundPieceCount } from "../../../shared/game/cutter";
 import { useGameStore } from "../stores/game";
 import { useRoomStore } from "../stores/room";
 
@@ -48,6 +49,8 @@ async function createRoom() {
   error.value = "";
   try {
     const { w, h } = await loadImageSize(game.selectedImage.url);
+    // Kirim angka final yang sudah dibulatkan ke grid bagus (M4).
+    const { count } = roundPieceCount(game.selectedCount, w, h);
     const code = generateRoomCode();
     room.connect(code, {
       mode: "create",
@@ -58,7 +61,7 @@ async function createRoom() {
         imageName: game.selectedImage.name,
         imageW: w,
         imageH: h,
-        pieceCount: game.selectedCount,
+        pieceCount: count,
       },
     });
   } catch {
