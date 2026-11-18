@@ -16,7 +16,7 @@ import {
   drawTargetArea,
   piecePathAt,
 } from "../game/renderer";
-import { ensureAudio } from "../lib/sound";
+import { ensureAudio, muted, setMuted } from "../lib/sound";
 
 const store = useGameStore();
 const room = useRoomStore();
@@ -28,6 +28,7 @@ const containerSize = ref({ w: 800, h: 600 });
 const imgRef = ref<HTMLImageElement | null>(null);
 const imgError = ref(false);
 const showGhost = ref(true);
+const showFullImage = ref(false);
 // Urutan gambar piece (z-order): id terakhir digambar paling atas.
 const zOrder = ref<number[]>([]);
 
@@ -313,6 +314,24 @@ function resetView() {
   draw();
 }
 
+// Rapikan: acak ulang posisi piece yang belum terpasang. Di room,
+// server yang melakukannya (state disiarkan ke semua pemain).
+function onSort() {
+  if (inRoom.value) room.sendSort();
+  else store.sortPieces();
+  draw();
+}
+
+function toggleMute() {
+  if (muted.value) ensureAudio();
+  setMuted(!muted.value);
+}
+
+// Tutup lightbox gambar dengan tombol Escape.
+function onEscape(e: KeyboardEvent) {
+  if (e.key === "Escape") showFullImage.value = false;
+}
+
 function loadImage(url: string) {
   imgError.value = false;
   imgRef.value = null;
@@ -404,6 +423,7 @@ let observer: ResizeObserver | null = null;
 
 onMounted(() => {
   resizeCanvas();
+  window.addEventListener("keydown", onEscape);
   if (wrapRef.value) {
     observer = new ResizeObserver(() => resizeCanvas());
     observer.observe(wrapRef.value);
@@ -412,6 +432,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   observer?.disconnect();
+  window.removeEventListener("keydown", onEscape);
 });
 </script>
 
@@ -476,8 +497,64 @@ onUnmounted(() => {
         @click="showGhost = !showGhost; draw()"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
-        Preview
+        <span class="hidden sm:inline">Preview</span>
       </button>
+      <span class="mx-1 h-5 w-px bg-hairline" />
+      <button
+        type="button"
+        class="flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold text-ink hover:bg-surface-3"
+        title="Rapikan piece yang belum terpasang"
+        aria-label="Rapikan piece"
+        @click="onSort"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22" /><path d="m18 2 4 4-4 4" /><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" /><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" /><path d="m18 14 4 4-4 4" /></svg>
+        <span class="hidden sm:inline">Rapikan</span>
+      </button>
+      <button
+        type="button"
+        class="flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold text-ink hover:bg-surface-3"
+        title="Lihat gambar asli"
+        aria-label="Lihat gambar asli"
+        @click="showFullImage = true"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
+        <span class="hidden sm:inline">Gambar</span>
+      </button>
+      <button
+        type="button"
+        class="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-surface-3"
+        :aria-label="muted ? 'Nyalakan suara' : 'Matikan suara'"
+        :title="muted ? 'Nyalakan suara' : 'Matikan suara'"
+        @click="toggleMute"
+      >
+        <svg v-if="muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z" /><line x1="22" x2="16" y1="9" y2="15" /><line x1="16" x2="22" y1="9" y2="15" /></svg>
+        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
+      </button>
+    </div>
+    <div
+      v-if="showFullImage"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
+      @click="showFullImage = false"
+    >
+      <figure class="max-w-3xl" @click.stop>
+        <img
+          :src="store.imageUrl"
+          :alt="store.imageName"
+          class="max-h-[80vh] w-auto max-w-full rounded-2xl shadow-lg"
+        />
+        <figcaption
+          class="mt-3 flex items-center justify-between gap-4 text-sm text-white"
+        >
+          <span>{{ store.imageName }}</span>
+          <button
+            type="button"
+            class="rounded-full bg-surface-1 px-4 py-1.5 font-semibold text-ink hover:bg-surface-2"
+            @click="showFullImage = false"
+          >
+            Tutup
+          </button>
+        </figcaption>
+      </figure>
     </div>
   </div>
 </template>
