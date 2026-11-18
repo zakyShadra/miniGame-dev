@@ -1,0 +1,67 @@
+<!-- Bar aksi catur: Hint, Undo, Balik papan, Eval, Menyerah/Lihat
+hasil, Game baru. Ditaruh LANGSUNG di bawah papan (bukan di bawah
+daftar langkah) supaya di HP selalu dalam jangkauan tanpa scroll.
+Grid 3 kolom, tiap tombol min 44px tinggi, label tidak terpotong. -->
+<script setup lang="ts">
+import { useChessStore } from "../stores/chess";
+
+const store = useChessStore();
+</script>
+
+<template>
+  <div class="grid grid-cols-3 gap-2">
+    <button
+      v-if="store.mode === 'bot'"
+      type="button"
+      :disabled="store.botThinking || store.isBotTurn"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3 disabled:opacity-40"
+      @click="store.hint()"
+    >
+      Hint
+    </button>
+    <button
+      type="button"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
+      @click="store.undo()"
+    >
+      Undo
+    </button>
+    <button
+      type="button"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
+      @click="store.flip()"
+    >
+      Balik papan
+    </button>
+    <button
+      type="button"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
+      @click="store.toggleEvalBar()"
+    >
+      Eval {{ store.evalBarEnabled ? "nyala" : "mati" }}
+    </button>
+    <button
+      v-if="store.phase === 'playing'"
+      type="button"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
+      @click="store.resign()"
+    >
+      Menyerah
+    </button>
+    <button
+      v-if="store.phase === 'over' && !store.endModalVisible"
+      type="button"
+      class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
+      @click="store.showEndModal()"
+    >
+      Lihat hasil
+    </button>
+    <button
+      type="button"
+      class="min-h-11 rounded-full bg-primary px-2 py-2 text-sm font-semibold whitespace-nowrap text-white transition hover:bg-primary-hover"
+      @click="store.toSetup()"
+    >
+      Game baru
+    </button>
+  </div>
+</template>

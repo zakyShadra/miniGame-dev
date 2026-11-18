@@ -2,6 +2,7 @@
 Tata letak menumpuk di HP, berdampingan di desktop. -->
 <script setup lang="ts">
 import { useChessStore } from "../stores/chess";
+import ChessActions from "./ChessActions.vue";
 import ChessBoard from "./ChessBoard.vue";
 import ChessSetup from "./ChessSetup.vue";
 import ChessSidebar from "./ChessSidebar.vue";
@@ -50,16 +51,23 @@ defineEmits<{ exit: [] }>();
     <div
       class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row"
     >
-      <main class="flex w-full max-w-[560px] shrink-0 gap-2 self-center lg:self-start">
-        <EvalBar
-          v-if="store.evalBarEnabled"
-          :score="store.liveEvalScore?.score ?? null"
-          :side-to-move="store.liveEvalScore?.sideToMove ?? store.turn"
-          class="my-0"
-        />
-        <div class="min-w-0 flex-1">
-          <ChessBoard />
+      <!-- Bar aksi langsung di bawah papan: di HP tombol selalu
+      dalam jangkauan tanpa scroll melewati daftar langkah. -->
+      <main
+        class="flex w-full max-w-[560px] shrink-0 flex-col gap-2 self-center sm:gap-3 lg:self-start"
+      >
+        <div class="flex gap-2">
+          <EvalBar
+            v-if="store.evalBarEnabled"
+            :score="store.liveEvalScore?.score ?? null"
+            :side-to-move="store.liveEvalScore?.sideToMove ?? store.turn"
+            class="my-0"
+          />
+          <div class="min-w-0 flex-1">
+            <ChessBoard />
+          </div>
         </div>
+        <ChessActions />
       </main>
       <aside class="flex min-h-0 flex-1 flex-col lg:max-w-sm">
         <ChessSidebar class="flex-1" />

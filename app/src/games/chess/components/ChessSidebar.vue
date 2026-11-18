@@ -105,9 +105,12 @@ watch(
           Kembali ke live
         </button>
       </div>
+      <!-- Di HP daftar dibatasi tingginya + scroll internal, supaya
+      game panjang tidak mendorong panel Analisa ke bawah tanpa
+      batas. Di desktop tetap meregang mengisi panel samping. -->
       <div
         ref="listRef"
-        class="mt-2 min-h-24 flex-1 overflow-y-auto pr-1"
+        class="mt-2 max-h-64 min-h-24 flex-1 overflow-y-auto pr-1 lg:max-h-none"
       >
         <p v-if="store.moveList.length === 0" class="text-sm text-subtle">
           Belum ada langkah. Putih jalan dulu.
@@ -196,61 +199,7 @@ watch(
       </p>
     </div>
 
-    <div class="flex flex-wrap gap-2">
-      <button
-        v-if="store.mode === 'bot'"
-        type="button"
-        :disabled="store.botThinking || store.isBotTurn"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3 disabled:opacity-40"
-        @click="store.hint()"
-      >
-        Hint
-      </button>
-      <button
-        type="button"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
-        @click="store.undo()"
-      >
-        Undo
-      </button>
-      <button
-        type="button"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
-        @click="store.flip()"
-      >
-        Balik papan
-      </button>
-      <button
-        type="button"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
-        @click="store.toggleEvalBar()"
-      >
-        Eval {{ store.evalBarEnabled ? "nyala" : "mati" }}
-      </button>
-      <button
-        v-if="store.phase === 'playing'"
-        type="button"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
-        @click="store.resign()"
-      >
-        Menyerah
-      </button>
-      <button
-        v-if="store.phase === 'over' && !store.endModalVisible"
-        type="button"
-        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
-        @click="store.showEndModal()"
-      >
-        Lihat hasil
-      </button>
-      <button
-        type="button"
-        class="flex-1 rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
-        @click="store.toSetup()"
-      >
-        Game baru
-      </button>
-    </div>
+    <!-- Bar aksi pindah ke ChessActions.vue, langsung di bawah papan. -->
 
     <div
       v-if="
@@ -259,7 +208,7 @@ watch(
         store.analysisStatus === 'loading' ||
         store.analysisStatus === 'done'
       "
-      class="rounded-2xl bg-surface-1 p-4 shadow-md"
+      class="rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4"
     >
       <AnalysisPanel />
     </div>
