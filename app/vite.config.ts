@@ -17,4 +17,11 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // Tipe shared/ tinggal di luar root app/ (../shared); izinkan Vite
+  // dev server melayaninya. Build tidak butuh ini (Rollup baca langsung).
+  server: {
+    fs: {
+      allow: ['..'],
+    },
+  },
 })
