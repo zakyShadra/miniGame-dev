@@ -5,6 +5,7 @@ import { useRoomStore } from "../stores/room";
 import type { PieceSpec } from "../../../shared/game/cutter";
 import {
   computeLayout,
+  groupMembers,
   LOGICAL_BOARD_H,
   LOGICAL_BOARD_W,
   type BoardLayout,
@@ -194,18 +195,26 @@ function onPointerDown(e: PointerEvent) {
   if (id !== null) {
     const piece = store.pieces.find((p) => p.id === id);
     if (!piece || piece.placed) return;
+    // Anggota grup piece ini (dirinya saja kalau tidak punya grup).
+    const members = groupMembers(piece, store.pieces);
     if (inRoom.value) {
-      // Piece yang dipegang pemain lain tidak bisa direbut.
-      if (piece.lockedBy && piece.lockedBy !== room.myId) return;
+      // Piece/grup yang dipegang pemain lain tidak bisa direbut.
+      if (members.some((m) => m.lockedBy && m.lockedBy !== room.myId)) {
+        return;
+      }
       dragStartPos.value = { x: piece.x, y: piece.y };
       // Grab optimistis: langsung drag, server mengonfirmasi atau
-      // menolak (lihat watcher grabDenied).
+      // menolak (lihat watcher grabDenied). Server mengunci seluruh grup.
       room.sendGrab(id);
     }
     drag.value = { id, dx: bx - piece.x, dy: by - piece.y };
     store.selectPiece(id);
-    // Naikkan ke atas: pindahkan id ke ujung z-order.
-    zOrder.value = [...zOrder.value.filter((z) => z !== id), id];
+    // Naikkan seluruh grup ke atas (urutan relatif dipertahankan).
+    const memberIds = new Set(members.map((m) => m.id));
+    zOrder.value = [
+      ...zOrder.value.filter((z) => !memberIds.has(z)),
+      ...zOrder.value.filter((z) => memberIds.has(z)),
+    ];
     canvas.style.cursor = "grabbing";
   } else {
     pan.value = {
@@ -246,16 +255,19 @@ function onPointerMove(e: PointerEvent) {
     draw();
     return;
   }
-  // Hover: kursor grab di atas piece, dilarang kalau dipegang pemain lain.
+  // Hover: kursor grab di atas piece, dilarang kalau piece/grupnya
+  // dipegang pemain lain.
   const id = hitTest(bx, by);
   if (id === null) {
     canvas.style.cursor = "default";
   } else {
     const piece = store.pieces.find((p) => p.id === id);
-    canvas.style.cursor =
-      piece?.lockedBy && piece.lockedBy !== room.myId
-        ? "not-allowed"
-        : "grab";
+    const heldByOther = piece
+      ? groupMembers(piece, store.pieces).some(
+          (m) => m.lockedBy && m.lockedBy !== room.myId,
+        )
+      : false;
+    canvas.style.cursor = heldByOther ? "not-allowed" : "grab";
   }
 }
 
