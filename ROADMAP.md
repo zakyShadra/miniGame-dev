@@ -338,6 +338,17 @@ Selesai kalau:
 
 ## M6 - Deploy, share, CV
 
+Status: 🔨 jalan (sebagian, 2026-11-18). Selesai: README final +
+screenshot (docs/screenshots/), draf CV + LinkedIn
+(docs/cv-linkedin.md), verifikasi production (Pages menyajikan build
+terbaru index-DteCjp_q.js berisi marker M3+M4+M5; worker live, tes
+integrasi WS 22/22 lolos lawan worker live dengan room baru).
+Menunggu Zaky: domain kustom puzzle.ices.my.id (butuh persetujuan +
+setting DNS oleh Zaky) dan playtest final dengan Dindha. M6 tetap
+terbuka sampai dua itu beres. Catatan: tes WS lawan worker live harus
+pakai kode room baru tiap jalan; room lama (misal TEST01) sudah ada
+di DO dan create-nya gagal, bukan regresi.
+
 Tujuan: game live di URL publik dan siap dipajang di CV.
 
 Masuk scope:
