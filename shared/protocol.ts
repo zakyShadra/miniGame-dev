@@ -4,6 +4,16 @@
 import type { PieceState, PlayerState, RoomState } from "./types";
 
 export type ClientMessage =
+  | {
+      type: "create"
+      imageUrl: string
+      imageName: string
+      imageW: number
+      imageH: number
+      pieceCount: number
+      name: string
+      color: string
+    }
   | { type: "join"; name: string; color: string }
   | { type: "cursor"; x: number; y: number }
   | { type: "grab"; pieceId: number }
@@ -13,6 +23,8 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: "hello"; id: string }
+  | { type: "error"; message: string }
+  | { type: "grab-denied"; pieceId: number }
   | { type: "state"; state: RoomState }
   | { type: "player-joined"; player: PlayerState }
   | { type: "player-left"; playerId: string }

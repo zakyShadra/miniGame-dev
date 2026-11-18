@@ -24,10 +24,13 @@ export interface RoomState {
   code: string
   imageUrl: string
   imageName: string
+  imageW: number
+  imageH: number
   pieceCount: number
   seed: number
   pieces: PieceState[]
   players: PlayerState[]
+  hostId: string | null
   startedAt: number
   solvedAt: number | null
 }
