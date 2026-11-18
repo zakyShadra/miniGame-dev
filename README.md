@@ -1,9 +1,10 @@
 # miniGame
 
-A tiny multiplayer mini-games platform on the web. First game:
-real-time multiplayer jigsaw puzzle. One board, two people, same
-puzzle. Built to play together with my girlfriend, inspired by a
-reel of two friends solving a jigsaw over a video call.
+A tiny multiplayer mini-games platform on the web. Game 1:
+real-time multiplayer jigsaw puzzle. Game 2: chess against a
+Stockfish bot, with lichess-style move analysis. One board, two
+people, same puzzle. Built to play together with my girlfriend,
+inspired by a reel of two friends solving a jigsaw over a video call.
 
 **Play it:** https://minigames-bxb.pages.dev/
 
@@ -13,6 +14,10 @@ reel of two friends solving a jigsaw over a video call.
 
 ## How to play
 
+Pick a game on the home screen: Puzzle or Chess.
+
+**Puzzle**
+
 1. Pick a photo (6 presets, or upload your own) and a piece count
    (24, 48, 100, 200, or any number from 12 to 500).
 2. Play solo, or create a room and share the 6-letter code (or link)
@@ -21,6 +26,17 @@ reel of two friends solving a jigsaw over a video call.
    a group you can move as one.
 4. Drop a piece near its spot and it snaps in. Finish the whole
    picture to win.
+
+**Chess**
+
+1. Pick a bot level (Easy, Medium, Hard, Extreme) and your color
+   (White, Black, random), or play 2-player on one device.
+2. Click a piece to see its legal moves, click a target square to move.
+3. Use Hint for the engine's best move, Undo to take back.
+4. After the game ends, run Analyze: Stockfish reviews every move
+   (depth 18) and labels it Brilliant, Best, Excellent, Good,
+   Inaccuracy, Mistake or Blunder, with accuracy per player, an
+   evaluation chart, and click-to-review positions with the best line.
 
 ## Features
 
@@ -40,6 +56,12 @@ reel of two friends solving a jigsaw over a video call.
 - **Synced timer and progress**, sort button, snap sound (mutable),
   zoom and pan, ghost preview, full-image view.
 - **No login:** nickname + cursor color, join with a code or a link.
+- **Chess vs Stockfish 19 (full):** 4 bot levels (skill + depth +
+  movetime), pick your color, hint, undo, resign.
+- **Lichess-style analysis:** every move classified (Brilliant to
+  Blunder) from depth-18 engine evals, per-player accuracy, eval
+  chart, click any move to review the position with the best line.
+- **Live eval bar** during play (low-depth engine eval, throttled).
 
 ## Tech stack
 
@@ -49,6 +71,8 @@ reel of two friends solving a jigsaw over a video call.
 | Board | Canvas 2D (one canvas, no DOM per piece, light on low-spec laptops) |
 | Multiplayer | PartyServer on Cloudflare Workers + Durable Objects (SQLite), partysocket client |
 | Uploaded images | Workers KV |
+| Chess rules | chess.js 1.4.0 |
+| Chess engine | Stockfish 19 full (single-threaded WASM, Web Worker + UCI). The 99 MB .wasm loads at runtime from unpkg (Pages has a 25 MB/file limit) and is cached in Cache Storage, so the first load downloads once and later loads take ~2 seconds. |
 | Hosting | Cloudflare Pages + Workers, all free tier, no VPS |
 
 ## Project layout
@@ -57,8 +81,9 @@ reel of two friends solving a jigsaw over a video call.
 - `party/` PartyServer worker (room state, locks, chat, image upload and serving)
 - `shared/` protocol types + jigsaw engine (cutter, scatter, snap,
   grouping) used by both sides
+- `app/src/games/chess/` chess game (board, rules, bot, analysis, eval bar)
 - `docs/` screenshots, UI audit notes, CV + LinkedIn drafts
-- `ROADMAP.md` milestone cheat sheet (M0-M6), `DESIGN.md` design tokens
+- `ROADMAP.md` milestone cheat sheet (M0-M6 + chess C1-C4), `DESIGN.md` design tokens
 
 ## Run it locally
 
@@ -79,4 +104,7 @@ esbuild or workerd, run
 - No accounts or room history. Anyone with the link can join.
 - PartyKit's hosted platform shut down in October 2026. This uses
   PartyServer (self-hosted on Cloudflare Workers) instead.
-- Everything runs on free tiers, no paid add-ons.
+- Chess is local or vs bot only for now. Online 2-player chess and
+  board animations are planned (C4).
+- The chess engine downloads ~99 MB on first use (then cached).
+  Everything runs on free tiers, no paid add-ons.

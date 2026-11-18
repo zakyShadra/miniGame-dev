@@ -18,6 +18,10 @@
 | M4 Galeri dan upload gambar | ✅ selesai | 2026-11-18 | 6 preset, upload + kompres client, gambar di KV (bukan R2), ganti gambar host, piece custom 12-500 + pembulatan grid; tes WS 10/10 + cutter 14/14 (lokal + live); 8 commit di-push |
 | M5 Piece grouping | ✅ selesai | 2026-11-18 | Grouping drop-only + snap grup, server authoritative; tes unit 15/15, WS 15/15 (lokal + live), QA browser 3/3 + screenshot; 6 commit di-push |
 | M6 Deploy, share, CV | ⏳ belum mulai | - | - |
+| C1 Catur: papan + aturan | ✅ selesai | 2026-11-18 | Papan DOM 8x8, chess.js, 2 pemain lokal; verifikasi live 13/13 |
+| C2 Catur: bot 4 level | ✅ selesai | 2026-11-18 | Stockfish 19 full, Mudah/Medium/Sulit/Extreme, hint, undo; verifikasi live 15/15 |
+| C3 Catur: analisa | ✅ selesai | 2026-11-18 | Depth 18 multipv 2, klasifikasi 7 level, akurasi, grafik eval, review + best line, eval bar live; verifikasi live 11/11 |
+| C4 Catur: online 2P + animasi | ⏳ belum mulai | - | Backlog: catur online 2 pemain, animasi bidak, rapikan layout mobile |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
 
@@ -373,6 +377,49 @@ Selesai kalau:
 - Playtest Zaky + Dindha selesai tanpa bug yang menghambat.
 - README + draf CV sudah ditulis.
 
+## Catur (game ke-2)
+
+Status: C1-C3 ✅ selesai 2026-11-18. Lobby jadi pemilih game (kartu
+Puzzle + kartu Catur). Puzzle tidak disentuh kecuali lobby.
+
+- **C1 Papan + aturan:** papan DOM grid 8x8 (bukan Canvas), bidak SVG
+  cburnett (CC BY-SA, bundel lokal), chess.js 1.4.0 (legal, skak,
+  skakmat, remis, rokade, en passant, promosi), klik-pilih + highlight
+  langkah legal/last-move/skak, daftar SAN, 2 pemain lokal, resign,
+  flip. Verifikasi live 13/13 (Fool's mate terdeteksi skakmat).
+- **C2 Bot 4 level:** Stockfish 19 FULL single-threaded di Web Worker
+  (UCI). Mudah skill 1 depth 2, Medium skill 8 depth 5, Sulit skill 15
+  depth 8, Extreme skill 20 depth 12. Pilih warna Putih/Hitam/acak,
+  undo 2 langkah, hint (depth 10). Verifikasi live 15/15 (bot jalan
+  di tiap level, bot jalan duluan saat kamu Hitam, mobile 390px).
+- **C3 Analisa:** post-game depth 18 multipv 2, evaluasi tiap posisi,
+  klasifikasi 7 level gaya lichess (Brilliant/Best/Excellent/Good/
+  Inaccuracy/Mistake/Blunder, threshold di `app/src/games/chess/lib/
+  analysis.ts`), akurasi per pemain (rumus lichess dari rata-rata
+  cp loss), grafik evaluasi, klik langkah untuk review posisi +
+  best line engine. Eval bar live selama main (depth 6, throttled).
+  Verifikasi live 11/11 (Fool's mate: f3 Mistake, g4 Blunder,
+  e5 + Qh4# Best, akurasi 0%/85%).
+- **Engine:** file .wasm 99 MB TIDAK dibundel (Pages batas 25 MB/file).
+  Load runtime dari unpkg (satu-satunya CDN yang lolos: CORS `*` +
+  MIME application/wasm; GitHub release tanpa CORS, jsdelivr 403,
+  esm.sh 404). HTTP cache TIDAK menyimpan file 99 MB (terverifikasi:
+  fetch ke-2 tetap download penuh), jadi .wasm disimpan ke Cache
+  Storage eksplisit (cek ukuran 99.169.054 byte); load ke-2 cuma
+  ~2 detik. Loader .js (28 KB) dibundel lokal di
+  `app/public/stockfish/`. Lisensi Stockfish.js GPLv3, lihat
+  `app/public/stockfish/STOCKFISH.md`.
+
+Tidak masuk scope C1-C3: drag bidak, catur online 2 pemain (C4),
+animasi papan (C4, backlog dari feedback Zaky 2026-11-18: animasi
+gerak bidak slide, feedback seleksi, animasi capture, indikator
+skak jelas, transisi flip papan, rapikan layout mobile).
+
+File kunci: `app/src/games/chess/` (lib/engine.ts, lib/levels.ts,
+lib/analysis.ts, stores/chess.ts, components/ChessBoard.vue,
+ChessSetup.vue, ChessSidebar.vue, ChessGame.vue, EvalBar.vue,
+AnalysisPanel.vue), `app/src/components/GamePicker.vue`.
+
 ## Backlog (v2, bukan sekarang)
 
 - Voice/video embed (Jitsi) di dalam room.
@@ -468,3 +515,10 @@ cd party && npx wrangler deploy # PartyServer production
   ~/Projects/mini-game; Pages puzzle-game-avl.pages.dev -> minigames-bxb.pages.dev;
   worker puzzle-game-party -> minigames-party. Puzzle tetap
   game pertama; identifier logika game tidak di-rename.
+
+- 2026-11-18: Catur jadi game ke-2 (C1-C3 selesai malam yang sama).
+  Engine Stockfish 19 FULL, .wasm 99 MB load runtime dari unpkg +
+  Cache Storage (HTTP cache tidak menyimpan file sebesar itu).
+  Lobby jadi pemilih game. Online 2P catur + animasi papan ditunda
+  ke C4. Zaky ditantang temannya untuk menyaingi chess.com di
+  analisa move, jadi analisa harus tepat (depth 18, multipv 2).
