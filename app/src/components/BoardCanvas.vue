@@ -436,6 +436,14 @@ let observer: ResizeObserver | null = null;
 onMounted(() => {
   resizeCanvas();
   window.addEventListener("keydown", onEscape);
+  // QA saja (dev): buka store ke window supaya Playwright bisa membaca
+  // state piece (groupId, posisi) untuk asersi. Tidak ada di production.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __puzzleGame?: unknown }).__puzzleGame = {
+      game: store,
+      room,
+    };
+  }
   if (wrapRef.value) {
     observer = new ResizeObserver(() => resizeCanvas());
     observer.observe(wrapRef.value);

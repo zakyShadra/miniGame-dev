@@ -37,10 +37,11 @@ function onCustomCount(e: Event) {
   store.selectedCount = Math.min(500, Math.max(12, Math.round(n)));
 }
 
-// QA hook, dev only: ?autostart=1[&pieces=48][&solve=1] langsung mulai
-// game (dan kalau solve=1, pasang semua piece otomatis buat uji snap +
-// menang). Dipakai screenshot QA headless (M1). Tidak jalan di
-// production build.
+// QA hook, dev only: ?autostart=1[&pieces=48][&solve=1][&groupdemo=1]
+// langsung mulai game (solve=1: pasang semua piece otomatis buat uji
+// snap + menang; groupdemo=1: susun piece 0,1,6,7 jadi blok 2x2 dan
+// gabungkan jadi satu grup buat uji grouping M5). Dipakai screenshot QA
+// headless (M1). Tidak jalan di production build.
 onMounted(() => {
   if (!import.meta.env.DEV) return;
   const params = new URLSearchParams(location.search);
@@ -62,6 +63,46 @@ onMounted(() => {
         store.movePiece(piece.id, t.x, t.y);
         store.dropPiece(piece.id);
       }
+    }, 1500);
+  }
+  if (params.get("groupdemo") === "1") {
+    setTimeout(() => {
+      // Demo grouping (M5): susun piece 0,1,6,7 jadi blok 2x2 di strip
+      // kiri, lalu drop piece 0 supaya keempatnya jadi satu grup.
+      // Piece lain yang menutupi blok diparkir di pojok kanan bawah
+      // supaya drag QA mengenai grup (bukan piece yang menumpuk di atas).
+      const layout = store.layout;
+      const cut = store.cut;
+      if (!layout || !cut) return;
+      const pw = cut.pieceW * layout.scale;
+      const ph = cut.pieceH * layout.scale;
+      const positions: Record<number, { x: number; y: number }> = {
+        0: { x: 0, y: 300 },
+        1: { x: pw, y: 300 },
+        6: { x: 0, y: 300 + ph },
+        7: { x: pw, y: 300 + ph },
+      };
+      for (const [id, pos] of Object.entries(positions)) {
+        store.movePiece(Number(id), pos.x, pos.y);
+      }
+      let park = 0;
+      for (const piece of store.pieces) {
+        if ([0, 1, 6, 7].includes(piece.id)) continue;
+        const overlaps =
+          piece.x < 2 * pw + 20 &&
+          piece.x + pw > -20 &&
+          piece.y < 300 + 2 * ph + 20 &&
+          piece.y + ph > 280;
+        if (overlaps) {
+          store.movePiece(
+            piece.id,
+            1080 + (park % 3) * 20,
+            650 + Math.floor(park / 3) * 20,
+          );
+          park++;
+        }
+      }
+      store.dropPiece(0);
     }, 1500);
   }
 });
