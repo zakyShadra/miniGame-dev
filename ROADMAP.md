@@ -14,7 +14,7 @@
 | M1 Mesin jigsaw (single player) | ✅ selesai | 2026-11-18 | Mesin jigsaw + board + lobby terverifikasi (screenshot QA); 6 commit di-push |
 | M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
 | M3 Chat dan polish UX | ✅ selesai | 2026-11-18 | Chat + pesan sistem, timer via jam server, Rapikan, suara snap + mute, rail responsif; tes integrasi 14/14 (lokal + live); audit di docs/ui-audit-m3.md; 11 commit di-push |
-| M4 Galeri dan upload gambar | ⏳ belum mulai | - | - |
+| M4 Galeri dan upload gambar | ✅ selesai | 2026-11-18 | 6 preset, upload + kompres client, gambar di KV (bukan R2), ganti gambar host, piece custom 12-500 + pembulatan grid; tes WS 10/10 + cutter 14/14 (lokal + live); 8 commit di-push |
 | M5 Deploy, share, CV | ⏳ belum mulai | - | - |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
@@ -235,6 +235,20 @@ Selesai kalau:
 - Suara bisa di-mute dan tidak autoplay sebelum interaksi user.
 
 ## M4 - Galeri dan upload gambar
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: galeri 6 preset
+picsum 1200x800, upload foto (kompres client maks 1600px sisi
+panjang, target <500 KB, validasi MIME + maks 10 MB), Worker
+POST /upload + GET /images/:key (byte-identik, dites curl lokal
++ live), host ganti gambar (reset puzzle + konfirmasi, non-host
+ditolak), piece custom 12-500 dengan pembulatan nearest-good-grid
+(97 -> 98, dites unit 14/14 + end-to-end browser). Tes integrasi
+change-image 10/10 lolos lawan wrangler dev lokal DAN worker live;
+screenshot QA lobby + upload + ganti gambar rapi.
+Catatan: R2 TIDAK diaktifkan di akun Cloudflare Zaky (butuh
+dashboard + billing), penyimpanan gambar pakai Workers KV
+(namespace puzzle-game-images, id 84b2744e90684ebb9cf47455443af212);
+kontrak API sama (POST /upload, GET /images/:key).
 
 Tujuan: bisa main pakai foto sendiri dan jumlah piece sesuai keinginan,
 terutama foto berdua.
