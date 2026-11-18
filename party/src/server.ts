@@ -22,6 +22,7 @@ import { mulberry32 } from "../../shared/game/prng";
 
 type Env = {
   Room: DurableObjectNamespace<Room>;
+  IMAGES: R2Bucket;
 };
 
 export class Room extends Server<Env> {
@@ -390,9 +391,88 @@ export class Room extends Server<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    // Preflight CORS untuk upload dari Pages (origin berbeda).
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: CORS_HEADERS });
+    }
+    if (url.pathname === "/upload" && request.method === "POST") {
+      return handleUpload(request, env);
+    }
+    if (url.pathname.startsWith("/images/") && request.method === "GET") {
+      const key = url.pathname.slice("/images/".length);
+      // Cegah path traversal: key hanya boleh img/<uuid>.<ext>.
+      if (!/^img\/[A-Za-z0-9-]+\.(jpg|png|webp)$/.test(key)) {
+        return new Response("Gambar tidak ditemukan.", {
+          status: 404,
+          headers: CORS_HEADERS,
+        });
+      }
+      return handleImage(key, env);
+    }
     return (
       (await routePartykitRequest(request, env)) ??
       new Response("Not found", { status: 404 })
     );
   },
 } satisfies ExportedHandler<Env>;
+
+// Upload gambar (M4): client mengompres dulu (< 500 KB), server
+// menerima maks 1 MB dan menyimpannya ke R2. Gambar disajikan lewat
+// GET /images/:key dari Worker yang sama (tanpa public bucket).
+
+// Batas upload server: 1 MB (client menargetkan < 500 KB).
+const MAX_UPLOAD_BYTES = 1024 * 1024;
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+function extFor(contentType: string): string {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/webp") return "webp";
+  return "jpg";
+}
+
+async function handleUpload(request: Request, env: Env): Promise<Response> {
+  const contentType = request.headers.get("Content-Type") ?? "";
+  if (!contentType.startsWith("image/")) {
+    return Response.json(
+      { error: "File harus berupa gambar." },
+      { status: 400, headers: CORS_HEADERS },
+    );
+  }
+  const buf = await request.arrayBuffer();
+  if (buf.byteLength === 0 || buf.byteLength > MAX_UPLOAD_BYTES) {
+    return Response.json(
+      { error: "Ukuran gambar maksimal 1 MB." },
+      { status: 413, headers: CORS_HEADERS },
+    );
+  }
+  const key = `img/${crypto.randomUUID()}.${extFor(contentType)}`;
+  await env.IMAGES.put(key, buf, {
+    httpMetadata: { contentType },
+  });
+  const origin = new URL(request.url).origin;
+  return Response.json(
+    { url: `${origin}/images/${key}` },
+    { headers: CORS_HEADERS },
+  );
+}
+
+async function handleImage(key: string, env: Env): Promise<Response> {
+  const obj = await env.IMAGES.get(key);
+  if (!obj) {
+    return new Response("Gambar tidak ditemukan.", {
+      status: 404,
+      headers: CORS_HEADERS,
+    });
+  }
+  const headers = new Headers(CORS_HEADERS);
+  obj.writeHttpMetadata(headers);
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  headers.set("ETag", obj.httpEtag);
+  return new Response(obj.body, { headers });
+}

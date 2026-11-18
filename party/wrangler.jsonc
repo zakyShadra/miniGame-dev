@@ -18,5 +18,11 @@
       "tag": "v1"
     }
   ],
-  "name": "puzzle-game-party"
+  "name": "puzzle-game-party",
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "puzzle-game-images"
+    }
+  ]
 }
