@@ -142,12 +142,26 @@ export const useChessStore = defineStore("chess", () => {
     if (phase.value === "playing") scheduleLiveEval();
   }
 
+  // FEN posisi setelah ply ke-N (0 = posisi awal), dihitung dengan
+  // replay riwayat. Dipakai review saat belum ada analisa (hasil
+  // analisa menyimpan FEN-nya sendiri, tapi replay ini setara).
+  function fenAtPly(ply: number): string {
+    const game = new Chess();
+    const h = historyVerbose.value;
+    for (let i = 0; i < Math.min(ply, h.length); i++) {
+      const m = h[i]!;
+      game.move({ from: m.from, to: m.to, promotion: m.promotion });
+    }
+    return game.fen();
+  }
+
   // FEN yang ditampilkan di papan: posisi review kalau sedang
   // review, kalau tidak posisi live.
   const displayFen = computed(() => {
-    if (reviewPly.value !== null && analysis.value) {
+    if (reviewPly.value !== null) {
       return (
-        analysis.value.evals[reviewPly.value]?.fen ?? fen.value
+        analysis.value?.evals[reviewPly.value]?.fen ??
+        fenAtPly(reviewPly.value)
       );
     }
     return fen.value;
@@ -569,15 +583,25 @@ export const useChessStore = defineStore("chess", () => {
   }
 
   // Pilih posisi review (indeks 0 = awal, N = akhir). null = live.
+  // Review tidak butuh analisa: tanpa analisa, FEN dihitung dengan
+  // replay riwayat (fenAtPly). Dengan analisa, batasnya jumlah eval.
   function setReview(ply: number | null) {
     if (ply === null) {
       reviewPly.value = null;
       return;
     }
-    if (!analysis.value) return;
-    const max = analysis.value.evals.length - 1;
+    const max = analysis.value
+      ? analysis.value.evals.length - 1
+      : historyVerbose.value.length;
+    if (max <= 0) return;
     reviewPly.value = Math.max(0, Math.min(max, ply));
     clearSelection();
+  }
+
+  // Toggle review satu langkah (ply 0-based): klik langkah yang
+  // sedang di-review = kembali ke live, klik langkah lain = review.
+  function toggleReview(ply: number) {
+    setReview(reviewPly.value === ply + 1 ? null : ply + 1);
   }
 
   // Nyalakan/matikan eval bar. Menyalakan di mode lokal butuh load
@@ -659,6 +683,7 @@ export const useChessStore = defineStore("chess", () => {
     startAnalysis,
     cancelAnalysis,
     setReview,
+    toggleReview,
     toggleEvalBar,
   };
 });

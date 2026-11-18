@@ -91,9 +91,20 @@ watch(
     </div>
 
     <div class="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4">
-      <h2 class="text-xs font-bold tracking-wide text-muted uppercase">
-        Langkah
-      </h2>
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-xs font-bold tracking-wide text-muted uppercase">
+          Langkah
+        </h2>
+        <!-- Saat review, satu ketukan kembali ke posisi live. -->
+        <button
+          v-if="store.reviewPly !== null"
+          type="button"
+          class="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary transition hover:bg-primary/20"
+          @click="store.setReview(null)"
+        >
+          Kembali ke live
+        </button>
+      </div>
       <div
         ref="listRef"
         class="mt-2 min-h-24 flex-1 overflow-y-auto pr-1"
@@ -110,7 +121,7 @@ watch(
             >
               <td class="w-10 py-1 pl-2 text-muted">{{ pair.n }}.</td>
               <td
-                class="py-1 font-semibold text-ink"
+                class="py-0.5"
                 :style="
                   moveCellMeta((pair.n - 1) * 2)
                     ? {
@@ -119,18 +130,29 @@ watch(
                     : undefined
                 "
               >
-                {{ pair.white.san }}
-                <span
-                  v-if="moveCellMeta((pair.n - 1) * 2)?.glyph"
-                  class="ml-0.5 text-xs font-bold"
-                  :style="{
-                    color: moveCellMeta((pair.n - 1) * 2)!.color,
+                <button
+                  type="button"
+                  class="w-full cursor-pointer rounded px-1 py-0.5 text-left font-semibold text-ink transition hover:bg-primary/15 hover:text-primary"
+                  :class="{
+                    'bg-primary/20 text-primary':
+                      store.reviewPly === (pair.n - 1) * 2 + 1,
                   }"
-                  >{{ moveCellMeta((pair.n - 1) * 2)!.glyph }}</span
+                  :aria-label="`Lihat posisi setelah ${pair.white.san}`"
+                  @click="store.toggleReview((pair.n - 1) * 2)"
                 >
+                  {{ pair.white.san }}
+                  <span
+                    v-if="moveCellMeta((pair.n - 1) * 2)?.glyph"
+                    class="ml-0.5 text-xs font-bold"
+                    :style="{
+                      color: moveCellMeta((pair.n - 1) * 2)!.color,
+                    }"
+                    >{{ moveCellMeta((pair.n - 1) * 2)!.glyph }}</span
+                  >
+                </button>
               </td>
               <td
-                class="py-1 font-semibold text-ink"
+                class="py-0.5"
                 :style="
                   moveCellMeta((pair.n - 1) * 2 + 1)
                     ? {
@@ -140,20 +162,38 @@ watch(
                     : undefined
                 "
               >
-                {{ pair.black?.san ?? "" }}
-                <span
-                  v-if="moveCellMeta((pair.n - 1) * 2 + 1)?.glyph"
-                  class="ml-0.5 text-xs font-bold"
-                  :style="{
-                    color: moveCellMeta((pair.n - 1) * 2 + 1)!.color,
+                <button
+                  v-if="pair.black"
+                  type="button"
+                  class="w-full cursor-pointer rounded px-1 py-0.5 text-left font-semibold text-ink transition hover:bg-primary/15 hover:text-primary"
+                  :class="{
+                    'bg-primary/20 text-primary':
+                      store.reviewPly === (pair.n - 1) * 2 + 2,
                   }"
-                  >{{ moveCellMeta((pair.n - 1) * 2 + 1)!.glyph }}</span
+                  :aria-label="`Lihat posisi setelah ${pair.black.san}`"
+                  @click="store.toggleReview((pair.n - 1) * 2 + 1)"
                 >
+                  {{ pair.black.san }}
+                  <span
+                    v-if="moveCellMeta((pair.n - 1) * 2 + 1)?.glyph"
+                    class="ml-0.5 text-xs font-bold"
+                    :style="{
+                      color: moveCellMeta((pair.n - 1) * 2 + 1)!.color,
+                    }"
+                    >{{ moveCellMeta((pair.n - 1) * 2 + 1)!.glyph }}</span
+                  >
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p
+        v-if="store.moveList.length > 0"
+        class="mt-1 text-[11px] text-subtle"
+      >
+        Ketuk langkah untuk melihat posisinya.
+      </p>
     </div>
 
     <div class="flex flex-wrap gap-2">
