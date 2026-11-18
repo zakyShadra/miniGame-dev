@@ -30,6 +30,8 @@ export class Room extends Server<Env> {
   private layout: BoardLayout | null = null;
   private loaded: Promise<void> | null = null;
   private lastPersist = 0;
+  // Throttle chat per pemain (anti spam): pesan terakhir per conn id.
+  private lastChatAt = new Map<string, number>();
 
   // Muat state dari SQLite sekali per aktivasi DO. Dipanggil di awal
   // tiap handler supaya tidak ada balapan antar pesan.
@@ -90,6 +92,15 @@ export class Room extends Server<Env> {
     this.broadcast(JSON.stringify(msg), without);
   }
 
+  // Pesan state lengkap + jam server (buat sinkron timer client).
+  private stateMessage(): ServerMessage {
+    return { type: "state", state: this.state!, now: Date.now() };
+  }
+
+  private sendSystem(text: string) {
+    this.sendAll({ type: "system", text });
+  }
+
   async onConnect(conn: Connection) {
     await this.ensureLoaded();
     this.send(conn, { type: "hello", id: conn.id });
@@ -123,8 +134,14 @@ export class Room extends Server<Env> {
       case "drop":
         this.handleDrop(conn, msg);
         break;
+      case "chat":
+        this.handleChat(conn, msg);
+        break;
+      case "sort":
+        this.handleSort(conn);
+        break;
       default:
-        break; // chat: M3
+        break;
     }
   }
 
@@ -186,7 +203,7 @@ export class Room extends Server<Env> {
     this.cut = cut;
     this.layout = layout;
     this.persist();
-    this.send(conn, { type: "state", state: this.state });
+    this.send(conn, this.stateMessage());
   }
 
   private handleJoin(
@@ -217,9 +234,10 @@ export class Room extends Server<Env> {
       };
       this.state.players.push(player);
       this.sendAll({ type: "player-joined", player }, [conn.id]);
+      this.sendSystem(`${player.name} bergabung`);
     }
     this.persist();
-    this.send(conn, { type: "state", state: this.state });
+    this.send(conn, this.stateMessage());
   }
 
   private handleCursor(
@@ -297,8 +315,51 @@ export class Room extends Server<Env> {
     ) {
       this.state.solvedAt = Date.now();
       this.persist();
+      this.sendSystem("Puzzle selesai!");
       this.sendAll({ type: "solved", at: this.state.solvedAt });
     }
+  }
+
+  private handleChat(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "chat" }>,
+  ) {
+    const player = this.state?.players.find((p) => p.id === conn.id);
+    if (!player) return;
+    const text = msg.text.trim().slice(0, 500);
+    if (!text) return;
+    // Throttle: paling cepat 1 pesan per 500ms per pemain.
+    const now = Date.now();
+    if (now - (this.lastChatAt.get(conn.id) ?? 0) < 500) return;
+    this.lastChatAt.set(conn.id, now);
+    this.sendAll({
+      type: "chat",
+      playerId: conn.id,
+      name: player.name,
+      text,
+      at: now,
+    });
+  }
+
+  private handleSort(conn: Connection) {
+    const player = this.state?.players.find((p) => p.id === conn.id);
+    if (!player || !this.state || !this.cut || !this.layout) return;
+    // Acak ulang posisi piece yang belum terpasang dan tidak sedang
+    // dipegang siapa pun. Piece terpasang dan yang di-drag tidak bergerak.
+    const rng = mulberry32((Date.now() ^ (Math.random() * 0x7fffffff)) | 0);
+    const fresh = scatterPieces(this.cut, this.layout, rng);
+    const freshById = new Map(fresh.map((p) => [p.id, p]));
+    for (const piece of this.state.pieces) {
+      if (piece.placed || piece.lockedBy) continue;
+      const pos = freshById.get(piece.id);
+      if (pos) {
+        piece.x = pos.x;
+        piece.y = pos.y;
+      }
+    }
+    this.persist();
+    this.sendAll(this.stateMessage());
+    this.sendSystem(`${player.name} merapikan piece`);
   }
 
   async onClose(conn: Connection) {
@@ -306,6 +367,7 @@ export class Room extends Server<Env> {
     if (!this.state) return;
     const idx = this.state.players.findIndex((p) => p.id === conn.id);
     if (idx === -1) return;
+    const name = this.state.players[idx]!.name;
     this.state.players.splice(idx, 1);
     // Lepas semua lock yang dipegang pemain ini.
     for (const piece of this.state.pieces) {
@@ -321,6 +383,8 @@ export class Room extends Server<Env> {
     }
     this.persist();
     this.sendAll({ type: "player-left", playerId: conn.id });
+    this.sendSystem(`${name} keluar`);
+    this.lastChatAt.delete(conn.id);
   }
 }
 
