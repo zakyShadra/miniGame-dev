@@ -1,7 +1,7 @@
 ---
 version: alpha
-name: "puzzleGame"
-description: "puzzleGame: cozy multiplayer jigsaw di web. Kanvas krem hangat (#fffaf0) ala clay, aksen coral hangat, papan felt biru dusty (#87a8c8) seperti di reel referensi; sudut lembut, tombol pill, gerak halus. Plus Jakarta Sans + Inter."
+name: "miniGame"
+description: "miniGame: cozy multiplayer mini-games di web, game pertama jigsaw puzzle. Kanvas krem hangat (#fffaf0) ala clay, aksen coral hangat, papan felt biru dusty (#87a8c8) seperti di reel referensi; sudut lembut, tombol pill, gerak halus. Plus Jakarta Sans + Inter."
 sources:
   colors: "clay + mintlify + formo-club"
   shape: "airbnb + cal"
@@ -121,7 +121,7 @@ shadow:
   piece-drag: "0 10px 20px rgba(10, 10, 10, 0.18)"
 ---
 
-# puzzleGame: Design System
+# miniGame: Design System
 
 ## Overview
 

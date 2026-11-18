@@ -1,6 +1,7 @@
-# Puzzle Game - ROADMAP (contekan milestone)
+# miniGame - ROADMAP (contekan milestone)
 
-> Game jigsaw puzzle multiplayer di web, buat main bareng (Zaky + Dindha).
+> Platform mini-game multiplayer di web, buat main bareng (Zaky + Dindha).
+> Game pertama: jigsaw puzzle.
 > Referensi: reel Instagram @oftwominds._ (jigsawplanet.com + Google Meet di pojok,
 > puzzle sunset pantai, lalu collage kartun, lalu toko "CANDY SHOPPE").
 > File ini sumber kebenaran buat lanjutan sesi: baca dulu sebelum kerja,
@@ -12,7 +13,7 @@
 | --- | --- | --- | --- |
 | M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 8 commit di-push |
 | M1 Mesin jigsaw (single player) | ✅ selesai | 2026-11-18 | Mesin jigsaw + board + lobby terverifikasi (screenshot QA); 6 commit di-push |
-| M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
+| M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di minigames-bxb.pages.dev; 5 commit di-push |
 | M3 Chat dan polish UX | ✅ selesai | 2026-11-18 | Chat + pesan sistem, timer via jam server, Rapikan, suara snap + mute, rail responsif; tes integrasi 14/14 (lokal + live); audit di docs/ui-audit-m3.md; 11 commit di-push |
 | M4 Galeri dan upload gambar | ✅ selesai | 2026-11-18 | 6 preset, upload + kompres client, gambar di KV (bukan R2), ganti gambar host, piece custom 12-500 + pembulatan grid; tes WS 10/10 + cutter 14/14 (lokal + live); 8 commit di-push |
 | M5 Piece grouping | ✅ selesai | 2026-11-18 | Grouping drop-only + snap grup, server authoritative; tes unit 15/15, WS 15/15 (lokal + live), QA browser 3/3 + screenshot; 6 commit di-push |
@@ -22,9 +23,9 @@ Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
 
 ## Keputusan yang sudah dikunci (2026-11-18)
 
-- Lokasi: `/home/ice/Projects/puzzle-game` di laptop (pakai strip, bukan spasi,
+- Lokasi: `/home/ice/Projects/mini-game` di laptop (pakai strip, bukan spasi,
   biar gampang di command line; Zaky bilang "~/Projects/puzzle game").
-- Repo GitHub: `github.com/zakyShadra/puzzleGame` (public, dibuat 2026-11-18).
+- Repo GitHub: `github.com/zakyShadra/miniGame` (public, dibuat 2026-11-18).
 - Frontend: Vue 3 (`<script setup>`) + Vite + TypeScript + Tailwind CSS + Pinia.
 - Board: Canvas 2D (bukan DOM per piece, bukan Three.js/Phaser) biar enteng
   di laptop kentang (Zaky dan Dindha sama-sama low-spec).
@@ -50,7 +51,7 @@ Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
 ## Struktur folder target
 
 ```text
-puzzle-game/
+mini-game/
   ROADMAP.md          # file ini, contekan milestone
   README.md           # cara jalanin + gambaran proyek
   DESIGN.md           # token desain dari design-md-studio (dibuat di M0)
@@ -155,8 +156,8 @@ lolos lawan wrangler dev lokal DAN worker live (create/join, cursor,
 drag lock + grab-denied, move tanpa echo, drop + snap server, lepas
 lock saat disconnect, persistensi SQLite, error room tidak ada);
 screenshot QA lobby dua kartu rapi; deploy live
-(https://puzzle-game-avl.pages.dev/ +
-https://puzzle-game-party.zakyshadra.workers.dev).
+(https://minigames-bxb.pages.dev/ +
+https://minigames-party.zakyshadra.workers.dev).
 Catatan: board logis tetap 1280x800 (posisi piece konsisten di semua
 layar); logika game pindah ke shared/game/ supaya server dan client
 pakai cut + scatter + snap yang identik; layout watcher BoardCanvas
@@ -205,7 +206,7 @@ terpasang + lokal single-player), suara snap WebAudio + mute
 HP), audit red-flag UI di docs/ui-audit-m3.md. Tes integrasi 14/14
 lolos lawan wrangler dev lokal DAN worker live; screenshot QA desktop
 1280px + HP 390px rapi. Deploy gabungan dengan M4 di
-https://puzzle-game-avl.pages.dev/.
+https://minigames-bxb.pages.dev/.
 Catatan: indikator AFK sempat dibuat lalu dibatalkan Zaky (revert
 12236bb); pesan sistem per-piece sengaja tidak dibuat (terlalu
 berisik di 200 piece); riwayat chat tidak disimpan di server.
@@ -296,7 +297,7 @@ grup, groupId tersimpan di SQLite); QA browser Playwright 3/3
 + screenshot m5-group-2x2.png dan m5-group-dragged.png.
 Catatan: grouping HANYA saat drop (tanpa magnet/preview); Rapikan
 membubarkan grup; trySnap dihapus (diganti trySnapGroup); hook QA
-dev-only ?groupdemo=1 di LobbyPanel + window.__puzzleGame.
+dev-only ?groupdemo=1 di LobbyPanel + window.__miniGame.
 
 Tujuan: piece yang sudah benar-benar bersebelahan menempel jadi satu
 kelompok yang bisa digeser bareng, tanpa membuat game jadi terlalu mudah
@@ -428,7 +429,7 @@ Selesai kalau:
 ## Perintah contekan
 
 ```bash
-cd ~/Projects/puzzle-game
+cd ~/Projects/mini-game
 npm run dev            # frontend di localhost:5173
 npm run build          # build frontend
 cd party && npx wrangler dev    # PartyServer lokal
@@ -459,4 +460,11 @@ cd party && npx wrangler deploy # PartyServer production
   file generated dipisah), pesan conventional commits (feat:, fix:,
   docs:, debug:, dll) dengan scope milestone, timestamp dimanipulasi
   biar manusiawi (jeda sesuai ukuran tugas, tidak bulat). Repo GitHub
-  `zakyShadra/puzzleGame` (public).
+  `zakyShadra/miniGame` (public).
+
+- 2026-11-18: Rename puzzleGame jadi miniGame (Zaky mau scale up,
+  tidak cuma puzzle). Repo puzzleGame-dev -> miniGame-dev,
+  puzzleGame -> miniGame; folder ~/Projects/puzzle-game ->
+  ~/Projects/mini-game; Pages puzzle-game-avl.pages.dev -> minigames-bxb.pages.dev;
+  worker puzzle-game-party -> minigames-party. Puzzle tetap
+  game pertama; identifier logika game tidak di-rename.

@@ -1,10 +1,11 @@
-# puzzleGame
+# miniGame
 
-Real-time multiplayer jigsaw puzzle on the web. One board, two people,
-same puzzle. Built to play together with my girlfriend, inspired by a
+A tiny multiplayer mini-games platform on the web. First game:
+real-time multiplayer jigsaw puzzle. One board, two people, same
+puzzle. Built to play together with my girlfriend, inspired by a
 reel of two friends solving a jigsaw over a video call.
 
-**Play it:** https://puzzle-game-avl.pages.dev/
+**Play it:** https://minigames-bxb.pages.dev/
 
 ![Lobby](docs/screenshots/lobby.png)
 ![Board](docs/screenshots/board.png)
