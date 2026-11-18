@@ -1,4 +1,32 @@
 @import "tailwindcss";
 
-/* Token warna, font, dan komponen lengkap ada di DESIGN.md (M0).
-   File ini sengaja minimal: UI nyata dibangun di M1/M3 dari DESIGN.md. */
+/* Token dari DESIGN.md (sumber: clay, mintlify, formo-club, airbnb, cal). */
+@theme {
+  --color-canvas: #fffaf0;
+  --color-surface-1: #faf5e8;
+  --color-surface-2: #f5f0e0;
+  --color-surface-3: #ebe6d6;
+  --color-ink: #0a0a0a;
+  --color-body: #3a3a3a;
+  --color-muted: #6a6a6a;
+  --color-subtle: #9a9a9a;
+  --color-hairline: #e5e5e5;
+  --color-hairline-strong: #c1c1c1;
+  --color-primary: #ff6b5a;
+  --color-primary-hover: #f25947;
+  --color-primary-pressed: #e04a38;
+  --color-board-felt: #87a8c8;
+  --color-board-frame: #1a3d4a;
+  --color-ochre: #e8b94a;
+  --color-peach: #ffb084;
+  --color-mint: #a4d4c5;
+  --color-lavender: #b8a4ed;
+  --color-pink: #ff4d8b;
+  --color-sky: #0099e1;
+  --font-display: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-canvas font-sans text-body antialiased;
+}
