@@ -1,7 +1,8 @@
 // Store catur (Pinia): state game catur, seleksi, riwayat, hasil.
 // chess.js dipakai untuk aturan; instance Chess disimpan NON-reaktif di
 // dalam setup store, lalu state reaktif di-sync setelah setiap perubahan
-// (sync()). C1 hanya mode lokal 2 pemain; mode bot ditambah di C2.
+// (sync()). C1 hanya mode lokal 2 pemain; mode bot ditambah di C2;
+// analisa pasca-game + eval bar live ditambah di C3.
 
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
@@ -19,11 +20,17 @@ import {
   type EngineStatus,
 } from "../lib/engine";
 import { getLevelConfig } from "../lib/levels";
+import {
+  analyzeGame,
+  scoreToCp,
+  type GameAnalysis,
+} from "../lib/analysis";
 
 export type ChessMode = "local" | "bot";
 export type ChessPhase = "setup" | "playing" | "over";
 export type BotLevel = "easy" | "medium" | "hard" | "extreme";
 export type HumanColorChoice = "w" | "b" | "random";
+export type AnalysisStatus = "idle" | "loading" | "running" | "done" | "error";
 
 export interface MovePair {
   n: number;
@@ -51,6 +58,20 @@ export const useChessStore = defineStore("chess", () => {
   const engineError = ref<string | null>(null);
   const botThinking = ref(false);
   const hintMove = ref<{ from: Square; to: Square } | null>(null);
+
+  // State analisa + eval bar (C3).
+  const analysisStatus = ref<AnalysisStatus>("idle");
+  const analysisProgress = ref({ done: 0, total: 0 });
+  const analysis = ref<GameAnalysis | null>(null);
+  const analysisError = ref<string | null>(null);
+  // Posisi yang di-review (indeks 0 = posisi awal, N = posisi akhir).
+  // null = tampilkan posisi live.
+  const reviewPly = ref<number | null>(null);
+  // Evaluasi live (cp dari sudut pandang Putih), null = belum ada.
+  const liveEvalCp = ref<number | null>(null);
+  const evalBarEnabled = ref(false);
+  let analysisCancelled = false;
+  let liveEvalTimer: ReturnType<typeof setTimeout> | null = null;
 
   const botColor = computed<Color>(() =>
     humanColor.value === "w" ? "b" : "w",
@@ -99,13 +120,27 @@ export const useChessStore = defineStore("chess", () => {
     result.value = computeResult();
     if (result.value) phase.value = "over";
     version.value++;
+    if (phase.value === "playing") scheduleLiveEval();
   }
 
-  // Petak -> bidak, buat render papan. Bergantung pada version.
+  // FEN yang ditampilkan di papan: posisi review kalau sedang
+  // review, kalau tidak posisi live.
+  const displayFen = computed(() => {
+    if (reviewPly.value !== null && analysis.value) {
+      return (
+        analysis.value.evals[reviewPly.value]?.fen ?? fen.value
+      );
+    }
+    return fen.value;
+  });
+
+  // Petak -> bidak, buat render papan. Bergantung pada version dan
+  // posisi review.
   const boardMap = computed(() => {
     void version.value;
     const map = new Map<Square, { type: PieceSymbol; color: Color }>();
-    for (const row of chess.board()) {
+    const board = new Chess(displayFen.value).board();
+    for (const row of board) {
       for (const cell of row) {
         if (cell) map.set(cell.square, { type: cell.type, color: cell.color });
       }
@@ -113,13 +148,26 @@ export const useChessStore = defineStore("chess", () => {
     return map;
   });
 
-  // Petak raja yang sedang skak (buat highlight merah).
+  // Petak raja yang sedang skak di posisi tampil (buat highlight merah).
   const checkSquare = computed<Square | null>(() => {
-    if (!inCheck.value) return null;
+    const game = new Chess(displayFen.value);
+    if (!game.isCheck()) return null;
+    const side = game.turn();
     for (const [sq, piece] of boardMap.value) {
-      if (piece.type === "k" && piece.color === turn.value) return sq;
+      if (piece.type === "k" && piece.color === side) return sq;
     }
     return null;
+  });
+
+  // Langkah terakhir di posisi tampil (saat review = langkah yang
+  // membawa ke posisi itu; posisi awal tidak punya langkah terakhir).
+  const displayLastMove = computed<{ from: Square; to: Square } | null>(() => {
+    if (reviewPly.value !== null) {
+      if (reviewPly.value === 0) return null;
+      const m = historyVerbose.value[reviewPly.value - 1];
+      return m ? { from: m.from, to: m.to } : null;
+    }
+    return lastMove.value;
   });
 
   const moveList = computed<MovePair[]>(() => {
@@ -151,10 +199,58 @@ export const useChessStore = defineStore("chess", () => {
   });
 
   const statusText = computed(() => {
+    if (reviewPly.value !== null) {
+      if (reviewPly.value === 0) return "Review: posisi awal";
+      const m = historyVerbose.value[reviewPly.value - 1];
+      return m ? `Review: setelah ${m.san}` : "Review";
+    }
     if (result.value) return result.value;
     if (phase.value !== "playing") return "";
     return `${COLOR_NAME[turn.value]} jalan${inCheck.value ? " (skak!)" : ""}`;
   });
+
+  // Evaluasi live depth rendah (eval bar). Dijalankan tertunda 500 ms
+  // setelah tiap langkah; dilewati kalau engine sedang dipakai bot
+  // atau analisa (tidak antre, eval berikutnya menyusul).
+  async function refreshLiveEval() {
+    if (!evalBarEnabled.value || phase.value !== "playing") return;
+    if (
+      botThinking.value ||
+      analysisStatus.value === "running" ||
+      analysisStatus.value === "loading"
+    ) {
+      return;
+    }
+    if (stockfish.status !== "ready") return;
+    const fenAtStart = fen.value;
+    try {
+      const score = await stockfish.evaluate(fenAtStart, 6);
+      // Posisi sudah berubah saat eval selesai: hasil basi, buang.
+      if (score && fen.value === fenAtStart) {
+        liveEvalCp.value = scoreToCp(
+          score,
+          new Chess(fenAtStart).turn(),
+          "w",
+        );
+      }
+    } catch {
+      // Engine sibuk: lewati saja.
+    }
+  }
+
+  function scheduleLiveEval() {
+    if (liveEvalTimer) clearTimeout(liveEvalTimer);
+    liveEvalTimer = setTimeout(() => void refreshLiveEval(), 500);
+  }
+
+  function resetAnalysis() {
+    analysisCancelled = true;
+    analysisStatus.value = "idle";
+    analysisProgress.value = { done: 0, total: 0 };
+    analysis.value = null;
+    analysisError.value = null;
+    reviewPly.value = null;
+  }
 
   function clearSelection() {
     selected.value = null;
@@ -169,6 +265,10 @@ export const useChessStore = defineStore("chess", () => {
     clearSelection();
     promotionPending.value = null;
     hintMove.value = null;
+    resetAnalysis();
+    // Eval bar ikut nyala kalau engine sudah siap dari game sebelumnya.
+    evalBarEnabled.value = stockfish.status === "ready";
+    liveEvalCp.value = null;
     sync();
   }
 
@@ -246,6 +346,10 @@ export const useChessStore = defineStore("chess", () => {
     clearSelection();
     promotionPending.value = null;
     hintMove.value = null;
+    resetAnalysis();
+    // Mode bot: engine sudah ter-load, eval bar langsung nyala.
+    evalBarEnabled.value = true;
+    liveEvalCp.value = null;
     sync();
     // Bot pegang Putih: langsung jalan.
     void maybeBotMove();
@@ -302,6 +406,8 @@ export const useChessStore = defineStore("chess", () => {
 
   function selectSquare(sq: Square) {
     if (phase.value !== "playing" || result.value) return;
+    // Sedang review posisi lama: papan read-only.
+    if (reviewPly.value !== null) return;
     if (promotionPending.value) return;
     // Giliran bot: input manusia dikunci.
     if (isBotTurn.value || botThinking.value) return;
@@ -342,9 +448,11 @@ export const useChessStore = defineStore("chess", () => {
 
   // Mode lokal: undo satu setengah langkah. Mode bot: undo dua
   // (langkah manusia + balasan bot) supaya giliran kembali ke manusia.
+  // Undo membatalkan analisa (game berubah, analisa tidak berlaku lagi).
   function undo() {
     if (phase.value !== "playing" && phase.value !== "over") return;
     if (botThinking.value) return;
+    resetAnalysis();
     const steps = mode.value === "bot" ? 2 : 1;
     for (let i = 0; i < steps; i++) {
       if (!chess.undo()) break;
@@ -370,6 +478,108 @@ export const useChessStore = defineStore("chess", () => {
     clearSelection();
   }
 
+  // Analisa pasca-game (C3): evaluasi semua posisi di depth 18.
+  // Engine di-load dulu kalau belum siap. Berjalan background,
+  // UI tetap responsif (engine di worker).
+  async function startAnalysis() {
+    if (
+      analysisStatus.value === "running" ||
+      analysisStatus.value === "loading"
+    ) {
+      return;
+    }
+    if (historyVerbose.value.length === 0) return;
+    analysisCancelled = false;
+    analysisError.value = null;
+    analysis.value = null;
+    reviewPly.value = null;
+    try {
+      if (stockfish.status !== "ready") {
+        analysisStatus.value = "loading";
+        stockfish.onProgress = (p) => {
+          engineProgress.value = p;
+        };
+        stockfish.onStatusChange = (s) => {
+          engineStatus.value = s;
+        };
+        await stockfish.load();
+      }
+      analysisStatus.value = "running";
+      // Susun daftar FEN: posisi awal + setelah tiap langkah.
+      const replay = new Chess();
+      const fens = [replay.fen()];
+      for (const m of historyVerbose.value) {
+        replay.move({ from: m.from, to: m.to, promotion: m.promotion });
+        fens.push(replay.fen());
+      }
+      const moves = historyVerbose.value.map((m) => ({
+        san: m.san,
+        uci: m.from + m.to + (m.promotion ?? ""),
+        color: m.color,
+      }));
+      const result = await analyzeGame(
+        fens,
+        moves,
+        (done, total) => {
+          analysisProgress.value = { done, total };
+        },
+        () => analysisCancelled,
+      );
+      if (result) {
+        analysis.value = result;
+        analysisStatus.value = "done";
+      } else {
+        // Dibatalkan pengguna.
+        analysisStatus.value = "idle";
+      }
+    } catch (e) {
+      analysisError.value =
+        e instanceof Error ? e.message : "Analisa gagal.";
+      analysisStatus.value = "error";
+    }
+  }
+
+  function cancelAnalysis() {
+    analysisCancelled = true;
+    stockfish.stop();
+  }
+
+  // Pilih posisi review (indeks 0 = awal, N = akhir). null = live.
+  function setReview(ply: number | null) {
+    if (ply === null) {
+      reviewPly.value = null;
+      return;
+    }
+    if (!analysis.value) return;
+    const max = analysis.value.evals.length - 1;
+    reviewPly.value = Math.max(0, Math.min(max, ply));
+    clearSelection();
+  }
+
+  // Nyalakan/matikan eval bar. Menyalakan di mode lokal butuh load
+  // engine dulu (download ~99 MB di load pertama).
+  async function toggleEvalBar() {
+    if (evalBarEnabled.value) {
+      evalBarEnabled.value = false;
+      liveEvalCp.value = null;
+      return;
+    }
+    try {
+      stockfish.onProgress = (p) => {
+        engineProgress.value = p;
+      };
+      stockfish.onStatusChange = (s) => {
+        engineStatus.value = s;
+      };
+      await stockfish.load();
+      evalBarEnabled.value = true;
+      void refreshLiveEval();
+    } catch (e) {
+      engineError.value =
+        e instanceof Error ? e.message : "Engine gagal dimuat.";
+    }
+  }
+
   function flip() {
     orientation.value = orientation.value === "w" ? "b" : "w";
   }
@@ -389,6 +599,8 @@ export const useChessStore = defineStore("chess", () => {
     inCheck,
     result,
     lastMove,
+    displayFen,
+    displayLastMove,
     boardMap,
     checkSquare,
     moveList,
@@ -401,6 +613,13 @@ export const useChessStore = defineStore("chess", () => {
     hintMove,
     botColor,
     isBotTurn,
+    analysisStatus,
+    analysisProgress,
+    analysis,
+    analysisError,
+    reviewPly,
+    liveEvalCp,
+    evalBarEnabled,
     newLocalGame,
     newBotGame,
     toSetup,
@@ -412,5 +631,9 @@ export const useChessStore = defineStore("chess", () => {
     resign,
     flip,
     hint,
+    startAnalysis,
+    cancelAnalysis,
+    setReview,
+    toggleEvalBar,
   };
 });
