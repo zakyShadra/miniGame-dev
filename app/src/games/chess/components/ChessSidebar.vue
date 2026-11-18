@@ -126,7 +126,7 @@ watch(
         class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
         @click="store.toggleEvalBar()"
       >
-        Eval bar {{ store.evalBarEnabled ? "nyala" : "mati" }}
+        Eval {{ store.evalBarEnabled ? "nyala" : "mati" }}
       </button>
       <button
         v-if="store.phase === 'playing'"
