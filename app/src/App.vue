@@ -1,15 +1,35 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useGameStore } from "./stores/game";
 import { useRoomStore } from "./stores/room";
 import BoardCanvas from "./components/BoardCanvas.vue";
+import ChatBox from "./components/ChatBox.vue";
 import GameHeader from "./components/GameHeader.vue";
 import LobbyPanel from "./components/LobbyPanel.vue";
+import PlayerList from "./components/PlayerList.vue";
 import RoomPanel from "./components/RoomPanel.vue";
 
 const store = useGameStore();
 const room = useRoomStore();
 const inRoom = computed(() => room.status === "connected");
+
+// Rail kanan (pemain + chat): selalu terlihat di desktop (lg+), di HP
+// jadi bottom sheet yang dibuka lewat tombol Chat. Pesan yang datang
+// saat sheet tertutup menaikkan badge belum dibaca.
+const railOpen = ref(false);
+const unread = ref(0);
+
+watch(
+  () => room.messages.length,
+  (n, old) => {
+    if (n > (old ?? 0) && !railOpen.value) unread.value += n - (old ?? 0);
+  },
+);
+
+function toggleRail() {
+  railOpen.value = !railOpen.value;
+  if (railOpen.value) unread.value = 0;
+}
 
 const timer = computed(() => {
   const s = store.elapsedSeconds;
@@ -48,9 +68,61 @@ async function playAgainSame() {
   </div>
   <div v-else class="flex h-screen flex-col">
     <GameHeader />
-    <main class="min-h-0 flex-1">
-      <BoardCanvas />
-    </main>
+    <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <main class="relative min-h-0 flex-1">
+        <BoardCanvas />
+        <button
+          v-if="inRoom"
+          type="button"
+          class="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-surface-1 px-4 py-2.5 text-sm font-semibold text-ink shadow-md lg:hidden"
+          @click="toggleRail"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+          Chat
+          <span
+            v-if="unread > 0"
+            class="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-white"
+          >
+            {{ unread }}
+          </span>
+        </button>
+      </main>
+      <aside
+        v-if="inRoom"
+        class="hidden min-h-0 w-80 shrink-0 flex-col border-l border-hairline bg-surface-1 lg:flex"
+      >
+        <div class="border-b border-hairline p-3">
+          <h2 class="text-xs font-bold tracking-wide text-muted uppercase">
+            Pemain
+          </h2>
+          <PlayerList class="mt-2" />
+        </div>
+        <ChatBox />
+      </aside>
+    </div>
+    <div
+      v-if="railOpen"
+      class="fixed inset-0 z-30 bg-ink/30 lg:hidden"
+      @click="railOpen = false"
+    />
+    <div
+      v-if="railOpen"
+      class="fixed inset-x-0 bottom-0 z-40 flex max-h-[65vh] flex-col rounded-t-2xl bg-surface-1 shadow-lg lg:hidden"
+    >
+      <div
+        class="flex items-center justify-between border-b border-hairline p-3"
+      >
+        <PlayerList />
+        <button
+          type="button"
+          class="rounded-full px-3 py-1.5 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-ink"
+          @click="railOpen = false"
+        >
+          Tutup
+        </button>
+      </div>
+      <ChatBox />
+    </div>
   </div>
 
   <div

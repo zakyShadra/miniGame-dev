@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { useGameStore } from "../stores/game";
 import { useRoomStore } from "../stores/room";
-import PlayerList from "./PlayerList.vue";
 
 const store = useGameStore();
 const room = useRoomStore();
@@ -74,7 +73,6 @@ function copyLink() {
       >
         {{ copied ? "Link tersalin!" : "Salin link" }}
       </button>
-      <PlayerList />
     </div>
   </header>
 </template>
