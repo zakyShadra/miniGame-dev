@@ -1,0 +1,21 @@
+{
+  "name": "puzzle-game",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --workspace=app",
+    "dev": "npm run dev --workspace=app",
+    "party:deploy": "npm run deploy --workspace=party",
+    "party:dev": "npm run dev --workspace=party",
+    "preview": "npm run preview --workspace=app"
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "workspaces": [
+    "app",
+    "party"
+  ],
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261117.1": true
+  }
+}
