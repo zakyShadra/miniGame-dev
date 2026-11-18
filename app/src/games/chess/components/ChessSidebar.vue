@@ -3,6 +3,7 @@ tombol kontrol. Dipakai mode lokal dan bot. -->
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import { useChessStore } from "../stores/chess";
+import { BOT_LEVELS } from "../lib/levels";
 import { pieceUrl } from "../lib/pieces";
 
 const store = useChessStore();
@@ -22,6 +23,18 @@ watch(
   <div class="flex min-h-0 flex-col gap-4">
     <div class="rounded-2xl bg-surface-1 p-4 shadow-md">
       <p class="text-sm font-semibold text-ink">{{ store.statusText }}</p>
+      <p v-if="store.mode === 'bot'" class="mt-0.5 text-xs text-muted">
+        Bot:
+        {{ BOT_LEVELS.find((l) => l.id === store.botLevel)?.name }}
+        &middot; kamu
+        {{ store.humanColor === "w" ? "Putih" : "Hitam" }}
+      </p>
+      <p v-if="store.botThinking" class="mt-1 text-xs font-medium text-primary">
+        Bot berpikir...
+      </p>
+      <p v-if="store.engineError" class="mt-1 text-xs text-red-500">
+        {{ store.engineError }}
+      </p>
       <div class="mt-3 space-y-1.5 text-xs text-muted">
         <p class="flex flex-wrap items-center gap-1">
           <span class="font-semibold text-ink">Putih tangkap:</span>
@@ -84,6 +97,15 @@ watch(
     </div>
 
     <div class="flex flex-wrap gap-2">
+      <button
+        v-if="store.mode === 'bot'"
+        type="button"
+        :disabled="store.botThinking || store.isBotTurn"
+        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3 disabled:opacity-40"
+        @click="store.hint()"
+      >
+        Hint
+      </button>
       <button
         type="button"
         class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"

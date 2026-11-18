@@ -65,6 +65,15 @@ function isLastMove(sq: Square): boolean {
               v-if="isLastMove(squareAt(FILES.indexOf(file), rank))"
               class="absolute inset-0 bg-ochre/50"
             />
+            <!-- Highlight hint engine -->
+            <span
+              v-if="
+                store.hintMove &&
+                (store.hintMove.from === squareAt(FILES.indexOf(file), rank) ||
+                  store.hintMove.to === squareAt(FILES.indexOf(file), rank))
+              "
+              class="absolute inset-0 bg-mint/70"
+            />
             <!-- Highlight bidak terpilih -->
             <span
               v-if="
