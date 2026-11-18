@@ -86,6 +86,51 @@ export function pickGrid(
   return best;
 }
 
+// Grid "bagus": bukan strip (sisi terkecil minimal 3) dan piece-nya
+// tidak terlalu lonjong (aspek piece 0,6 - 1,67, simetris untuk
+// gambar landscape maupun portrait).
+export function isGoodGrid(
+  cols: number,
+  rows: number,
+  aspect: number,
+): boolean {
+  if (Math.min(cols, rows) < 3) return false;
+  const pieceAspect = (aspect * rows) / cols;
+  return pieceAspect >= 0.6 && pieceAspect <= 1.67;
+}
+
+export interface RoundedCount {
+  count: number;
+  cols: number;
+  rows: number;
+}
+
+// Bulatkan jumlah piece yang diminta ke angka terdekat yang punya grid
+// bagus. Dipakai untuk input custom (12-500): angka prima seperti 97
+// gridnya jelek (97x1), dibulatkan ke 98 (14x7). Preset 24/48/100/200
+// tidak berubah karena gridnya sudah bagus. Kalau dua angka sama
+// dekatnya, yang lebih besar yang menang.
+export function roundPieceCount(
+  requested: number,
+  imageW: number,
+  imageH: number,
+): RoundedCount {
+  const aspect = imageW / imageH;
+  const target = Math.min(500, Math.max(12, Math.round(requested)));
+  for (let delta = 0; delta <= 100; delta++) {
+    const candidates =
+      delta === 0 ? [target] : [target + delta, target - delta];
+    for (const n of candidates) {
+      if (n < 12 || n > 500) continue;
+      const { cols, rows } = pickGrid(n, aspect);
+      if (isGoodGrid(cols, rows, aspect)) return { count: n, cols, rows };
+    }
+  }
+  // Fallback (praktis tidak pernah terjadi di 12-500).
+  const { cols, rows } = pickGrid(target, aspect);
+  return { count: target, cols, rows };
+}
+
 export function cutPuzzle(
   imageW: number,
   imageH: number,
