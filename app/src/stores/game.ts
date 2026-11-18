@@ -2,7 +2,7 @@
 // Satu-satunya tempat yang mengubah posisi piece di M1.
 
 import { defineStore } from "pinia";
-import type { PieceState } from "../../../shared/types";
+import type { PieceState, RoomState } from "../../../shared/types";
 import { cutPuzzle, type CutResult } from "../../../shared/game/cutter";
 import {
   isSolved,
@@ -137,6 +137,59 @@ export const useGameStore = defineStore("game", {
         this.status = "won";
         this.stopTimer();
       }
+    },
+
+    // Multiplayer (M2): muat state room dari server. Cut dihitung lokal
+    // dari seed (deterministik, sama persis dengan server); posisi piece
+    // pakai data server apa adanya, jangan di-scatter ulang.
+    loadRoomState(state: RoomState) {
+      this.stopTimer();
+      this.imageUrl = state.imageUrl;
+      this.imageName = state.imageName;
+      this.imageW = state.imageW;
+      this.imageH = state.imageH;
+      this.pieceCount = state.pieceCount;
+      this.seed = state.seed;
+      this.cut = cutPuzzle(
+        state.imageW,
+        state.imageH,
+        state.pieceCount,
+        state.seed,
+      );
+      this.pieces = state.pieces.map((p) => ({ ...p }));
+      this.scattered = true;
+      this.selectedId = null;
+      this.startedAt = state.startedAt;
+      this.elapsedMs = state.solvedAt
+        ? state.solvedAt - state.startedAt
+        : Date.now() - state.startedAt;
+      this.status = state.solvedAt ? "won" : "playing";
+      if (!state.solvedAt) this.startTimer();
+    },
+
+    // Terapkan posisi/status piece dari server (broadcast pemain lain
+    // atau posisi akhir drop yang sudah di-snap server).
+    applyRemotePiece(piece: PieceState) {
+      const local = this.pieces.find((p) => p.id === piece.id);
+      if (!local) return;
+      local.x = piece.x;
+      local.y = piece.y;
+      local.placed = piece.placed;
+      local.lockedBy = piece.lockedBy;
+      local.lockedAt = piece.lockedAt;
+    },
+
+    applyRemoteLock(pieceId: number, playerId: string | null) {
+      const local = this.pieces.find((p) => p.id === pieceId);
+      if (!local) return;
+      local.lockedBy = playerId;
+      local.lockedAt = playerId ? Date.now() : null;
+    },
+
+    markSolved(at: number) {
+      this.status = "won";
+      this.stopTimer();
+      if (this.startedAt > 0) this.elapsedMs = at - this.startedAt;
     },
 
     backToLobby() {
