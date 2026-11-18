@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 8 commit di-push |
 | M1 Mesin jigsaw (single player) | ✅ selesai | 2026-11-18 | Mesin jigsaw + board + lobby terverifikasi (screenshot QA); 6 commit di-push |
-| M2 Room dan realtime multiplayer | ⏳ belum mulai | - | - |
+| M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
 | M3 Chat dan polish UX | ⏳ belum mulai | - | - |
 | M4 Galeri dan upload gambar | ⏳ belum mulai | - | - |
 | M5 Deploy, share, CV | ⏳ belum mulai | - | - |
@@ -148,6 +148,18 @@ piece dibuat); scatter strip empat sisi gantikan grid + keep-out
 target); hook QA dev-only `?autostart=1&pieces=N&solve=1` di LobbyPanel.
 
 ## M2 - Room dan realtime multiplayer
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: tes integrasi 22/22
+lolos lawan wrangler dev lokal DAN worker live (create/join, cursor,
+drag lock + grab-denied, move tanpa echo, drop + snap server, lepas
+lock saat disconnect, persistensi SQLite, error room tidak ada);
+screenshot QA lobby dua kartu rapi; deploy live
+(https://puzzle-game-avl.pages.dev/ +
+https://puzzle-game-party.zakyshadra.workers.dev).
+Catatan: board logis tetap 1280x800 (posisi piece konsisten di semua
+layar); logika game pindah ke shared/game/ supaya server dan client
+pakai cut + scatter + snap yang identik; layout watcher BoardCanvas
+harus immediate (layout tidak lagi bergantung ukuran container).
 
 Tujuan: dua orang bisa susun puzzle yang sama bareng-bareng, real-time.
 
