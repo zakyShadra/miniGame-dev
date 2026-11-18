@@ -236,6 +236,14 @@ watch(
         Menyerah
       </button>
       <button
+        v-if="store.phase === 'over' && !store.endModalVisible"
+        type="button"
+        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+        @click="store.showEndModal()"
+      >
+        Lihat hasil
+      </button>
+      <button
         type="button"
         class="flex-1 rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
         @click="store.toSetup()"

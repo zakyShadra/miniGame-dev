@@ -11,6 +11,7 @@ import type { Color, PieceSymbol, Square } from "chess.js";
 import { useChessStore } from "../stores/chess";
 import { FILES, isLightSquare, pieceUrl } from "../lib/pieces";
 import { CLASSIFICATION_META } from "../lib/analysis";
+import GameEndModal from "./GameEndModal.vue";
 
 const store = useChessStore();
 
@@ -299,6 +300,43 @@ function reviewEffectClass(): string {
       return "";
   }
 }
+
+// ---- Badge akhir game di raja (tugas 5, ala chess.com) ----
+// Skakmat/menyerah: badge merah (mahkota hitam) di raja kalah,
+// hijau (mahkota putih) di raja menang. Remis: pill "Draw" di
+// kedua raja, raja Putih "Draw 1/2". Badge hanya di petak akhir
+// (store.showEndBadges), bukan saat review posisi lama.
+function endBadgeKind(
+  p: DisplayedPiece,
+): "loser" | "winner" | "draw" | null {
+  if (
+    !store.showEndBadges ||
+    !store.gameEnd ||
+    p.type !== "k" ||
+    p.leaving
+  ) {
+    return null;
+  }
+  const end = store.gameEnd;
+  if (end.winner === null) return "draw";
+  const loser: Color = end.winner === "w" ? "b" : "w";
+  if (p.color === loser && p.square === store.kingSquares[loser]) {
+    return "loser";
+  }
+  if (p.color === end.winner && p.square === store.kingSquares[end.winner]) {
+    return "winner";
+  }
+  return null;
+}
+
+// Denyut skak dimatikan di petak raja skakmat (posisi akhir): petak
+// tetap warna normal, badge merah yang menyampaikan skakmat.
+function isCheckPulse(sq: Square): boolean {
+  if (store.checkSquare !== sq) return false;
+  return !(
+    store.showEndBadges && store.gameEnd?.kind === "checkmate"
+  );
+}
 </script>
 
 <template>
@@ -378,10 +416,11 @@ function reviewEffectClass(): string {
                 "
                 class="absolute inset-0 bg-primary/60"
               />
-              <!-- Highlight raja kena skak (berdenyut merah) -->
+              <!-- Highlight raja kena skak (berdenyut merah). Mati di
+              petak raja skakmat: badge merah menggantikannya. -->
               <span
                 v-if="
-                  store.checkSquare === squareAt(FILES.indexOf(file), rank)
+                  isCheckPulse(squareAt(FILES.indexOf(file), rank))
                 "
                 class="check-pulse absolute inset-0"
                 style="
@@ -474,6 +513,30 @@ function reviewEffectClass(): string {
             }"
             >{{ CLASSIFICATION_META[reviewClass].symbol }}</span
           >
+          <!-- Badge akhir game di raja: merah (kalah) / hijau
+          (menang) / pill Draw (remis). -->
+          <span
+            v-if="endBadgeKind(p) === 'loser'"
+            :data-testid="
+              store.gameEnd?.kind === 'checkmate'
+                ? 'king-badge-mated'
+                : 'king-badge-loser'
+            "
+            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-red-500 text-[13px] leading-none text-black shadow-md ring-2 ring-white/90"
+            >♚</span
+          >
+          <span
+            v-else-if="endBadgeKind(p) === 'winner'"
+            data-testid="king-badge-winner"
+            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-green-500 text-[13px] leading-none text-white shadow-md ring-2 ring-white/90"
+            >♔</span
+          >
+          <span
+            v-else-if="endBadgeKind(p) === 'draw'"
+            data-testid="king-badge-draw"
+            class="badge-pop absolute top-0 right-0 flex h-[30%] min-h-[16px] items-center justify-center rounded-full bg-zinc-600 px-1 text-[9px] leading-none font-bold whitespace-nowrap text-white shadow-md ring-2 ring-white/90"
+            >{{ p.color === "w" ? "Draw 1/2" : "Draw" }}</span
+          >
         </div>
       </div>
 
@@ -499,6 +562,9 @@ function reviewEffectClass(): string {
           </button>
         </div>
       </div>
+
+      <!-- Modal hasil game (tengah papan, tanpa dimming). -->
+      <GameEndModal />
     </div>
 
     <!-- Label klasifikasi langkah yang di-review -->
