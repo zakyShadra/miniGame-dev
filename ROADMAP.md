@@ -15,7 +15,8 @@
 | M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
 | M3 Chat dan polish UX | ✅ selesai | 2026-11-18 | Chat + pesan sistem, timer via jam server, Rapikan, suara snap + mute, rail responsif; tes integrasi 14/14 (lokal + live); audit di docs/ui-audit-m3.md; 11 commit di-push |
 | M4 Galeri dan upload gambar | ✅ selesai | 2026-11-18 | 6 preset, upload + kompres client, gambar di KV (bukan R2), ganti gambar host, piece custom 12-500 + pembulatan grid; tes WS 10/10 + cutter 14/14 (lokal + live); 8 commit di-push |
-| M5 Deploy, share, CV | ⏳ belum mulai | - | - |
+| M5 Piece grouping | 🔨 jalan | - | - |
+| M6 Deploy, share, CV | ⏳ belum mulai | - | - |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
 
@@ -282,7 +283,47 @@ Selesai kalau:
 - Jumlah piece custom jalan (misalnya 60 dan 150 piece, grid rapi,
   jumlah akhir yang dipakai ditampilkan kalau dibulatkan).
 
-## M5 - Deploy, share, CV
+## M5 - Piece grouping
+
+Tujuan: piece yang sudah benar-benar bersebelahan menempel jadi satu
+kelompok yang bisa digeser bareng, tanpa membuat game jadi terlalu mudah
+(permintaan Zaky 2026-11-18).
+
+Masuk scope:
+
+- `groupId` di PieceState (shared, server authoritative, tersimpan di
+  DO SQLite sebagai bagian dari JSON RoomState, tanpa ubah skema tabel).
+- Grouping HANYA saat drop: tetangga grid (atas/bawah/kiri/kanan) yang
+  offset relatifnya sudah pas (dalam snapTolerance) bergabung; union
+  transitif (fixpoint), grup tidak pernah pecah sampai terpasang.
+- Drag anggota grup menggerakkan semua anggota dengan delta yang sama;
+  grab mengunci seluruh grup; move server meng-update semua anggota
+  (broadcast piece-moved per anggota).
+- Snap grup: anggota yang di-drop masuk toleransi targetnya, seluruh
+  anggota snap ke posisi solved masing-masing dan menjadi placed.
+- Single-player dan multiplayer pakai logika yang sama (shared/game).
+- Rapikan (sort) membubarkan grup: piece yang di-scatter ulang
+  kehilangan groupId (kalau tidak, anggota yang terpencar tetap
+  bergerak bersama).
+
+Tidak masuk scope: magnet/preview/highlight saat drag, petunjuk visual
+tetangga yang benar, suara grouping, PWA, voice/video.
+
+File kunci: `shared/types.ts`, `shared/game/engine.ts` (tryGroup,
+trySnapGroup, groupMembers), `app/src/stores/game.ts`,
+`app/src/components/BoardCanvas.vue`, `party/src/server.ts`
+(grab/move/drop grup).
+
+Selesai kalau:
+
+- Dua piece tetangga yang posisinya pas jadi satu grup saat drop;
+  tetangga yang posisinya salah TIDAK jadi grup (tes unit).
+- Drag anggota grup menggerakkan semua anggota; drop + snap grup
+  tersinkron ke pemain lain (tes integrasi WS).
+- Grup tidak terbentuk saat drag (tidak ada magnet/preview).
+- Screenshot QA board dengan kelompok piece rapi.
+
+## M6 - Deploy, share, CV
 
 Tujuan: game live di URL publik dan siap dipajang di CV.
 
@@ -309,7 +350,6 @@ Selesai kalau:
 
 ## Backlog (v2, bukan sekarang)
 
-- Grup piece (geser beberapa piece sekaligus).
 - Voice/video embed (Jitsi) di dalam room.
 - PWA (install ke HP).
 - Riwayat room + akun (login).
