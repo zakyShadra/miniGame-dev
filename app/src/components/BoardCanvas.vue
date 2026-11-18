@@ -457,7 +457,7 @@ onUnmounted(() => {
       </p>
     </div>
     <div
-      class="absolute right-3 bottom-3 flex items-center gap-1 rounded-full bg-surface-1 p-1 shadow-md"
+      class="absolute top-3 right-3 flex flex-col items-center gap-1 rounded-full bg-surface-1 p-1 shadow-md sm:top-auto sm:right-3 sm:bottom-3 sm:flex-row"
     >
       <button
         type="button"
@@ -478,7 +478,7 @@ onUnmounted(() => {
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
       </button>
-      <span class="mx-1 h-5 w-px bg-hairline" />
+      <span class="my-1 h-px w-5 bg-hairline sm:mx-1 sm:my-0 sm:h-5 sm:w-px" />
       <button
         type="button"
         class="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-surface-3"
@@ -499,7 +499,7 @@ onUnmounted(() => {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
         <span class="hidden sm:inline">Preview</span>
       </button>
-      <span class="mx-1 h-5 w-px bg-hairline" />
+      <span class="my-1 h-px w-5 bg-hairline sm:mx-1 sm:my-0 sm:h-5 sm:w-px" />
       <button
         type="button"
         class="flex h-8 items-center gap-1 rounded-full px-2 text-xs font-semibold text-ink hover:bg-surface-3"
