@@ -28,25 +28,27 @@ defineEmits<{ exit: [] }>();
   </div>
   <div v-else class="flex min-h-screen flex-col">
     <header
-      class="flex items-center gap-3 border-b border-hairline bg-surface-1 px-4 py-3"
+      class="flex items-center gap-2 border-b border-hairline bg-surface-1 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3"
     >
       <button
         type="button"
-        class="rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink"
+        class="shrink-0 rounded-full px-2 py-1.5 text-xs font-semibold text-muted transition hover:bg-surface-2 hover:text-ink sm:px-3 sm:text-sm"
         @click="$emit('exit')"
       >
         &larr; Lobby
       </button>
-      <h1 class="flex items-center gap-2 font-display text-xl font-bold text-ink">
-        <img src="/pieces/wN.svg" alt="" class="h-6 w-6" />
-        Catur
+      <h1
+        class="flex min-w-0 items-center gap-2 font-display text-lg font-bold text-ink sm:text-xl"
+      >
+        <img src="/pieces/wN.svg" alt="" class="h-5 w-5 shrink-0 sm:h-6 sm:w-6" />
+        <span class="truncate">Catur</span>
       </h1>
-      <span class="ml-auto text-sm font-medium text-muted">
+      <span class="ml-auto shrink-0 text-xs font-medium whitespace-nowrap text-muted sm:text-sm">
         {{ store.mode === "bot" ? "Lawan bot" : "2 pemain" }}
       </span>
     </header>
     <div
-      class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4 lg:flex-row"
+      class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row"
     >
       <main class="flex w-full max-w-[560px] shrink-0 gap-2 self-center lg:self-start">
         <EvalBar

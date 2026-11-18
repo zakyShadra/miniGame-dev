@@ -43,8 +43,8 @@ watch(
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-col gap-4">
-    <div class="rounded-2xl bg-surface-1 p-4 shadow-md">
+  <div class="flex min-h-0 flex-col gap-3 sm:gap-4">
+    <div class="rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4">
       <p class="text-sm font-semibold text-ink">{{ store.statusText }}</p>
       <p v-if="store.mode === 'bot'" class="mt-0.5 text-xs text-muted">
         Bot:
@@ -90,13 +90,13 @@ watch(
       </div>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface-1 p-4 shadow-md">
+    <div class="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4">
       <h2 class="text-xs font-bold tracking-wide text-muted uppercase">
         Langkah
       </h2>
       <div
         ref="listRef"
-        class="mt-2 max-h-56 min-h-0 flex-1 overflow-y-auto pr-1 lg:max-h-none"
+        class="mt-2 min-h-24 flex-1 overflow-y-auto pr-1"
       >
         <p v-if="store.moveList.length === 0" class="text-sm text-subtle">
           Belum ada langkah. Putih jalan dulu.
