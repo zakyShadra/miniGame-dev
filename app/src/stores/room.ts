@@ -166,6 +166,11 @@ export const useRoomStore = defineStore("room", () => {
     code.value = roomCode.toUpperCase();
     myName.value = opts.name;
     myColor.value = opts.color;
+    try {
+      history.replaceState(null, "", `/?room=${code.value}`);
+    } catch {
+      // Bukan browser: abaikan.
+    }
     status.value = "connecting";
     error.value = "";
     joined = false;
@@ -205,6 +210,17 @@ export const useRoomStore = defineStore("room", () => {
     error.value = "";
     joined = false;
     createConfig = null;
+    try {
+      history.replaceState(null, "", "/");
+    } catch {
+      // Bukan browser: abaikan.
+    }
+  }
+
+  // Keluar dari game (single atau multiplayer): putus room + reset game.
+  function leaveGame() {
+    disconnect();
+    useGameStore().backToLobby();
   }
 
   // Cursor: kirim maks ~30/detik.
@@ -243,6 +259,7 @@ export const useRoomStore = defineStore("room", () => {
     grabDenied,
     connect,
     disconnect,
+    leaveGame,
     sendCursor,
     sendGrab,
     sendMove,

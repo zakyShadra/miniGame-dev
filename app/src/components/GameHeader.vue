@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useGameStore } from "../stores/game";
+import { useRoomStore } from "../stores/room";
+import PlayerList from "./PlayerList.vue";
 
 const store = useGameStore();
+const room = useRoomStore();
+const inRoom = computed(() => room.status === "connected");
+const copied = ref(false);
 
 const timer = computed(() => {
   const s = store.elapsedSeconds;
@@ -10,6 +15,19 @@ const timer = computed(() => {
   const sec = s % 60;
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 });
+
+function copyLink() {
+  const link = `${location.origin}/?room=${room.code}`;
+  navigator.clipboard
+    .writeText(link)
+    .then(() => {
+      copied.value = true;
+      setTimeout(() => (copied.value = false), 2000);
+    })
+    .catch(() => {
+      // Clipboard tidak tersedia: abaikan, kode room tetap terlihat.
+    });
+}
 </script>
 
 <template>
@@ -19,7 +37,7 @@ const timer = computed(() => {
     <button
       type="button"
       class="rounded-full px-3 py-1.5 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-ink"
-      @click="store.backToLobby()"
+      @click="room.leaveGame()"
     >
       &larr; Lobby
     </button>
@@ -40,5 +58,23 @@ const timer = computed(() => {
     <span class="ml-auto text-base font-bold text-ink tabular-nums sm:ml-0">
       {{ timer }}
     </span>
+    <div
+      v-if="inRoom"
+      class="flex w-full flex-wrap items-center gap-2 border-t border-hairline pt-2"
+    >
+      <span
+        class="rounded-full bg-surface-2 px-3 py-1 text-xs font-bold tracking-[0.15em] text-body tabular-nums"
+      >
+        Room {{ room.code }}
+      </span>
+      <button
+        type="button"
+        class="rounded-full bg-surface-2 px-3 py-1 text-xs font-semibold text-body transition hover:bg-surface-3"
+        @click="copyLink"
+      >
+        {{ copied ? "Link tersalin!" : "Salin link" }}
+      </button>
+      <PlayerList />
+    </div>
   </header>
 </template>

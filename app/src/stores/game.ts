@@ -41,6 +41,9 @@ function loadImageSize(url: string): Promise<{ w: number; h: number }> {
 export const useGameStore = defineStore("game", {
   state: () => ({
     status: "lobby" as GameStatus,
+    // Pilihan di lobby (dipakai single-player dan create room).
+    selectedImage: PRESET_IMAGES[0]! as PresetImage,
+    selectedCount: 24,
     imageUrl: "",
     imageName: "",
     imageW: 0,

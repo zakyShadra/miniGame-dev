@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useGameStore } from "./stores/game";
+import { useRoomStore } from "./stores/room";
 import BoardCanvas from "./components/BoardCanvas.vue";
 import GameHeader from "./components/GameHeader.vue";
 import LobbyPanel from "./components/LobbyPanel.vue";
+import RoomPanel from "./components/RoomPanel.vue";
 
 const store = useGameStore();
+const room = useRoomStore();
+const inRoom = computed(() => room.status === "connected");
 
 const timer = computed(() => {
   const s = store.elapsedSeconds;
@@ -35,7 +39,13 @@ async function playAgainSame() {
 </script>
 
 <template>
-  <LobbyPanel v-if="store.status === 'lobby'" />
+  <div
+    v-if="store.status === 'lobby'"
+    class="flex min-h-screen flex-wrap content-center items-start justify-center gap-4 p-4"
+  >
+    <LobbyPanel />
+    <RoomPanel />
+  </div>
   <div v-else class="flex h-screen flex-col">
     <GameHeader />
     <main class="min-h-0 flex-1">
@@ -76,11 +86,12 @@ async function playAgainSame() {
         <button
           type="button"
           class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink hover:bg-surface-3"
-          @click="store.backToLobby()"
+          @click="room.leaveGame()"
         >
           Lobby
         </button>
         <button
+          v-if="!inRoom"
           type="button"
           class="flex-1 rounded-full bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary-hover"
           @click="playAgainSame"
@@ -88,6 +99,9 @@ async function playAgainSame() {
           Main lagi
         </button>
       </div>
+      <p v-if="inRoom" class="mt-3 text-xs text-subtle">
+        Buat room baru dari lobby untuk main lagi.
+      </p>
     </div>
   </div>
 </template>
