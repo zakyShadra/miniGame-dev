@@ -6,8 +6,50 @@ import { computed } from "vue";
 import type { PieceSymbol, Square } from "chess.js";
 import { useChessStore } from "../stores/chess";
 import { FILES, isLightSquare, pieceUrl } from "../lib/pieces";
+import { CLASSIFICATION_META } from "../lib/analysis";
 
 const store = useChessStore();
+
+// Langkah yang sedang di-review (null kalau tidak review).
+const reviewMove = computed(() => {
+  if (store.reviewPly === null || !store.analysis) return null;
+  const ply = store.reviewPly - 1;
+  return ply >= 0 ? store.analysis.moves[ply] ?? null : null;
+});
+const reviewClass = computed(() => reviewMove.value?.classification ?? null);
+
+// Efek glow di petak tujuan langkah yang di-review, warnanya ikut
+// klasifikasi langkah (teal Brilliant, hijau Best, merah Blunder,
+// oranye Mistake, kuning Inaccuracy). Null kalau petak ini bukan
+// tujuan review.
+function reviewEffectStyle(sq: Square): Record<string, string> | null {
+  const c = reviewClass.value;
+  const lm = store.displayLastMove;
+  if (!c || !lm || lm.to !== sq || store.reviewPly === null) return null;
+  const color = CLASSIFICATION_META[c].color;
+  return {
+    boxShadow: `inset 0 0 0 3px ${color}, inset 0 0 22px ${color}66`,
+    backgroundColor: `${color}26`,
+  };
+}
+
+// Jenis animasi glow per klasifikasi: Brilliant/Best berdenyut,
+// Blunder berkedip cepat, Mistake/Inaccuracy berdenyut pelan,
+// Excellent/Good diam (tint saja).
+function reviewEffectClass(): string {
+  switch (reviewClass.value) {
+    case "brilliant":
+    case "best":
+      return "review-pulse";
+    case "blunder":
+      return "review-flash";
+    case "mistake":
+    case "inaccuracy":
+      return "review-pulse-slow";
+    default:
+      return "";
+  }
+}
 
 const PROMOTION_PIECES: PieceSymbol[] = ["q", "r", "b", "n"];
 
@@ -65,6 +107,26 @@ function isLastMove(sq: Square): boolean {
               v-if="isLastMove(squareAt(FILES.indexOf(file), rank))"
               class="absolute inset-0 bg-ochre/50"
             />
+            <!-- Efek klasifikasi saat review langkah -->
+            <template v-if="reviewEffectStyle(squareAt(FILES.indexOf(file), rank))">
+              <span
+                class="absolute inset-0"
+                :class="reviewEffectClass()"
+                :style="reviewEffectStyle(squareAt(FILES.indexOf(file), rank))"
+              />
+              <!-- Kilau Brilliant: tiga berlian kecil berkelip -->
+              <template v-if="reviewClass === 'brilliant'">
+                <span class="sparkle" style="top: 12%; left: 14%" />
+                <span
+                  class="sparkle"
+                  style="top: 16%; right: 12%; animation-delay: 0.3s"
+                />
+                <span
+                  class="sparkle"
+                  style="bottom: 14%; left: 44%; animation-delay: 0.6s"
+                />
+              </template>
+            </template>
             <!-- Highlight hint engine -->
             <span
               v-if="
@@ -154,6 +216,21 @@ function isLastMove(sq: Square): boolean {
       </template>
     </div>
 
+    <!-- Label klasifikasi langkah yang di-review -->
+    <div
+      v-if="reviewMove"
+      class="pointer-events-none absolute -top-1 left-2 z-20 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold text-white shadow-md"
+      :style="{
+        backgroundColor: CLASSIFICATION_META[reviewMove.classification].color,
+      }"
+    >
+      <span
+        v-if="CLASSIFICATION_META[reviewMove.classification].symbol"
+        >{{ CLASSIFICATION_META[reviewMove.classification].symbol }}</span
+      >
+      <span>{{ CLASSIFICATION_META[reviewMove.classification].label }}</span>
+    </div>
+
     <!-- Pilih promosi saat pion sampai baris terakhir -->
     <div
       v-if="store.promotionPending"
@@ -178,3 +255,57 @@ function isLastMove(sq: Square): boolean {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Denyut glow review (Brilliant/Best) dan versi pelannya. */
+@keyframes review-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.review-pulse {
+  animation: review-pulse 1.4s ease-in-out infinite;
+}
+.review-pulse-slow {
+  animation: review-pulse 2s ease-in-out infinite;
+}
+/* Kedip cepat Blunder. */
+@keyframes review-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.review-flash {
+  animation: review-flash 0.9s ease-in-out infinite;
+}
+/* Berlian kilau Brilliant. */
+.sparkle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #06b6d4;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  box-shadow: 0 0 6px #06b6d4;
+  animation: sparkle-twinkle 1.1s ease-in-out infinite;
+}
+@keyframes sparkle-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: rotate(45deg) scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1.15);
+  }
+}
+</style>
