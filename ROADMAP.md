@@ -15,7 +15,7 @@
 | M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
 | M3 Chat dan polish UX | ✅ selesai | 2026-11-18 | Chat + pesan sistem, timer via jam server, Rapikan, suara snap + mute, rail responsif; tes integrasi 14/14 (lokal + live); audit di docs/ui-audit-m3.md; 11 commit di-push |
 | M4 Galeri dan upload gambar | ✅ selesai | 2026-11-18 | 6 preset, upload + kompres client, gambar di KV (bukan R2), ganti gambar host, piece custom 12-500 + pembulatan grid; tes WS 10/10 + cutter 14/14 (lokal + live); 8 commit di-push |
-| M5 Piece grouping | 🔨 jalan | - | - |
+| M5 Piece grouping | ✅ selesai | 2026-11-18 | Grouping drop-only + snap grup, server authoritative; tes unit 15/15, WS 15/15 (lokal + live), QA browser 3/3 + screenshot; 6 commit di-push |
 | M6 Deploy, share, CV | ⏳ belum mulai | - | - |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
@@ -284,6 +284,19 @@ Selesai kalau:
   jumlah akhir yang dipakai ditampilkan kalau dibulatkan).
 
 ## M5 - Piece grouping
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: tes unit grouping 15/15
+(tetangga benar jadi grup, offset salah/diagonal tidak, rantai
+transitif, gabung dua grup, snap grup, placed tidak ikut, data lama
+tanpa groupId); tes integrasi WS 15/15 lawan wrangler dev lokal DAN
+worker live (grup terbentuk saat drop, grab mengunci grup, drag grup
+tersinkron, snap grup, grab-denied anggota grup, sort membubarkan
+grup, groupId tersimpan di SQLite); QA browser Playwright 3/3
+(blok 2x2 satu groupId, drag menggerakkan keempat piece bersama)
++ screenshot m5-group-2x2.png dan m5-group-dragged.png.
+Catatan: grouping HANYA saat drop (tanpa magnet/preview); Rapikan
+membubarkan grup; trySnap dihapus (diganti trySnapGroup); hook QA
+dev-only ?groupdemo=1 di LobbyPanel + window.__puzzleGame.
 
 Tujuan: piece yang sudah benar-benar bersebelahan menempel jadi satu
 kelompok yang bisa digeser bareng, tanpa membuat game jadi terlalu mudah
