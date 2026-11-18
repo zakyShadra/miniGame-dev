@@ -1,11 +1,13 @@
-<!-- Panel analisa pasca-game (C3): tombol mulai, progress,
-akurasi + hitungan klasifikasi per pemain, grafik evaluasi,
-dan daftar langkah dengan simbol. Klik langkah = review posisi
-di papan + best line engine. -->
+<!-- Panel analisa pasca-game (C3, round 2: dua mode + progresif):
+tombol pilih mode, progress, akurasi + hitungan klasifikasi per
+pemain, grafik evaluasi, dan daftar langkah dengan simbol. Hasil
+mengalir per langkah selama analisa berjalan. Klik langkah =
+review posisi di papan + best line engine. -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useChessStore } from "../stores/chess";
 import {
+  ANALYSIS_MODES,
   CLASSIFICATION_META,
   type Classification,
 } from "../lib/analysis";
@@ -63,18 +65,32 @@ const progressPct = computed(() => {
   <div class="mt-4 border-t border-hairline pt-4">
     <h3 class="text-sm font-semibold text-ink">Analisa</h3>
 
-    <!-- Belum ada analisa -->
+    <!-- Belum ada analisa: pilih mode -->
     <template v-if="store.analysisStatus === 'idle'">
       <p class="mt-1 text-xs text-muted">
-        Engine Stockfish menilai tiap langkah (depth 18): Brilliant,
-        Best, Inaccuracy, Mistake, Blunder, plus akurasi per pemain.
+        Engine Stockfish menilai tiap langkah: Brilliant, Best,
+        Inaccuracy, Mistake, Blunder, plus akurasi per pemain. Hasil
+        mengalir per langkah selama analisa berjalan.
       </p>
       <button
         type="button"
         class="mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
-        @click="store.startAnalysis()"
+        @click="store.startAnalysis('fast')"
       >
-        Analisa game
+        {{ ANALYSIS_MODES.fast.label }}
+        <span class="block text-[11px] font-normal opacity-90">
+          {{ ANALYSIS_MODES.fast.hint }}
+        </span>
+      </button>
+      <button
+        type="button"
+        class="mt-2 w-full rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+        @click="store.startAnalysis('thinking')"
+      >
+        {{ ANALYSIS_MODES.thinking.label }}
+        <span class="block text-[11px] font-normal text-muted">
+          {{ ANALYSIS_MODES.thinking.hint }}
+        </span>
       </button>
     </template>
 
@@ -101,7 +117,8 @@ const progressPct = computed(() => {
     <!-- Analisa berjalan -->
     <template v-else-if="store.analysisStatus === 'running'">
       <p class="mt-2 text-center text-xs text-muted">
-        Menganalisa posisi {{ store.analysisProgress.done }} dari
+        {{ ANALYSIS_MODES[store.analysisMode].label }}: menganalisa
+        posisi {{ store.analysisProgress.done }} dari
         {{ store.analysisProgress.total }} ({{ progressPct }}%)
       </p>
       <div class="mt-2 h-2 overflow-hidden rounded-full bg-surface-3">
@@ -119,20 +136,40 @@ const progressPct = computed(() => {
       </button>
     </template>
 
-    <!-- Analisa error -->
+    <!-- Analisa error: pilih mode lagi untuk coba ulang -->
     <template v-else-if="store.analysisStatus === 'error'">
       <p class="mt-2 text-xs text-red-500">{{ store.analysisError }}</p>
       <button
         type="button"
         class="mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
-        @click="store.startAnalysis()"
+        @click="store.startAnalysis('fast')"
       >
-        Coba lagi
+        {{ ANALYSIS_MODES.fast.label }}
+      </button>
+      <button
+        type="button"
+        class="mt-2 w-full rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+        @click="store.startAnalysis('thinking')"
+      >
+        {{ ANALYSIS_MODES.thinking.label }}
       </button>
     </template>
 
-    <!-- Analisa selesai -->
-    <template v-else-if="store.analysis && store.analysisStatus === 'done'">
+    <!-- Hasil analisa: tampil penuh saat selesai, tampil parsial
+    (mengalir per langkah) saat masih berjalan. -->
+    <template
+      v-if="
+        store.analysis &&
+        (store.analysisStatus === 'done' ||
+          store.analysisStatus === 'running')
+      "
+    >
+      <p class="mt-2 text-[11px] text-subtle">
+        Mode: {{ ANALYSIS_MODES[store.analysisMode].label }}
+        <template v-if="store.analysisStatus === 'running'">
+          &middot; masih menganalisa, angka bisa berubah
+        </template>
+      </p>
       <!-- Akurasi -->
       <div class="mt-2 grid grid-cols-2 gap-2 text-center">
         <div class="rounded-xl bg-surface-2 p-2">

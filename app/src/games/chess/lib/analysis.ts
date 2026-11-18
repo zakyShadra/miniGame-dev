@@ -1,11 +1,20 @@
 // Analisa game catur gaya lichess (C3).
 //
 // Cara kerja: engine Stockfish full mengevaluasi SEMUA posisi game
-// (posisi awal + setelah tiap langkah) di depth 18, multipv 2. Dari
-// dua evaluasi berurutan didapat cp loss tiap langkah, lalu
-// diklasifikasi ke 7 level. Semua skor engine relatif terhadap
-// giliran jalan di posisi itu; di sini diubah ke sudut pandang
-// si penggerak (buat cp loss) atau Putih (buat grafik eval bar).
+// (posisi awal + setelah tiap langkah), lalu dari dua evaluasi
+// berurutan didapat cp loss tiap langkah dan diklasifikasi ke 7
+// level. Semua skor engine relatif terhadap giliran jalan di posisi
+// itu; di sini diubah ke sudut pandang si penggerak (buat cp loss)
+// atau Putih (buat grafik eval bar).
+//
+// Dua mode (keputusan Zaky, round 2):
+// - Cepat (default): depth 16, multipv 1. ~3-5x lebih cepat dari
+//   Thinking; klasifikasi hampir sama, hanya langkah yang nilainya
+//   mepet threshold bisa geser kelas.
+// - Thinking: depth 18, multipv 2 (perilaku C3). Paling teliti.
+// Kedua mode menampilkan hasil PROGRESIF: tiap langkah yang selesai
+// dihitung langsung muncul di panel (tidak menunggu semua beres).
+// Cap movetime 5 detik/posisi dipertahankan di kedua mode.
 //
 // Threshold klasifikasi (centipawn loss, sudut pandang penggerak):
 // - Brilliant (!!): langkah terbaik engine + korban materi bersih
@@ -45,9 +54,27 @@ import { Chess, type Color, type PieceSymbol } from "chess.js";
 import { stockfish, type EngineScore } from "./engine";
 import { PIECE_VALUES } from "./pieces";
 
-export const ANALYSIS_DEPTH = 18;
-export const ANALYSIS_MULTIPV = 2;
-// Batas waktu per posisi (pengaman): depth 18 yang tercapai duluan
+export type AnalysisMode = "fast" | "thinking";
+
+// Konfigurasi engine per mode analisa.
+export const ANALYSIS_MODES: Record<
+  AnalysisMode,
+  { depth: number; multiPv: number; label: string; hint: string }
+> = {
+  fast: {
+    depth: 16,
+    multiPv: 1,
+    label: "Analisa Cepat",
+    hint: "Depth 16, hasil mengalir cepat",
+  },
+  thinking: {
+    depth: 18,
+    multiPv: 2,
+    label: "Thinking",
+    hint: "Depth 18 multipv 2, paling teliti",
+  },
+};
+// Batas waktu per posisi (pengaman): depth yang tercapai duluan
 // yang menang, tapi posisi rumit tidak boleh menggantung selamanya.
 const ANALYSIS_MOVETIME_MS = 5000;
 
@@ -235,30 +262,110 @@ function emptyCounts(): Record<Classification, number> {
   };
 }
 
+// Klasifikasi satu langkah dari dua evaluasi berurutan. Dipisah jadi
+// fungsi supaya bisa dipanggil langsung begitu evaluasi posisi
+// berikutnya tiba (hasil progresif), bukan menunggu semua posisi.
+function classifyMove(
+  move: { san: string; uci: string; color: Color },
+  ply: number,
+  before: PositionEval,
+  after: PositionEval,
+): AnalyzedMove {
+  const cpBeforeMover = scoreToCp(before.score, before.sideToMove, move.color);
+  const cpAfterMover = scoreToCp(after.score, after.sideToMove, move.color);
+  const isBest = move.uci === before.bestMove;
+  // Langkah terbaik engine = 0 loss. Selisih eval di sini hanya
+  // noise antar pencarian di posisi tajam.
+  const cpLoss = isBest ? 0 : Math.max(0, cpBeforeMover - cpAfterMover);
+  // Win% sebelum langkah = Win% eval posisi (sudah mengasumsikan
+  // langkah terbaik); Win% sesudah = Win% posisi hasil langkah.
+  const winBefore = cpToWinPercent(cpBeforeMover);
+  const winAfter = cpToWinPercent(cpAfterMover);
+  const winPercentLoss = isBest ? 0 : Math.max(0, winBefore - winAfter);
+  const acc = moveAccuracy(winPercentLoss);
+  // Korban materi: materi bersih si penggerak berkurang >= 200 cp
+  // akibat langkahnya sendiri (misal korban kuda ambil pion).
+  const sacrificed =
+    materialOf(after.fen, move.color) - materialOf(before.fen, move.color) <=
+    -200;
+  const onlyMove = legalMoveCount(before.fen) === 1;
+  return {
+    ply,
+    san: move.san,
+    uci: move.uci,
+    color: move.color,
+    cpLoss,
+    winPercentLoss,
+    moveAccuracy: acc,
+    classification: classify(
+      cpLoss,
+      isBest,
+      sacrificed,
+      onlyMove,
+      cpBeforeMover,
+      cpAfterMover,
+    ),
+    bestMoveSan: before.bestLineSan[0] ?? "",
+    bestLineSan: before.bestLineSan,
+    evalBeforeCpWhite: scoreToCp(before.score, before.sideToMove, "w"),
+    evalAfterCpWhite: scoreToCp(after.score, after.sideToMove, "w"),
+    fenAfter: after.fen,
+  };
+}
+
+export interface AnalyzeOptions {
+  mode: AnalysisMode;
+  onProgress: (done: number, total: number) => void;
+  // Dipanggil tiap ada langkah baru yang terklasifikasi, dengan
+  // snapshot hasil sejauh ini (buat tampil progresif).
+  onPartial: (partial: GameAnalysis) => void;
+  isCancelled: () => boolean;
+}
+
 // Analisa satu game penuh. fens berisi N+1 posisi (awal + setelah
 // tiap langkah), moves berisi N langkah. Mengembalikan null kalau
-// dibatalkan lewat isCancelled.
+// dibatalkan lewat isCancelled. Setiap selesai mengevaluasi satu
+// posisi, langkah sebelumnya langsung diklasifikasi dan snapshot
+// parsial dikirim lewat onPartial, jadi UI mengalir per langkah.
 export async function analyzeGame(
   fens: string[],
   moves: { san: string; uci: string; color: Color }[],
-  onProgress: (done: number, total: number) => void,
-  isCancelled: () => boolean,
+  opts: AnalyzeOptions,
 ): Promise<GameAnalysis | null> {
+  const { depth, multiPv } = ANALYSIS_MODES[opts.mode];
   const evals: PositionEval[] = [];
+  const analyzed: AnalyzedMove[] = [];
+  const counts: Record<Color, Record<Classification, number>> = {
+    w: emptyCounts(),
+    b: emptyCounts(),
+  };
+  // Akurasi langkah + Win% sesudah langkah, per warna (buat akurasi game).
+  const moveAccs: Record<Color, { acc: number; winAfter: number }[]> = {
+    w: [],
+    b: [],
+  };
+  const snapshot = (): GameAnalysis => ({
+    moves: [...analyzed],
+    evals: [...evals],
+    whiteAccuracy: gameAccuracy(moveAccs.w),
+    blackAccuracy: gameAccuracy(moveAccs.b),
+    counts: { w: { ...counts.w }, b: { ...counts.b } },
+  });
+
   for (let i = 0; i < fens.length; i++) {
-    if (isCancelled()) return null;
+    if (opts.isCancelled()) return null;
     const fen = fens[i]!;
     let result;
     try {
       result = await stockfish.go(fen, {
-        depth: ANALYSIS_DEPTH,
-        multiPv: ANALYSIS_MULTIPV,
+        depth,
+        multiPv,
         movetimeMs: ANALYSIS_MOVETIME_MS,
         skill: 20,
       });
     } catch {
       // Dibatalkan (stop) atau engine error di tengah jalan.
-      if (isCancelled()) return null;
+      if (opts.isCancelled()) return null;
       throw new Error("Engine gagal mengevaluasi posisi.");
     }
     const line = result.lines[0];
@@ -270,78 +377,23 @@ export async function analyzeGame(
       bestLineSan: pvToSan(fen, line?.pv ?? []),
       sideToMove,
     });
-    onProgress(i + 1, fens.length);
+    opts.onProgress(i + 1, fens.length);
+    // Evaluasi posisi ke-i melengkapi langkah ke-(i-1): klasifikasi
+    // langsung dan kirim snapshot parsial.
+    if (i > 0) {
+      const move = moves[i - 1]!;
+      const analyzedMove = classifyMove(move, i - 1, evals[i - 1]!, evals[i]!);
+      analyzed.push(analyzedMove);
+      counts[move.color][analyzedMove.classification]++;
+      moveAccs[move.color].push({
+        acc: analyzedMove.moveAccuracy,
+        winAfter: cpToWinPercent(
+          scoreToCp(evals[i]!.score, evals[i]!.sideToMove, move.color),
+        ),
+      });
+      opts.onPartial(snapshot());
+    }
   }
 
-  const analyzed: AnalyzedMove[] = [];
-  const counts: Record<Color, Record<Classification, number>> = {
-    w: emptyCounts(),
-    b: emptyCounts(),
-  };
-  // Akurasi langkah + Win% sesudah langkah, per warna (buat akurasi game).
-  const moveAccs: Record<Color, { acc: number; winAfter: number }[]> = {
-    w: [],
-    b: [],
-  };
-
-  for (let i = 0; i < moves.length; i++) {
-    const move = moves[i]!;
-    const before = evals[i]!;
-    const after = evals[i + 1]!;
-    const cpBeforeMover = scoreToCp(before.score, before.sideToMove, move.color);
-    const cpAfterMover = scoreToCp(after.score, after.sideToMove, move.color);
-    const isBest = move.uci === before.bestMove;
-    // Langkah terbaik engine = 0 loss. Selisih eval di sini hanya
-    // noise antar pencarian depth 18 di posisi tajam.
-    const cpLoss = isBest
-      ? 0
-      : Math.max(0, cpBeforeMover - cpAfterMover);
-    // Win% sebelum langkah = Win% eval posisi (sudah mengasumsikan
-    // langkah terbaik); Win% sesudah = Win% posisi hasil langkah.
-    const winBefore = cpToWinPercent(cpBeforeMover);
-    const winAfter = cpToWinPercent(cpAfterMover);
-    const winPercentLoss = isBest
-      ? 0
-      : Math.max(0, winBefore - winAfter);
-    const acc = moveAccuracy(winPercentLoss);
-    // Korban materi: materi bersih si penggerak berkurang >= 200 cp
-    // akibat langkahnya sendiri (misal korban kuda ambil pion).
-    const sacrificed =
-      materialOf(after.fen, move.color) - materialOf(before.fen, move.color) <=
-      -200;
-    const onlyMove = legalMoveCount(before.fen) === 1;
-    const classification = classify(
-      cpLoss,
-      isBest,
-      sacrificed,
-      onlyMove,
-      cpBeforeMover,
-      cpAfterMover,
-    );
-    counts[move.color][classification]++;
-    moveAccs[move.color].push({ acc, winAfter });
-    analyzed.push({
-      ply: i,
-      san: move.san,
-      uci: move.uci,
-      color: move.color,
-      cpLoss,
-      winPercentLoss,
-      moveAccuracy: acc,
-      classification,
-      bestMoveSan: before.bestLineSan[0] ?? "",
-      bestLineSan: before.bestLineSan,
-      evalBeforeCpWhite: scoreToCp(before.score, before.sideToMove, "w"),
-      evalAfterCpWhite: scoreToCp(after.score, after.sideToMove, "w"),
-      fenAfter: after.fen,
-    });
-  }
-
-  return {
-    moves: analyzed,
-    evals,
-    whiteAccuracy: gameAccuracy(moveAccs.w),
-    blackAccuracy: gameAccuracy(moveAccs.b),
-    counts,
-  };
+  return snapshot();
 }

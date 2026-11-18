@@ -24,6 +24,7 @@ import { getLevelConfig } from "../lib/levels";
 import {
   analyzeGame,
   scoreToCp,
+  type AnalysisMode,
   type GameAnalysis,
 } from "../lib/analysis";
 
@@ -65,6 +66,9 @@ export const useChessStore = defineStore("chess", () => {
   const analysisProgress = ref({ done: 0, total: 0 });
   const analysis = ref<GameAnalysis | null>(null);
   const analysisError = ref<string | null>(null);
+  // Mode analisa yang sedang berjalan / terakhir dipakai (round 2:
+  // Cepat = depth 16 multipv 1, Thinking = depth 18 multipv 2).
+  const analysisMode = ref<AnalysisMode>("fast");
   // Posisi yang di-review (indeks 0 = posisi awal, N = posisi akhir).
   // null = tampilkan posisi live.
   const reviewPly = ref<number | null>(null);
@@ -516,10 +520,12 @@ export const useChessStore = defineStore("chess", () => {
     clearSelection();
   }
 
-  // Analisa pasca-game (C3): evaluasi semua posisi di depth 18.
-  // Engine di-load dulu kalau belum siap. Berjalan background,
-  // UI tetap responsif (engine di worker).
-  async function startAnalysis() {
+  // Analisa pasca-game (C3, round 2: dua mode + progresif). Engine
+  // di-load dulu kalau belum siap (di mode lokal biasanya sudah
+  // di-prefetch saat game berjalan). Hasil mengalir per langkah
+  // lewat onPartial, jadi panel menampilkan klasifikasi begitu
+  // tersedia tanpa menunggu semua posisi selesai.
+  async function startAnalysis(mode: AnalysisMode = "fast") {
     if (
       analysisStatus.value === "running" ||
       analysisStatus.value === "loading"
@@ -527,6 +533,7 @@ export const useChessStore = defineStore("chess", () => {
       return;
     }
     if (historyVerbose.value.length === 0) return;
+    analysisMode.value = mode;
     analysisCancelled = false;
     analysisError.value = null;
     analysis.value = null;
@@ -555,14 +562,16 @@ export const useChessStore = defineStore("chess", () => {
         uci: m.from + m.to + (m.promotion ?? ""),
         color: m.color,
       }));
-      const result = await analyzeGame(
-        fens,
-        moves,
-        (done, total) => {
+      const result = await analyzeGame(fens, moves, {
+        mode,
+        onProgress: (done, total) => {
           analysisProgress.value = { done, total };
         },
-        () => analysisCancelled,
-      );
+        onPartial: (partial) => {
+          analysis.value = partial;
+        },
+        isCancelled: () => analysisCancelled,
+      });
       if (result) {
         analysis.value = result;
         analysisStatus.value = "done";
@@ -665,6 +674,7 @@ export const useChessStore = defineStore("chess", () => {
     analysisProgress,
     analysis,
     analysisError,
+    analysisMode,
     reviewPly,
     liveEvalScore,
     liveEvalCp,
