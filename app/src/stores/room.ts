@@ -50,6 +50,11 @@ export const useRoomStore = defineStore("room", () => {
   const error = ref("");
   const lastRoom = ref<LastRoom | null>(loadLastRoom());
   const messages = ref<ChatMessage[]>([]);
+  // Waktu client terakhir cursor tiap pemain bergerak (buat indikator
+  // AFK di PlayerList). Diisi saat state/join diterima, diupdate tiap
+  // pesan cursor. Catatan: pemain HP (touch) jarang menggerakkan
+  // cursor, jadi AFK di sini artinya cursor diam 30 detik.
+  const lastCursorAt = ref<Record<string, number>>({});
   // Grab yang ditolak server (piece direbut pemain lain). BoardCanvas
   // mengawasi ini untuk membatalkan drag.
   const grabDenied = ref<{ pieceId: number; at: number } | null>(null);
@@ -122,6 +127,11 @@ export const useRoomStore = defineStore("room", () => {
         status.value = "connected";
         error.value = "";
         players.value = msg.state.players;
+        // Inisialisasi penanda cursor pemain yang belum ada (jangan
+        // reset yang sudah ada: broadcast state juga dipakai sort).
+        for (const p of msg.state.players) {
+          lastCursorAt.value[p.id] ??= Date.now();
+        }
         game.loadRoomState(msg.state, msg.now);
         lastRoom.value = {
           code: code.value,
@@ -138,14 +148,17 @@ export const useRoomStore = defineStore("room", () => {
         const i = players.value.findIndex((p) => p.id === msg.player.id);
         if (i === -1) players.value.push(msg.player);
         else players.value[i] = msg.player;
+        lastCursorAt.value[msg.player.id] = Date.now();
         break;
       }
       case "player-left":
         players.value = players.value.filter((p) => p.id !== msg.playerId);
+        delete lastCursorAt.value[msg.playerId];
         break;
       case "cursor": {
         const p = players.value.find((pl) => pl.id === msg.playerId);
         if (p) p.cursor = { x: msg.x, y: msg.y };
+        lastCursorAt.value[msg.playerId] = Date.now();
         break;
       }
       case "piece-moved":
@@ -211,6 +224,7 @@ export const useRoomStore = defineStore("room", () => {
     joined = false;
     players.value = [];
     messages.value = [];
+    lastCursorAt.value = {};
 
     const ws = createPartySocket(code.value);
     socket = ws;
@@ -244,6 +258,7 @@ export const useRoomStore = defineStore("room", () => {
     myId.value = "";
     players.value = [];
     messages.value = [];
+    lastCursorAt.value = {};
     error.value = "";
     joined = false;
     createConfig = null;
@@ -303,6 +318,7 @@ export const useRoomStore = defineStore("room", () => {
     error,
     lastRoom,
     messages,
+    lastCursorAt,
     grabDenied,
     connect,
     disconnect,
