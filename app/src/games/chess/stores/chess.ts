@@ -312,6 +312,16 @@ export const useChessStore = defineStore("chess", () => {
     evalBarEnabled.value = stockfish.status === "ready";
     liveEvalScore.value = null;
     sync();
+    // Prefetch engine di background (round 2): download .wasm 99 MB
+    // berjalan selagi game dimainkan, jadi analisa / eval bar nanti
+    // tidak perlu menunggu download. Diam-diam: tidak ada indikator
+    // progress, dan gagal download tidak mengganggu game (analisa
+    // akan mencoba load lagi saat dibutuhkan).
+    if (stockfish.status !== "ready") {
+      void stockfish.load().catch(() => {
+        // Gagal prefetch: abaikan, load ulang saat dibutuhkan.
+      });
+    }
   }
 
   // Parse langkah UCI (e2e4, e7e8q) jadi from/to/promotion.

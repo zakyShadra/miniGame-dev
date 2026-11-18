@@ -234,7 +234,17 @@ export class StockfishEngine {
         };
         worker.postMessage("uci");
       });
-    })();
+    })().catch((e: unknown) => {
+      // Load gagal: reset supaya percobaan berikut mencoba lagi dari
+      // awal. Tanpa ini, satu prefetch yang gagal (misal jaringan
+      // sempat putus) akan meracuni semua load berikutnya, karena
+      // loadPromise yang rejected dipakai ulang selamanya.
+      this.loadPromise = null;
+      this.worker?.terminate();
+      this.worker = null;
+      if (this.status === "loading") this.setStatus("idle");
+      throw e;
+    });
     return this.loadPromise;
   }
 
