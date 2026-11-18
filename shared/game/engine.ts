@@ -60,27 +60,6 @@ export function snapTolerance(cut: CutResult, layout: BoardLayout): number {
   return Math.min(20, Math.max(8, s));
 }
 
-// Coba snap piece ke posisi benarnya. Kalau jaraknya dalam toleransi,
-// piece dikunci di posisi benar dan mengembalikan true.
-// (Dipakai server sampai commit feat(m5) server; diganti trySnapGroup.)
-export function trySnap(
-  piece: PieceState,
-  spec: PieceSpec,
-  layout: BoardLayout,
-  tolerance: number,
-): boolean {
-  const target = solvedPosition(spec, layout);
-  const dx = Math.abs(piece.x - target.x);
-  const dy = Math.abs(piece.y - target.y);
-  if (dx <= tolerance && dy <= tolerance) {
-    piece.x = target.x;
-    piece.y = target.y;
-    piece.placed = true;
-    return true;
-  }
-  return false;
-}
-
 // --- Piece grouping (M5) ---
 
 // Anggota grup piece ini (termasuk dirinya sendiri). Piece tanpa grup

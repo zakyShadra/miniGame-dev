@@ -10,12 +10,14 @@ import type { PieceState, PlayerState, RoomState } from "../../shared/types";
 import { cutPuzzle, type CutResult } from "../../shared/game/cutter";
 import {
   computeLayout,
+  groupMembers,
   isSolved,
   LOGICAL_BOARD_H,
   LOGICAL_BOARD_W,
   scatterPieces,
   snapTolerance,
-  trySnap,
+  tryGroup,
+  trySnapGroup,
   type BoardLayout,
 } from "../../shared/game/engine";
 import { mulberry32 } from "../../shared/game/prng";
@@ -46,6 +48,8 @@ export class Room extends Server<Env> {
         if (data) {
           try {
             this.state = JSON.parse(data) as RoomState;
+            // Normalisasi groupId: state lama belum punya field ini.
+            for (const p of this.state.pieces) p.groupId ??= null;
             this.deriveGame();
           } catch {
             this.state = null;
@@ -267,21 +271,25 @@ export class Room extends Server<Env> {
     msg: Extract<ClientMessage, { type: "grab" }>,
   ) {
     const piece = this.findPiece(msg.pieceId);
-    if (
-      !piece ||
-      piece.placed ||
-      (piece.lockedBy && piece.lockedBy !== conn.id)
-    ) {
+    if (!piece || piece.placed || !this.state) {
       this.send(conn, { type: "grab-denied", pieceId: msg.pieceId });
       return;
     }
-    piece.lockedBy = conn.id;
-    piece.lockedAt = Date.now();
-    this.sendAll({
-      type: "piece-locked",
-      pieceId: piece.id,
-      playerId: conn.id,
-    });
+    // Kunci seluruh grup; tolak kalau ada anggota yang dipegang pemain lain.
+    const members = groupMembers(piece, this.state.pieces);
+    if (members.some((m) => m.lockedBy && m.lockedBy !== conn.id)) {
+      this.send(conn, { type: "grab-denied", pieceId: msg.pieceId });
+      return;
+    }
+    for (const m of members) {
+      m.lockedBy = conn.id;
+      m.lockedAt = Date.now();
+      this.sendAll({
+        type: "piece-locked",
+        pieceId: m.id,
+        playerId: conn.id,
+      });
+    }
   }
 
   private handleMove(
@@ -289,10 +297,19 @@ export class Room extends Server<Env> {
     msg: Extract<ClientMessage, { type: "move" }>,
   ) {
     const piece = this.findPiece(msg.pieceId);
-    if (!piece || piece.placed || piece.lockedBy !== conn.id) return;
-    piece.x = msg.x;
-    piece.y = msg.y;
-    this.sendAll({ type: "piece-moved", piece }, [conn.id]);
+    if (!piece || piece.placed || piece.lockedBy !== conn.id || !this.state) {
+      return;
+    }
+    // Geser seluruh grup dengan delta yang sama (client hanya mengirim
+    // posisi piece yang dipegang).
+    const dx = msg.x - piece.x;
+    const dy = msg.y - piece.y;
+    for (const m of groupMembers(piece, this.state.pieces)) {
+      if (m.placed) continue;
+      m.x += dx;
+      m.y += dy;
+      this.sendAll({ type: "piece-moved", piece: m }, [conn.id]);
+    }
     this.maybePersist();
   }
 
@@ -301,22 +318,52 @@ export class Room extends Server<Env> {
     msg: Extract<ClientMessage, { type: "drop" }>,
   ) {
     const piece = this.findPiece(msg.pieceId);
-    if (!piece || piece.lockedBy !== conn.id) return;
-    piece.x = msg.x;
-    piece.y = msg.y;
-    piece.lockedBy = null;
-    piece.lockedAt = null;
-    const spec = this.cut?.pieces.find((s) => s.id === piece.id);
-    if (spec && this.layout && this.cut && !piece.placed) {
-      trySnap(piece, spec, this.layout, snapTolerance(this.cut, this.layout));
+    if (!piece || piece.lockedBy !== conn.id || !this.state) return;
+    // Terapkan posisi akhir ke seluruh grup (delta dari posisi terakhir
+    // yang diketahui server; move terakhir bisa ter-throttle di client).
+    const dx = msg.x - piece.x;
+    const dy = msg.y - piece.y;
+    const members = groupMembers(piece, this.state.pieces);
+    for (const m of members) {
+      if (m.placed) continue;
+      m.x += dx;
+      m.y += dy;
+      m.lockedBy = null;
+      m.lockedAt = null;
+    }
+    // Snap grup dulu; kalau tidak snap, coba gabung dengan tetangga (M5).
+    let snapped = false;
+    if (this.cut && this.layout && !piece.placed) {
+      snapped = trySnapGroup(
+        piece,
+        this.state.pieces,
+        this.cut,
+        this.layout,
+        snapTolerance(this.cut, this.layout),
+      );
+    }
+    if (!snapped && this.cut && this.layout) {
+      tryGroup(
+        piece,
+        this.state.pieces,
+        this.cut,
+        this.layout,
+        snapTolerance(this.cut, this.layout),
+      );
     }
     this.persist();
-    this.sendAll({ type: "piece-moved", piece });
-    if (
-      this.state &&
-      isSolved(this.state.pieces) &&
-      !this.state.solvedAt
-    ) {
+    // Siarkan semua anggota yang berubah: grup sebelum drop (bisa jadi
+    // terpasang dan keluar dari grup) + grup setelah gabung (bisa
+    // membesar karena tryGroup).
+    const broadcastIds = new Set(members.map((m) => m.id));
+    for (const m of groupMembers(piece, this.state.pieces)) {
+      broadcastIds.add(m.id);
+    }
+    for (const id of broadcastIds) {
+      const p = this.findPiece(id);
+      if (p) this.sendAll({ type: "piece-moved", piece: p });
+    }
+    if (isSolved(this.state.pieces) && !this.state.solvedAt) {
       this.state.solvedAt = Date.now();
       this.persist();
       this.sendSystem("Puzzle selesai!");
@@ -359,6 +406,9 @@ export class Room extends Server<Env> {
       if (pos) {
         piece.x = pos.x;
         piece.y = pos.y;
+        // Grup dibubarkan: anggota yang di-scatter ulang ke posisi acak
+        // tidak lagi bergerak bersama (M5).
+        piece.groupId = null;
       }
     }
     this.persist();
