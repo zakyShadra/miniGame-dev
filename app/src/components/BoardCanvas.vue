@@ -16,6 +16,7 @@ import {
   drawTargetArea,
   piecePathAt,
 } from "../game/renderer";
+import { ensureAudio } from "../lib/sound";
 
 const store = useGameStore();
 const room = useRoomStore();
@@ -184,6 +185,8 @@ function hitTest(bx: number, by: number): number | null {
 function onPointerDown(e: PointerEvent) {
   const canvas = canvasRef.value;
   if (!canvas || store.status !== "playing") return;
+  // Interaksi pertama user: buka kunci audio supaya bunyi snap boleh jalan.
+  ensureAudio();
   canvas.setPointerCapture(e.pointerId);
   const { x: bx, y: by } = toBoard(e);
   const id = hitTest(bx, by);

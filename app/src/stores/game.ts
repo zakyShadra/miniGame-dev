@@ -13,6 +13,7 @@ import {
   type BoardLayout,
 } from "../../../shared/game/engine";
 import { hashSeed, mulberry32 } from "../../../shared/game/prng";
+import { playSnap } from "../lib/sound";
 
 export type GameStatus = "lobby" | "playing" | "won";
 
@@ -140,9 +141,12 @@ export const useGameStore = defineStore("game", {
         this.layout,
         snapTolerance(this.cut, this.layout),
       );
-      if (snapped && isSolved(this.pieces)) {
-        this.status = "won";
-        this.stopTimer();
+      if (snapped) {
+        playSnap();
+        if (isSolved(this.pieces)) {
+          this.status = "won";
+          this.stopTimer();
+        }
       }
     },
 
@@ -206,6 +210,9 @@ export const useGameStore = defineStore("game", {
     applyRemotePiece(piece: PieceState) {
       const local = this.pieces.find((p) => p.id === piece.id);
       if (!local) return;
+      // Piece baru saja terpasang (drop sendiri yang dikonfirmasi server
+      // atau drop pemain lain): bunyikan snap sekali.
+      if (piece.placed && !local.placed) playSnap();
       local.x = piece.x;
       local.y = piece.y;
       local.placed = piece.placed;
