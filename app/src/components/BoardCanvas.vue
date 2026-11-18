@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGameStore } from "../stores/game";
+import { useRoomStore } from "../stores/room";
 import type { PieceSpec } from "../../../shared/game/cutter";
 import {
   computeLayout,
@@ -10,12 +11,15 @@ import {
 } from "../../../shared/game/engine";
 import {
   drawBoardBackground,
+  drawCursor,
   drawPiece,
   drawTargetArea,
   piecePathAt,
 } from "../game/renderer";
 
 const store = useGameStore();
+const room = useRoomStore();
+const inRoom = computed(() => room.status === "connected");
 
 const wrapRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -32,6 +36,9 @@ const drag = ref<{
   dx: number;
   dy: number;
 } | null>(null);
+// Posisi piece sebelum drag (multiplayer): dipakai mengembalikan piece
+// kalau server menolak grab.
+const dragStartPos = ref<{ x: number; y: number } | null>(null);
 const pan = ref<{ startX: number; startY: number; camX: number; camY: number } | null>(null);
 
 const specById = computed(() => {
@@ -108,10 +115,23 @@ function draw() {
       const piece = store.pieces.find((p) => p.id === id);
       const spec = specById.value.get(id);
       if (!piece || !spec) continue;
+      // Piece yang dipegang pemain lain: garis tepi warna pemain itu.
+      const locker =
+        piece.lockedBy && piece.lockedBy !== room.myId
+          ? room.players.find((p) => p.id === piece.lockedBy)
+          : undefined;
       drawPiece(ctx, img, store.imageW, store.imageH, spec, piece.x, piece.y, l.scale, {
         highlight: id === store.selectedId,
         placed: piece.placed,
+        lockColor: locker?.color,
       });
+    }
+  }
+  // Cursor pemain lain (nama + warna).
+  if (inRoom.value) {
+    for (const p of room.players) {
+      if (p.id === room.myId || !p.cursor) continue;
+      drawCursor(ctx, p.cursor.x, p.cursor.y, p.name, p.color);
     }
   }
 }
@@ -170,6 +190,14 @@ function onPointerDown(e: PointerEvent) {
   if (id !== null) {
     const piece = store.pieces.find((p) => p.id === id);
     if (!piece || piece.placed) return;
+    if (inRoom.value) {
+      // Piece yang dipegang pemain lain tidak bisa direbut.
+      if (piece.lockedBy && piece.lockedBy !== room.myId) return;
+      dragStartPos.value = { x: piece.x, y: piece.y };
+      // Grab optimistis: langsung drag, server mengonfirmasi atau
+      // menolak (lihat watcher grabDenied).
+      room.sendGrab(id);
+    }
     drag.value = { id, dx: bx - piece.x, dy: by - piece.y };
     store.selectPiece(id);
     // Naikkan ke atas: pindahkan id ke ujung z-order.
@@ -191,6 +219,7 @@ function onPointerMove(e: PointerEvent) {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const { x: bx, y: by } = toBoard(e);
+  if (inRoom.value) room.sendCursor(bx, by);
   if (drag.value) {
     const l = layout.value;
     const spec = specById.value.get(drag.value.id);
@@ -200,6 +229,7 @@ function onPointerMove(e: PointerEvent) {
     const nx = Math.min(l.boardW - pw * 0.5, Math.max(-pw * 0.5, bx - drag.value.dx));
     const ny = Math.min(l.boardH - ph * 0.5, Math.max(-ph * 0.5, by - drag.value.dy));
     store.movePiece(drag.value.id, nx, ny);
+    if (inRoom.value) room.sendMove(drag.value.id, nx, ny);
     draw();
     return;
   }
@@ -212,16 +242,31 @@ function onPointerMove(e: PointerEvent) {
     draw();
     return;
   }
-  // Hover: kursor grab di atas piece.
+  // Hover: kursor grab di atas piece, dilarang kalau dipegang pemain lain.
   const id = hitTest(bx, by);
-  canvas.style.cursor = id !== null ? "grab" : "default";
+  if (id === null) {
+    canvas.style.cursor = "default";
+  } else {
+    const piece = store.pieces.find((p) => p.id === id);
+    canvas.style.cursor =
+      piece?.lockedBy && piece.lockedBy !== room.myId
+        ? "not-allowed"
+        : "grab";
+  }
 }
 
 function onPointerUp(e: PointerEvent) {
   const canvas = canvasRef.value;
   if (drag.value) {
-    store.dropPiece(drag.value.id);
+    if (inRoom.value) {
+      // Multiplayer: server yang menentukan snap (authoritative).
+      const piece = store.pieces.find((p) => p.id === drag.value!.id);
+      if (piece) room.sendDrop(drag.value.id, piece.x, piece.y);
+    } else {
+      store.dropPiece(drag.value.id);
+    }
     drag.value = null;
+    dragStartPos.value = null;
     store.selectPiece(null);
   }
   pan.value = null;
@@ -324,6 +369,32 @@ watch(
 watch(
   () => store.selectedId,
   () => draw(),
+);
+
+watch(
+  () => room.players,
+  () => draw(),
+  { deep: true },
+);
+
+watch(
+  () => room.grabDenied,
+  (denied) => {
+    if (!denied || !drag.value || denied.pieceId !== drag.value.id) return;
+    // Server menolak grab (piece direbut pemain lain): kembalikan
+    // piece ke posisi sebelum drag dan batalkan drag.
+    if (dragStartPos.value) {
+      store.movePiece(
+        denied.pieceId,
+        dragStartPos.value.x,
+        dragStartPos.value.y,
+      );
+    }
+    drag.value = null;
+    dragStartPos.value = null;
+    store.selectPiece(null);
+    draw();
+  },
 );
 
 let observer: ResizeObserver | null = null;

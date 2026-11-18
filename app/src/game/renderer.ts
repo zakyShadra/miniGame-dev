@@ -101,6 +101,9 @@ export function piecePathAt(
 export interface DrawPieceOptions {
   highlight?: boolean;
   placed?: boolean;
+  // Warna pemain yang sedang memegang piece ini (multiplayer): garis
+  // tepi piece memakai warna pemain itu.
+  lockColor?: string;
 }
 
 // Gambar satu piece di posisi (x, y) board. Gambar dipotong dari foto
@@ -153,11 +156,52 @@ export function drawPiece(
     ctx.shadowBlur = 4;
     ctx.shadowOffsetY = 2;
   }
-  ctx.strokeStyle = opts.highlight
-    ? BOARD_THEME.highlight
-    : BOARD_THEME.pieceStroke;
-  ctx.lineWidth = opts.highlight ? 2 : 1;
+  ctx.strokeStyle = opts.lockColor
+    ? opts.lockColor
+    : opts.highlight
+      ? BOARD_THEME.highlight
+      : BOARD_THEME.pieceStroke;
+  ctx.lineWidth = opts.lockColor || opts.highlight ? 2.5 : 1;
   ctx.stroke(path);
+  ctx.restore();
+}
+
+// Cursor pemain lain: panah + label nama, di koordinat board logis.
+export function drawCursor(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  name: string,
+  color: string,
+): void {
+  ctx.save();
+  // Panah cursor (bentuk pointer mouse klasik).
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + 14, y + 14);
+  ctx.lineTo(x + 8.5, y + 14);
+  ctx.lineTo(x + 11, y + 21);
+  ctx.lineTo(x + 14.5, y + 19.5);
+  ctx.lineTo(x + 12, y + 12.5);
+  ctx.lineTo(x + 18, y + 12.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Label nama.
+  ctx.font = "600 13px Inter, sans-serif";
+  const padX = 7;
+  const textW = ctx.measureText(name).width;
+  const labelX = x + 16;
+  const labelY = y + 14;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(labelX, labelY, textW + padX * 2, 22, 11);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(name, labelX + padX, labelY + 15.5);
   ctx.restore();
 }
 
