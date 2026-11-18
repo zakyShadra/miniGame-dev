@@ -13,7 +13,7 @@
 | M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 8 commit di-push |
 | M1 Mesin jigsaw (single player) | ✅ selesai | 2026-11-18 | Mesin jigsaw + board + lobby terverifikasi (screenshot QA); 6 commit di-push |
 | M2 Room dan realtime multiplayer | ✅ selesai | 2026-11-18 | PartyServer + DO SQLite; tes integrasi 22/22 lolos (lokal + workers.dev); live di puzzle-game-avl.pages.dev; 5 commit di-push |
-| M3 Chat dan polish UX | ⏳ belum mulai | - | - |
+| M3 Chat dan polish UX | ✅ selesai | 2026-11-18 | Chat + pesan sistem, timer via jam server, Rapikan, suara snap + mute, rail responsif; tes integrasi 14/14 (lokal + live); audit di docs/ui-audit-m3.md; 11 commit di-push |
 | M4 Galeri dan upload gambar | ⏳ belum mulai | - | - |
 | M5 Deploy, share, CV | ⏳ belum mulai | - | - |
 
@@ -195,6 +195,19 @@ Selesai kalau:
 - Deploy dev ke Workers dan tes lewat URL workers.dev (bukan cuma lokal).
 
 ## M3 - Chat dan polish UX
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: chat dua arah + pesan
+sistem (join/leave/sort/selesai), timer tersinkron via jam server
+(`now` di pesan state), tombol Rapikan (server re-scatter piece belum
+terpasang + lokal single-player), suara snap WebAudio + mute
+(localStorage), layout responsif (rail 320px desktop, bottom sheet
+HP), audit red-flag UI di docs/ui-audit-m3.md. Tes integrasi 14/14
+lolos lawan wrangler dev lokal DAN worker live; screenshot QA desktop
+1280px + HP 390px rapi. Deploy gabungan dengan M4 di
+https://puzzle-game-avl.pages.dev/.
+Catatan: indikator AFK sempat dibuat lalu dibatalkan Zaky (revert
+12236bb); pesan sistem per-piece sengaja tidak dibuat (terlalu
+berisik di 200 piece); riwayat chat tidak disimpan di server.
 
 Tujuan: main bareng terasa nyaman dan hangat, bukan sekadar bisa.
 
