@@ -2,7 +2,7 @@
 // cursor lawan, dan pengiriman aksi drag. Satu-satunya tempat yang
 // berbicara dengan server; game store hanya menerima state darinya.
 
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import type PartySocket from "partysocket";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol";
@@ -50,6 +50,10 @@ export const useRoomStore = defineStore("room", () => {
   const error = ref("");
   const lastRoom = ref<LastRoom | null>(loadLastRoom());
   const messages = ref<ChatMessage[]>([]);
+  const hostId = ref<string | null>(null);
+  const isHost = computed(
+    () => hostId.value !== null && hostId.value === myId.value,
+  );
   // Grab yang ditolak server (piece direbut pemain lain). BoardCanvas
   // mengawasi ini untuk membatalkan drag.
   const grabDenied = ref<{ pieceId: number; at: number } | null>(null);
@@ -122,6 +126,7 @@ export const useRoomStore = defineStore("room", () => {
         status.value = "connected";
         error.value = "";
         players.value = msg.state.players;
+        hostId.value = msg.state.hostId;
         game.loadRoomState(msg.state, msg.now);
         lastRoom.value = {
           code: code.value,
@@ -244,6 +249,7 @@ export const useRoomStore = defineStore("room", () => {
     myId.value = "";
     players.value = [];
     messages.value = [];
+    hostId.value = null;
     error.value = "";
     joined = false;
     createConfig = null;
@@ -293,6 +299,16 @@ export const useRoomStore = defineStore("room", () => {
     send({ type: "sort" });
   }
 
+  function sendChangeImage(config: {
+    imageUrl: string;
+    imageName: string;
+    imageW: number;
+    imageH: number;
+    pieceCount: number;
+  }) {
+    send({ type: "change-image", ...config });
+  }
+
   return {
     status,
     code,
@@ -303,6 +319,8 @@ export const useRoomStore = defineStore("room", () => {
     error,
     lastRoom,
     messages,
+    hostId,
+    isHost,
     grabDenied,
     connect,
     disconnect,
@@ -313,5 +331,6 @@ export const useRoomStore = defineStore("room", () => {
     sendDrop,
     sendChat,
     sendSort,
+    sendChangeImage,
   };
 });

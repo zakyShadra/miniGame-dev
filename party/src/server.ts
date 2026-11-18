@@ -141,6 +141,9 @@ export class Room extends Server<Env> {
       case "sort":
         this.handleSort(conn);
         break;
+      case "change-image":
+        this.handleChangeImage(conn, msg);
+        break;
       default:
         break;
     }
@@ -361,6 +364,53 @@ export class Room extends Server<Env> {
     this.persist();
     this.sendAll(this.stateMessage());
     this.sendSystem(`${player.name} merapikan piece`);
+  }
+
+  // Ganti gambar room (host saja): reset puzzle dengan gambar baru.
+  // Pemain, kode, dan host tetap; seed, potongan, dan timer baru.
+  private handleChangeImage(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "change-image" }>,
+  ) {
+    if (!this.state || this.state.hostId !== conn.id) return;
+    const pieceCount = Math.floor(msg.pieceCount);
+    if (
+      !msg.imageUrl ||
+      !msg.imageName ||
+      !(msg.imageW > 0) ||
+      !(msg.imageH > 0) ||
+      pieceCount < 12 ||
+      pieceCount > 500
+    ) {
+      this.send(conn, { type: "error", message: "Data gambar tidak valid." });
+      return;
+    }
+    const seed = (Math.random() * 0x7fffffff) | 0;
+    const cut = cutPuzzle(msg.imageW, msg.imageH, pieceCount, seed);
+    const layout = computeLayout(
+      msg.imageW,
+      msg.imageH,
+      LOGICAL_BOARD_W,
+      LOGICAL_BOARD_H,
+    );
+    const rng = mulberry32(seed ^ 0x9e3779b9);
+    this.state = {
+      ...this.state,
+      imageUrl: msg.imageUrl,
+      imageName: msg.imageName,
+      imageW: msg.imageW,
+      imageH: msg.imageH,
+      pieceCount,
+      seed,
+      pieces: scatterPieces(cut, layout, rng),
+      startedAt: Date.now(),
+      solvedAt: null,
+    };
+    this.cut = cut;
+    this.layout = layout;
+    this.persist();
+    this.sendAll(this.stateMessage());
+    this.sendSystem("Host mengganti gambar, puzzle di-reset");
   }
 
   async onClose(conn: Connection) {

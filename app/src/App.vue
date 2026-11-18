@@ -5,9 +5,11 @@ import { useRoomStore } from "./stores/room";
 import BoardCanvas from "./components/BoardCanvas.vue";
 import ChatBox from "./components/ChatBox.vue";
 import GameHeader from "./components/GameHeader.vue";
+import ImagePicker from "./components/ImagePicker.vue";
 import LobbyPanel from "./components/LobbyPanel.vue";
 import PlayerList from "./components/PlayerList.vue";
 import RoomPanel from "./components/RoomPanel.vue";
+import { loadImageSize } from "./lib/images";
 
 const store = useGameStore();
 const room = useRoomStore();
@@ -29,6 +31,40 @@ watch(
 function toggleRail() {
   railOpen.value = !railOpen.value;
   if (railOpen.value) unread.value = 0;
+}
+
+// Ganti gambar room (host saja, M4): pilih gambar baru di modal,
+// konfirmasi, server me-reset puzzle dengan gambar itu.
+const changeImageOpen = ref(false);
+const changeImageBusy = ref(false);
+const changeImageError = ref("");
+
+function openChangeImage() {
+  // Mulai dari gambar room saat ini.
+  store.selectedImage = { name: store.imageName, url: store.imageUrl };
+  changeImageError.value = "";
+  changeImageOpen.value = true;
+}
+
+async function confirmChangeImage() {
+  changeImageBusy.value = true;
+  changeImageError.value = "";
+  try {
+    const { w, h } = await loadImageSize(store.selectedImage.url);
+    room.sendChangeImage({
+      imageUrl: store.selectedImage.url,
+      imageName: store.selectedImage.name,
+      imageW: w,
+      imageH: h,
+      pieceCount: store.pieceCount,
+    });
+    changeImageOpen.value = false;
+    railOpen.value = false;
+  } catch {
+    changeImageError.value = "Gambar tidak bisa dimuat. Coba gambar lain.";
+  } finally {
+    changeImageBusy.value = false;
+  }
 }
 
 const timer = computed(() => {
@@ -96,6 +132,14 @@ async function playAgainSame() {
             Pemain
           </h2>
           <PlayerList class="mt-2" />
+          <button
+            v-if="room.isHost"
+            type="button"
+            class="mt-2.5 w-full rounded-full border border-hairline-strong py-2 text-xs font-semibold text-body transition hover:bg-surface-2"
+            @click="openChangeImage"
+          >
+            Ganti gambar
+          </button>
         </div>
         <ChatBox />
       </aside>
@@ -121,7 +165,55 @@ async function playAgainSame() {
           Tutup
         </button>
       </div>
+      <button
+        v-if="room.isHost"
+        type="button"
+        class="mx-3 mt-3 rounded-full border border-hairline-strong py-2 text-xs font-semibold text-body transition hover:bg-surface-2"
+        @click="openChangeImage"
+      >
+        Ganti gambar
+      </button>
       <ChatBox />
+    </div>
+  </div>
+
+  <div
+    v-if="changeImageOpen"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  >
+    <div
+      class="absolute inset-0 bg-ink/40"
+      @click="changeImageOpen = false"
+    />
+    <div
+      class="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-surface-1 p-6 shadow-lg"
+    >
+      <h2 class="font-display text-xl font-bold text-ink">Ganti gambar</h2>
+      <p class="mt-1 text-sm text-muted">
+        Puzzle di-reset dari awal dengan gambar baru. Jumlah piece tetap
+        {{ store.pieceCount }}.
+      </p>
+      <ImagePicker />
+      <p v-if="changeImageError" class="mt-3 text-xs text-red-500">
+        {{ changeImageError }}
+      </p>
+      <div class="mt-5 flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink hover:bg-surface-3"
+          @click="changeImageOpen = false"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          :disabled="changeImageBusy"
+          class="flex-1 rounded-full bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-40"
+          @click="confirmChangeImage"
+        >
+          {{ changeImageBusy ? "Memuat..." : "Ganti gambar" }}
+        </button>
+      </div>
     </div>
   </div>
 

@@ -20,7 +20,15 @@ export type ClientMessage =
   | { type: "move"; pieceId: number; x: number; y: number }
   | { type: "drop"; pieceId: number; x: number; y: number }
   | { type: "chat"; text: string }
-  | { type: "sort" };
+  | { type: "sort" }
+  | {
+      type: "change-image"
+      imageUrl: string
+      imageName: string
+      imageW: number
+      imageH: number
+      pieceCount: number
+    };
 
 export type ServerMessage =
   | { type: "hello"; id: string }
