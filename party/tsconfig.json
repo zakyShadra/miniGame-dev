@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": [
+      "@cloudflare/workers-types"
+    ]
+  },
+  "include": [
+    "../shared/**/*",
+    "src/**/*"
+  ]
+}
