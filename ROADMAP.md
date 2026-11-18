@@ -10,7 +10,7 @@
 
 | Milestone | Status | Selesai | Catatan |
 | --- | --- | --- | --- |
-| M0 Scaffold dan tooling | ⏳ belum mulai | - | - |
+| M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 7 commit di-push |
 | M1 Mesin jigsaw (single player) | ⏳ belum mulai | - | - |
 | M2 Room dan realtime multiplayer | ⏳ belum mulai | - | - |
 | M3 Chat dan polish UX | ⏳ belum mulai | - | - |
@@ -96,6 +96,14 @@ Selesai kalau:
 - `npm run build` lolos tanpa error.
 - `wrangler dev` (di `party/`) jalan tanpa error.
 - DESIGN.md sudah ada dan dipakai sebagai acuan warna/komponen.
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: `npm run build` lolos
+(type-check + vite build, JS 65.81 kB / gzip 25.99 kB), dev server
+melayani halaman hello di localhost:5173 (HTTP 200), `wrangler dev`
+siap di localhost:8787 dengan binding Room DO, `tsc --noEmit` di
+party/ bersih. Catatan: npm 12 memblokir install script bawaan,
+esbuild + workerd harus di-approve dulu
+(`npm install-scripts approve esbuild workerd` lalu rebuild).
 
 ## M1 - Mesin jigsaw (single player, lokal)
 
