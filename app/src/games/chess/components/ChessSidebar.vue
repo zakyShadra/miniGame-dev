@@ -5,10 +5,32 @@ import { nextTick, ref, watch } from "vue";
 import { useChessStore } from "../stores/chess";
 import { BOT_LEVELS } from "../lib/levels";
 import { pieceUrl } from "../lib/pieces";
+import {
+  CLASSIFICATION_META,
+  type Classification,
+} from "../lib/analysis";
 import AnalysisPanel from "./AnalysisPanel.vue";
 
 const store = useChessStore();
 const listRef = ref<HTMLElement | null>(null);
+
+// Klasifikasi langkah ke-ply (0-based) dari hasil analisa, null kalau
+// belum ada analisa. Dipakai buat glyph + warna di daftar langkah.
+function classificationAt(ply: number): Classification | null {
+  return store.analysis?.moves[ply]?.classification ?? null;
+}
+
+// Glyph + warna + tint latar sel langkah dari klasifikasinya.
+function moveCellMeta(ply: number): {
+  glyph: string;
+  color: string;
+  tint: string;
+} | null {
+  const c = classificationAt(ply);
+  if (!c) return null;
+  const meta = CLASSIFICATION_META[c];
+  return { glyph: meta.symbol, color: meta.color, tint: meta.color + "1f" };
+}
 
 // Auto-scroll daftar langkah ke baris terakhir tiap ada langkah baru.
 watch(
@@ -87,9 +109,46 @@ watch(
               class="odd:bg-surface-2/60"
             >
               <td class="w-10 py-1 pl-2 text-muted">{{ pair.n }}.</td>
-              <td class="py-1 font-semibold text-ink">{{ pair.white.san }}</td>
-              <td class="py-1 font-semibold text-ink">
+              <td
+                class="py-1 font-semibold text-ink"
+                :style="
+                  moveCellMeta((pair.n - 1) * 2)
+                    ? {
+                        backgroundColor: moveCellMeta((pair.n - 1) * 2)!.tint,
+                      }
+                    : undefined
+                "
+              >
+                {{ pair.white.san }}
+                <span
+                  v-if="moveCellMeta((pair.n - 1) * 2)?.glyph"
+                  class="ml-0.5 text-xs font-bold"
+                  :style="{
+                    color: moveCellMeta((pair.n - 1) * 2)!.color,
+                  }"
+                  >{{ moveCellMeta((pair.n - 1) * 2)!.glyph }}</span
+                >
+              </td>
+              <td
+                class="py-1 font-semibold text-ink"
+                :style="
+                  moveCellMeta((pair.n - 1) * 2 + 1)
+                    ? {
+                        backgroundColor: moveCellMeta((pair.n - 1) * 2 + 1)!
+                          .tint,
+                      }
+                    : undefined
+                "
+              >
                 {{ pair.black?.san ?? "" }}
+                <span
+                  v-if="moveCellMeta((pair.n - 1) * 2 + 1)?.glyph"
+                  class="ml-0.5 text-xs font-bold"
+                  :style="{
+                    color: moveCellMeta((pair.n - 1) * 2 + 1)!.color,
+                  }"
+                  >{{ moveCellMeta((pair.n - 1) * 2 + 1)!.glyph }}</span
+                >
               </td>
             </tr>
           </tbody>

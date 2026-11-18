@@ -11,9 +11,9 @@
 // - Brilliant (!!): langkah terbaik engine + korban materi bersih
 //   >= 2 pion (200 cp) + posisi tidak memburuk (loss < 25). Bukan
 //   Brilliant kalau hanya ada 1 langkah legal (langkah paksa).
-// - Best (!): langkah yang sama dengan top move engine.
-// - Excellent: loss < 25 cp.
-// - Good: loss < 50 cp.
+// - Best (bintang): langkah yang sama dengan top move engine.
+// - Excellent: loss < 25 cp (tanpa simbol, warna saja).
+// - Good (tanda centang): loss < 50 cp.
 // - Inaccuracy (?!): loss 50-100 cp.
 // - Mistake (?): loss 100-300 cp.
 // - Blunder (??): loss >= 300 cp, ATAU dari menang jadi kalah
@@ -64,13 +64,13 @@ export const CLASSIFICATION_META: Record<
   Classification,
   { symbol: string; label: string; color: string }
 > = {
-  brilliant: { symbol: "!!", label: "Brilliant", color: "#0d9488" },
-  best: { symbol: "!", label: "Best", color: "#16a34a" },
-  excellent: { symbol: "", label: "Excellent", color: "#65a30d" },
-  good: { symbol: "", label: "Good", color: "#84cc16" },
-  inaccuracy: { symbol: "?!", label: "Inaccuracy", color: "#ca8a04" },
-  mistake: { symbol: "?", label: "Mistake", color: "#ea580c" },
-  blunder: { symbol: "??", label: "Blunder", color: "#dc2626" },
+  brilliant: { symbol: "!!", label: "Brilliant", color: "#06b6d4" },
+  best: { symbol: "★", label: "Best", color: "#22c55e" },
+  excellent: { symbol: "", label: "Excellent", color: "#14b8a6" },
+  good: { symbol: "✓", label: "Good", color: "#84cc16" },
+  inaccuracy: { symbol: "?!", label: "Inaccuracy", color: "#eab308" },
+  mistake: { symbol: "?", label: "Mistake", color: "#f97316" },
+  blunder: { symbol: "??", label: "Blunder", color: "#ef4444" },
 };
 
 export interface PositionEval {
