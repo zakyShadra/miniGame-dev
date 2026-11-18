@@ -26,6 +26,9 @@ export const PRESET_IMAGES: PresetImage[] = [
   { name: "Van biru", url: "/images/preset-van.jpg" },
   { name: "Pantai ramai", url: "/images/preset-pantai.jpg" },
   { name: "Kampus tua", url: "/images/preset-kampus.jpg" },
+  { name: "Fjord biru", url: "/images/preset-fjord.jpg" },
+  { name: "Anjing pug", url: "/images/preset-pug.jpg" },
+  { name: "Air terjun", url: "/images/preset-airterjun.jpg" },
 ];
 
 export const PIECE_COUNTS = [24, 48, 100, 200] as const;
