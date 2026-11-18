@@ -32,7 +32,7 @@ function isCaptureTarget(sq: Square): boolean {
 }
 
 function isLastMove(sq: Square): boolean {
-  const lm = store.lastMove;
+  const lm = store.displayLastMove;
   return !!lm && (lm.from === sq || lm.to === sq);
 }
 </script>

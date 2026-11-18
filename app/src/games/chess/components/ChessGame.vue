@@ -5,6 +5,7 @@ import { useChessStore } from "../stores/chess";
 import ChessBoard from "./ChessBoard.vue";
 import ChessSetup from "./ChessSetup.vue";
 import ChessSidebar from "./ChessSidebar.vue";
+import EvalBar from "./EvalBar.vue";
 
 const store = useChessStore();
 
@@ -47,8 +48,15 @@ defineEmits<{ exit: [] }>();
     <div
       class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4 lg:flex-row"
     >
-      <main class="w-full max-w-[560px] shrink-0 self-center lg:self-start">
-        <ChessBoard />
+      <main class="flex w-full max-w-[560px] shrink-0 gap-2 self-center lg:self-start">
+        <EvalBar
+          v-if="store.evalBarEnabled"
+          :cp-white="store.liveEvalCp"
+          class="my-0"
+        />
+        <div class="min-w-0 flex-1">
+          <ChessBoard />
+        </div>
       </main>
       <aside class="min-h-0 flex-1 lg:max-w-sm">
         <ChessSidebar class="h-full" />

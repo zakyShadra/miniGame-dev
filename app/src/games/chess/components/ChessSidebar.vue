@@ -5,6 +5,7 @@ import { nextTick, ref, watch } from "vue";
 import { useChessStore } from "../stores/chess";
 import { BOT_LEVELS } from "../lib/levels";
 import { pieceUrl } from "../lib/pieces";
+import AnalysisPanel from "./AnalysisPanel.vue";
 
 const store = useChessStore();
 const listRef = ref<HTMLElement | null>(null);
@@ -121,6 +122,13 @@ watch(
         Balik papan
       </button>
       <button
+        type="button"
+        class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+        @click="store.toggleEvalBar()"
+      >
+        Eval bar {{ store.evalBarEnabled ? "nyala" : "mati" }}
+      </button>
+      <button
         v-if="store.phase === 'playing'"
         type="button"
         class="flex-1 rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
@@ -135,6 +143,18 @@ watch(
       >
         Game baru
       </button>
+    </div>
+
+    <div
+      v-if="
+        store.phase === 'over' ||
+        store.analysisStatus === 'running' ||
+        store.analysisStatus === 'loading' ||
+        store.analysisStatus === 'done'
+      "
+      class="rounded-2xl bg-surface-1 p-4 shadow-md"
+    >
+      <AnalysisPanel />
     </div>
   </div>
 </template>
