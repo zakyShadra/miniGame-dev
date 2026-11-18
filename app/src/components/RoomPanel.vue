@@ -15,6 +15,8 @@ const busy = ref(false);
 const error = ref("");
 
 // Prefill kode join dari link share (?room=ABC123).
+// QA hook, dev only: ?autoroom=join&room=KODE&name=Nama langsung join
+// room (dipakai screenshot QA headless, M3). Tidak jalan di production.
 onMounted(() => {
   const params = new URLSearchParams(location.search);
   const r = params.get("room");
@@ -23,6 +25,12 @@ onMounted(() => {
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, "")
       .slice(0, 6);
+  }
+  if (import.meta.env.DEV && params.get("autoroom") === "join") {
+    nickname.value = params.get("name") ?? "Zaky";
+    if (joinCode.value.length === 6) {
+      setTimeout(() => joinRoom(joinCode.value), 300);
+    }
   }
 });
 
