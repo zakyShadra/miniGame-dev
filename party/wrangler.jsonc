@@ -19,10 +19,10 @@
     }
   ],
   "name": "puzzle-game-party",
-  "r2_buckets": [
+  "kv_namespaces": [
     {
       "binding": "IMAGES",
-      "bucket_name": "puzzle-game-images"
+      "id": "84b2744e90684ebb9cf47455443af212"
     }
   ]
 }

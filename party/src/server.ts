@@ -22,7 +22,7 @@ import { mulberry32 } from "../../shared/game/prng";
 
 type Env = {
   Room: DurableObjectNamespace<Room>;
-  IMAGES: R2Bucket;
+  IMAGES: KVNamespace;
 };
 
 export class Room extends Server<Env> {
@@ -418,8 +418,11 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 // Upload gambar (M4): client mengompres dulu (< 500 KB), server
-// menerima maks 1 MB dan menyimpannya ke R2. Gambar disajikan lewat
-// GET /images/:key dari Worker yang sama (tanpa public bucket).
+// menerima maks 1 MB dan menyimpannya ke Workers KV. Gambar disajikan
+// lewat GET /images/:key dari Worker yang sama (tanpa public bucket).
+// Catatan: rencana awal pakai R2, tapi R2 belum aktif di akun Zaky
+// (butuh enable lewat dashboard + billing, ditolak Zaky untuk proyek
+// Sabun Palem); KV dibuat lewat CLI saja dan gratis untuk skala ini.
 
 // Batas upload server: 1 MB (client menargetkan < 500 KB).
 const MAX_UPLOAD_BYTES = 1024 * 1024;
@@ -453,7 +456,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
   }
   const key = `img/${crypto.randomUUID()}.${extFor(contentType)}`;
   await env.IMAGES.put(key, buf, {
-    httpMetadata: { contentType },
+    metadata: { contentType },
   });
   const origin = new URL(request.url).origin;
   return Response.json(
@@ -463,16 +466,17 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleImage(key: string, env: Env): Promise<Response> {
-  const obj = await env.IMAGES.get(key);
-  if (!obj) {
+  const { value, metadata } = await env.IMAGES.getWithMetadata<{
+    contentType: string;
+  }>(key, "arrayBuffer");
+  if (!value) {
     return new Response("Gambar tidak ditemukan.", {
       status: 404,
       headers: CORS_HEADERS,
     });
   }
   const headers = new Headers(CORS_HEADERS);
-  obj.writeHttpMetadata(headers);
+  headers.set("Content-Type", metadata?.contentType ?? "image/jpeg");
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
-  headers.set("ETag", obj.httpEtag);
-  return new Response(obj.body, { headers });
+  return new Response(value, { headers });
 }
