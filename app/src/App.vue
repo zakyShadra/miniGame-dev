@@ -2,18 +2,34 @@
 import { computed, ref, watch } from "vue";
 import { useGameStore } from "./stores/game";
 import { useRoomStore } from "./stores/room";
+import { useChessStore } from "./games/chess/stores/chess";
 import BoardCanvas from "./components/BoardCanvas.vue";
 import ChatBox from "./components/ChatBox.vue";
 import GameHeader from "./components/GameHeader.vue";
+import GamePicker from "./components/GamePicker.vue";
 import ImagePicker from "./components/ImagePicker.vue";
 import LobbyPanel from "./components/LobbyPanel.vue";
 import PlayerList from "./components/PlayerList.vue";
 import RoomPanel from "./components/RoomPanel.vue";
+import ChessGame from "./games/chess/components/ChessGame.vue";
 import { loadImageSize } from "./lib/images";
 
 const store = useGameStore();
 const room = useRoomStore();
+const chessStore = useChessStore();
 const inRoom = computed(() => room.status === "connected");
+
+// Layar utama: pemilih game, puzzle, atau catur.
+const screen = ref<"home" | "puzzle" | "chess">("home");
+
+function pickGame(game: "puzzle" | "chess") {
+  screen.value = game;
+}
+
+function exitChess() {
+  chessStore.toSetup();
+  screen.value = "home";
+}
 
 // Rail kanan (pemain + chat): selalu terlihat di desktop (lg+), di HP
 // jadi bottom sheet yang dibuka lewat tombol Chat. Pesan yang datang
@@ -95,11 +111,14 @@ async function playAgainSame() {
 </script>
 
 <template>
+  <GamePicker v-if="screen === 'home'" @pick="pickGame" />
+  <ChessGame v-else-if="screen === 'chess'" @exit="exitChess" />
+  <template v-else>
   <div
     v-if="store.status === 'lobby'"
     class="flex min-h-screen flex-wrap content-center items-start justify-center gap-4 p-4"
   >
-    <LobbyPanel />
+    <LobbyPanel @exit="screen = 'home'" />
     <RoomPanel />
   </div>
   <div v-else class="flex h-screen flex-col">
@@ -268,6 +287,7 @@ async function playAgainSame() {
       </p>
     </div>
   </div>
+  </template>
 </template>
 
 <style>

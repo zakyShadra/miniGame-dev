@@ -10,6 +10,8 @@ const store = useGameStore();
 const starting = ref(false);
 const error = ref("");
 
+defineEmits<{ exit: [] }>();
+
 // Ukuran gambar terpilih, buat menghitung pembulatan jumlah piece.
 const dims = ref<{ w: number; h: number } | null>(null);
 
@@ -126,6 +128,13 @@ async function start() {
 
 <template>
   <div class="w-full max-w-md rounded-2xl bg-surface-1 p-6 shadow-md">
+    <button
+      type="button"
+      class="mb-4 rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink"
+      @click="$emit('exit')"
+    >
+      &larr; Semua game
+    </button>
     <h1
       class="flex items-center gap-2 font-display text-3xl font-bold tracking-tight text-ink"
     >
