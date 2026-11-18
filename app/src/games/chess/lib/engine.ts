@@ -74,6 +74,14 @@ export class StockfishEngine {
   private readyWaiters: Array<() => void> = [];
   private uciokSeen = false;
   private wasmBlobUrl: string | null = null;
+  // Jumlah respons basi yang harus diabaikan: tiap stop() saat go
+  // sedang jalan, engine tetap mengirim satu bestmove buat pencarian
+  // yang dibatalkan itu. Kalau go baru sudah dimulai sebelum bestmove
+  // basi itu tiba, bestmove basi akan salah menyelesaikan go baru
+  // (dengan langkah dari posisi lama + tanpa skor). Penghitung ini
+  // menelan respons basi tersebut. Perintah UCI diproses berurutan,
+  // jadi bestmove basi selalu tiba sebelum info pencarian baru.
+  private staleResponsesToIgnore = 0;
 
   private setStatus(s: EngineStatus) {
     this.status = s;
@@ -231,6 +239,12 @@ export class StockfishEngine {
   }
 
   private handleBestmove(line: string) {
+    // Bestmove dari pencarian yang sudah di-stop: telan, jangan
+    // sampai menyelesaikan go baru yang mungkin sudah dimulai.
+    if (this.staleResponsesToIgnore > 0) {
+      this.staleResponsesToIgnore--;
+      return;
+    }
     const pending = this.pendingGo;
     if (!pending) return;
     this.pendingGo = null;
@@ -246,6 +260,9 @@ export class StockfishEngine {
   }
 
   private handleInfo(line: string) {
+    // Info dari pencarian yang sudah di-stop (datang sebelum
+    // bestmove basinya): jangan sampai mengotori lines go baru.
+    if (this.staleResponsesToIgnore > 0) return;
     const pending = this.pendingGo;
     if (!pending) return;
     // Contoh: info depth 12 seldepth 18 multipv 1 score cp 34 ... pv e2e4 ...
@@ -316,6 +333,9 @@ export class StockfishEngine {
     if (this.pendingGo) {
       this.pendingGo.reject(new Error("Dibatalkan."));
       this.pendingGo = null;
+      // Engine tetap akan mengirim bestmove buat pencarian ini;
+      // tandai supaya ditelan saat tiba (lihat handleBestmove).
+      this.staleResponsesToIgnore++;
     }
     try {
       this.send("stop");
@@ -335,6 +355,7 @@ export class StockfishEngine {
     this.status = "idle";
     this.loadPromise = null;
     this.pendingGo = null;
+    this.staleResponsesToIgnore = 0;
     this.uciokSeen = false;
   }
 }

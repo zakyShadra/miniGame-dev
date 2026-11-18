@@ -17,6 +17,7 @@ import { PIECE_VALUES } from "../lib/pieces";
 import {
   stockfish,
   type EngineProgress,
+  type EngineScore,
   type EngineStatus,
 } from "../lib/engine";
 import { getLevelConfig } from "../lib/levels";
@@ -67,11 +68,29 @@ export const useChessStore = defineStore("chess", () => {
   // Posisi yang di-review (indeks 0 = posisi awal, N = posisi akhir).
   // null = tampilkan posisi live.
   const reviewPly = ref<number | null>(null);
-  // Evaluasi live (cp dari sudut pandang Putih), null = belum ada.
-  const liveEvalCp = ref<number | null>(null);
+  // Evaluasi live mentah (skor engine + giliran jalan), null = belum
+  // ada. Skor mentah disimpan supaya eval bar bisa menampilkan mate
+  // sebagai #N, bukan angka cp raksasa. liveEvalCp turunannya.
+  const liveEvalScore = ref<{
+    score: EngineScore;
+    sideToMove: Color;
+  } | null>(null);
+  const liveEvalCp = computed<number | null>(() =>
+    liveEvalScore.value
+      ? scoreToCp(
+          liveEvalScore.value.score,
+          liveEvalScore.value.sideToMove,
+          "w",
+        )
+      : null,
+  );
   const evalBarEnabled = ref(false);
   let analysisCancelled = false;
   let liveEvalTimer: ReturnType<typeof setTimeout> | null = null;
+  // Nomor urut permintaan eval live: hanya permintaan terbaru yang
+  // boleh menulis hasil, supaya eval basi (misal dari posisi lama
+  // yang fen-nya kebetulan sama lagi setelah undo) tidak tampil.
+  let liveEvalRequestId = 0;
 
   const botColor = computed<Color>(() =>
     humanColor.value === "w" ? "b" : "w",
@@ -223,15 +242,20 @@ export const useChessStore = defineStore("chess", () => {
     }
     if (stockfish.status !== "ready") return;
     const fenAtStart = fen.value;
+    const requestId = ++liveEvalRequestId;
     try {
       const score = await stockfish.evaluate(fenAtStart, 6);
-      // Posisi sudah berubah saat eval selesai: hasil basi, buang.
-      if (score && fen.value === fenAtStart) {
-        liveEvalCp.value = scoreToCp(
+      // Posisi sudah berubah, atau ada permintaan eval lebih baru:
+      // hasil ini basi, buang.
+      if (
+        score &&
+        requestId === liveEvalRequestId &&
+        fen.value === fenAtStart
+      ) {
+        liveEvalScore.value = {
           score,
-          new Chess(fenAtStart).turn(),
-          "w",
-        );
+          sideToMove: new Chess(fenAtStart).turn(),
+        };
       }
     } catch {
       // Engine sibuk: lewati saja.
@@ -268,7 +292,7 @@ export const useChessStore = defineStore("chess", () => {
     resetAnalysis();
     // Eval bar ikut nyala kalau engine sudah siap dari game sebelumnya.
     evalBarEnabled.value = stockfish.status === "ready";
-    liveEvalCp.value = null;
+    liveEvalScore.value = null;
     sync();
   }
 
@@ -349,7 +373,7 @@ export const useChessStore = defineStore("chess", () => {
     resetAnalysis();
     // Mode bot: engine sudah ter-load, eval bar langsung nyala.
     evalBarEnabled.value = true;
-    liveEvalCp.value = null;
+    liveEvalScore.value = null;
     sync();
     // Bot pegang Putih: langsung jalan.
     void maybeBotMove();
@@ -561,7 +585,7 @@ export const useChessStore = defineStore("chess", () => {
   async function toggleEvalBar() {
     if (evalBarEnabled.value) {
       evalBarEnabled.value = false;
-      liveEvalCp.value = null;
+      liveEvalScore.value = null;
       return;
     }
     try {
@@ -618,6 +642,7 @@ export const useChessStore = defineStore("chess", () => {
     analysis,
     analysisError,
     reviewPly,
+    liveEvalScore,
     liveEvalCp,
     evalBarEnabled,
     newLocalGame,

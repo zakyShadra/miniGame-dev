@@ -51,7 +51,8 @@ defineEmits<{ exit: [] }>();
       <main class="flex w-full max-w-[560px] shrink-0 gap-2 self-center lg:self-start">
         <EvalBar
           v-if="store.evalBarEnabled"
-          :cp-white="store.liveEvalCp"
+          :score="store.liveEvalScore?.score ?? null"
+          :side-to-move="store.liveEvalScore?.sideToMove ?? store.turn"
           class="my-0"
         />
         <div class="min-w-0 flex-1">
