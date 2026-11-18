@@ -10,8 +10,8 @@
 
 | Milestone | Status | Selesai | Catatan |
 | --- | --- | --- | --- |
-| M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 7 commit di-push |
-| M1 Mesin jigsaw (single player) | ⏳ belum mulai | - | - |
+| M0 Scaffold dan tooling | ✅ selesai | 2026-11-18 | Scaffold + build + wrangler dev terverifikasi; 8 commit di-push |
+| M1 Mesin jigsaw (single player) | ✅ selesai | 2026-11-18 | Mesin jigsaw + board + lobby terverifikasi (screenshot QA); 6 commit di-push |
 | M2 Room dan realtime multiplayer | ⏳ belum mulai | - | - |
 | M3 Chat dan polish UX | ⏳ belum mulai | - | - |
 | M4 Galeri dan upload gambar | ⏳ belum mulai | - | - |
@@ -136,6 +136,16 @@ Selesai kalau:
 - Ganti jumlah piece (48/100) jalan, gambar tidak pecah.
 - Screenshot QA dicek: piece tidak tumpang tindih aneh, board rapi.
 - Tidak ada error di console.
+
+Status: ✅ selesai 2026-11-18. Terverifikasi: cutter deterministik
+(seed sama = potongan sama, 24/48/100/200 piece pas), scatter strip
+(0 piece di atas target, 0 di luar board), screenshot QA board 24/48/100
+piece rapi, alur menang end-to-end (24/24, 100%, overlay "Puzzle
+selesai!"), `npm run build` lolos (JS 89,72 kB / gzip 34,86 kB).
+Catatan: z-order harus di-init immediate (BoardCanvas mount setelah
+piece dibuat); scatter strip empat sisi gantikan grid + keep-out
+(margin terlalu sempit buat sel, fallback acak menaruh piece di atas
+target); hook QA dev-only `?autostart=1&pieces=N&solve=1` di LobbyPanel.
 
 ## M2 - Room dan realtime multiplayer
 
@@ -289,8 +299,10 @@ Selesai kalau:
 - Timestamp dimanipulasi biar manusiawi: set `GIT_AUTHOR_DATE` dan
   `GIT_COMMITTER_DATE` di tiap commit (lewat `env`, karena shell fish
   tidak bisa sintaks `VAR=x cmd`). Aturan jeda, disesuaikan ukuran tugas
-  di commit tersebut: tugas kecil 8-25 menit, tugas sedang 30-90 menit,
-  tugas besar 2-5 jam (boleh nyebrang hari kalau wajar).
+  di commit tersebut: tugas kecil 10-25 menit, tugas sedang 30-90 menit,
+  tugas besar 2-5 jam (boleh nyebrang hari kalau wajar). MINIMAL 9-10
+  menit antar commit, tidak boleh kurang (koreksi Zaky 2026-11-18:
+  commit M0 terlalu rapat, cuma selisih 3 menitan).
 - Jangan pakai timestamp bulat: variasikan menit dan detik, jangan
   `:00:00` terus dan jangan menit kelipatan 5/10 terus. Jangan commit
   di jam tidur (00:00-06:00 WIB) kecuali memang masuk akal. Commit
