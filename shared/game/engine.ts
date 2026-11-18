@@ -1,7 +1,7 @@
-// Logika game murni (tanpa Vue): scatter, snap, progres, menang.
-// Dipakai store (M1) dan nanti dipakai ulang server (M2).
+// Logika game murni (tanpa Vue): layout, scatter, snap, progres, menang.
+// Dipakai client (Vue) dan server (PartyServer) supaya hasilnya identik.
 
-import type { PieceState } from "../../../shared/types";
+import type { PieceState } from "../types";
 import type { CutResult, PieceSpec } from "./cutter";
 
 export interface BoardLayout {
@@ -12,6 +12,36 @@ export interface BoardLayout {
   targetY: number;
   boardW: number;
   boardH: number;
+}
+
+// Ukuran board logis (unit yang sama di semua layar). Posisi piece
+// disimpan dalam koordinat ini supaya multiplayer konsisten: tiap
+// client hanya mengubah tampilan (fit + zoom/pan), bukan datanya.
+export const LOGICAL_BOARD_W = 1280;
+export const LOGICAL_BOARD_H = 800;
+
+// Hitung layout dari ukuran gambar dan ukuran board: area target di
+// tengah (60% lebar / 80% tinggi), sisanya area scatter.
+export function computeLayout(
+  imageW: number,
+  imageH: number,
+  boardW: number,
+  boardH: number,
+): BoardLayout {
+  const aspect = imageW / imageH;
+  let targetW = boardW * 0.6;
+  let targetH = targetW / aspect;
+  if (targetH > boardH * 0.8) {
+    targetH = boardH * 0.8;
+    targetW = targetH * aspect;
+  }
+  return {
+    scale: targetW / imageW,
+    targetX: (boardW - targetW) / 2,
+    targetY: (boardH - targetH) / 2,
+    boardW,
+    boardH,
+  };
 }
 
 export function solvedPosition(

@@ -1,7 +1,7 @@
 // Renderer Canvas 2D: gambar piece jigsaw dengan clip path bezier,
 // latar papan felt, dan area target. Semua warna dari DESIGN.md.
 
-import type { PieceSpec } from "./cutter";
+import type { PieceSpec } from "../../../shared/game/cutter";
 
 export const BOARD_THEME = {
   felt: "#87a8c8",

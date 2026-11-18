@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { PIECE_COUNTS, PRESET_IMAGES, useGameStore } from "../stores/game";
-import { solvedPosition } from "../game/engine";
+import { solvedPosition } from "../../../shared/game/engine";
 
 const store = useGameStore();
 const selectedImage = ref(PRESET_IMAGES[0]!);

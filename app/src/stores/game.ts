@@ -3,7 +3,7 @@
 
 import { defineStore } from "pinia";
 import type { PieceState } from "../../../shared/types";
-import { cutPuzzle, type CutResult } from "../game/cutter";
+import { cutPuzzle, type CutResult } from "../../../shared/game/cutter";
 import {
   isSolved,
   progressPercent,
@@ -11,8 +11,8 @@ import {
   snapTolerance,
   trySnap,
   type BoardLayout,
-} from "../game/engine";
-import { hashSeed, mulberry32 } from "../game/prng";
+} from "../../../shared/game/engine";
+import { hashSeed, mulberry32 } from "../../../shared/game/prng";
 
 export type GameStatus = "lobby" | "playing" | "won";
 

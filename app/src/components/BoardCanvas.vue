@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGameStore } from "../stores/game";
-import type { PieceSpec } from "../game/cutter";
-import { solvedPosition, type BoardLayout } from "../game/engine";
+import type { PieceSpec } from "../../../shared/game/cutter";
+import {
+  computeLayout,
+  LOGICAL_BOARD_H,
+  LOGICAL_BOARD_W,
+  type BoardLayout,
+} from "../../../shared/game/engine";
 import {
   drawBoardBackground,
   drawPiece,
@@ -35,25 +40,26 @@ const specById = computed(() => {
   return map;
 });
 
-// Layout board: area target di tengah (60% lebar / 80% tinggi), sisanya
-// area scatter. Dihitung dari ukuran container dan rasio gambar.
+// Layout board logis (tetap 1280x800 di semua layar): area target di
+// tengah, sisanya area scatter. Sama persis dengan yang dipakai server.
 const layout = computed<BoardLayout | null>(() => {
   if (store.imageW === 0 || store.imageH === 0) return null;
+  return computeLayout(
+    store.imageW,
+    store.imageH,
+    LOGICAL_BOARD_W,
+    LOGICAL_BOARD_H,
+  );
+});
+
+// Transform fit: board logis dipusatkan di container, dijaga rasionya.
+const fit = computed(() => {
   const { w, h } = containerSize.value;
-  const aspect = store.imageW / store.imageH;
-  let targetW = w * 0.6;
-  let targetH = targetW / aspect;
-  if (targetH > h * 0.8) {
-    targetH = h * 0.8;
-    targetW = targetH * aspect;
-  }
-  const scale = targetW / store.imageW;
+  const scale = Math.min(w / LOGICAL_BOARD_W, h / LOGICAL_BOARD_H);
   return {
     scale,
-    targetX: (w - targetW) / 2,
-    targetY: (h - targetH) / 2,
-    boardW: w,
-    boardH: h,
+    x: (w - LOGICAL_BOARD_W * scale) / 2,
+    y: (h - LOGICAL_BOARD_H * scale) / 2,
   };
 });
 
@@ -77,8 +83,21 @@ function draw() {
   const { w, h } = containerSize.value;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBoardBackground(ctx, w, h);
+  const f = fit.value;
   const { zoom, x: camX, y: camY } = camera.value;
-  ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * camX, dpr * camY);
+  const total = f.scale * zoom;
+  ctx.setTransform(
+    dpr * total,
+    0,
+    0,
+    dpr * total,
+    dpr * (f.x + camX),
+    dpr * (f.y + camY),
+  );
+  // Bingkai tipis di tepi board logis.
+  ctx.strokeStyle = "rgba(10, 10, 10, 0.12)";
+  ctx.lineWidth = 1 / total;
+  ctx.strokeRect(0, 0, LOGICAL_BOARD_W, LOGICAL_BOARD_H);
   const img = imgRef.value;
   const t = targetRect.value;
   if (img && t) {
@@ -109,13 +128,15 @@ function resizeCanvas() {
   draw();
 }
 
-// Konversi posisi pointer (client) ke koordinat board.
+// Konversi posisi pointer (client) ke koordinat board logis.
 function toBoard(e: PointerEvent): { x: number; y: number } {
   const rect = canvasRef.value!.getBoundingClientRect();
+  const f = fit.value;
   const { zoom, x: camX, y: camY } = camera.value;
+  const total = f.scale * zoom;
   return {
-    x: (e.clientX - rect.left - camX) / zoom,
-    y: (e.clientY - rect.top - camY) / zoom,
+    x: (e.clientX - rect.left - (f.x + camX)) / total,
+    y: (e.clientY - rect.top - (f.y + camY)) / total,
   };
 }
 
@@ -219,13 +240,17 @@ function zoomBy(factor: number, cx?: number, cy?: number) {
   const rect = canvas.getBoundingClientRect();
   const px = cx ?? rect.width / 2;
   const py = cy ?? rect.height / 2;
+  const f = fit.value;
   const { zoom, x: camX, y: camY } = camera.value;
   const next = Math.min(3, Math.max(0.5, zoom * factor));
   const k = next / zoom;
+  // Zoom di sekitar titik layar: offset total bergeser, pan dikoreksi.
+  const offX = f.x + camX;
+  const offY = f.y + camY;
   camera.value = {
     zoom: next,
-    x: px - (px - camX) * k,
-    y: py - (py - camY) * k,
+    x: px - (px - offX) * k - f.x,
+    y: py - (py - offY) * k - f.y,
   };
   draw();
 }
@@ -277,29 +302,17 @@ watch(
 
 watch(
   layout,
-  (l, prev) => {
+  (l) => {
+    // Layout logis tetap per gambar, jadi watcher ini hanya scatter
+    // sekali saat game dimulai; resize tidak mengubah posisi piece.
+    // immediate: layout sudah final saat mount (tidak bergantung pada
+    // ukuran container lagi), jadi tanpa ini applyLayout tidak pernah
+    // jalan dan semua piece menumpuk di (0, 0).
     if (!l) return;
     store.applyLayout(l);
-    // Kalau layout berubah setelah scatter (resize), piece yang sudah
-    // terpasang ikut pindah ke posisi benar yang baru; sisanya dijepit.
-    if (prev && store.scattered && store.cut) {
-      for (const piece of store.pieces) {
-        const spec = specById.value.get(piece.id);
-        if (!spec) continue;
-        if (piece.placed) {
-          const t = solvedPosition(spec, l);
-          piece.x = t.x;
-          piece.y = t.y;
-        } else {
-          const pw = spec.w * l.scale;
-          const ph = spec.h * l.scale;
-          piece.x = Math.min(l.boardW - pw * 0.5, Math.max(-pw * 0.5, piece.x));
-          piece.y = Math.min(l.boardH - ph * 0.5, Math.max(-ph * 0.5, piece.y));
-        }
-      }
-    }
     draw();
   },
+  { immediate: true },
 );
 
 watch(
