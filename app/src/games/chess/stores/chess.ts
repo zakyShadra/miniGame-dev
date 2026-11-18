@@ -13,10 +13,17 @@ import {
   type Square,
 } from "chess.js";
 import { PIECE_VALUES } from "../lib/pieces";
+import {
+  stockfish,
+  type EngineProgress,
+  type EngineStatus,
+} from "../lib/engine";
+import { getLevelConfig } from "../lib/levels";
 
 export type ChessMode = "local" | "bot";
 export type ChessPhase = "setup" | "playing" | "over";
 export type BotLevel = "easy" | "medium" | "hard" | "extreme";
+export type HumanColorChoice = "w" | "b" | "random";
 
 export interface MovePair {
   n: number;
@@ -37,6 +44,23 @@ export const useChessStore = defineStore("chess", () => {
   // Warna manusia di mode bot (C2). Di mode lokal tidak dipakai.
   const humanColor = ref<Color>("w");
   const orientation = ref<Color>("w");
+
+  // State engine (C2): loading, bot berpikir, hint, error.
+  const engineStatus = ref<EngineStatus>("idle");
+  const engineProgress = ref<EngineProgress | null>(null);
+  const engineError = ref<string | null>(null);
+  const botThinking = ref(false);
+  const hintMove = ref<{ from: Square; to: Square } | null>(null);
+
+  const botColor = computed<Color>(() =>
+    humanColor.value === "w" ? "b" : "w",
+  );
+  const isBotTurn = computed(
+    () =>
+      mode.value === "bot" &&
+      phase.value === "playing" &&
+      turn.value === botColor.value,
+  );
 
   const selected = ref<Square | null>(null);
   const targets = ref<Move[]>([]);
@@ -144,7 +168,114 @@ export const useChessStore = defineStore("chess", () => {
     phase.value = "playing";
     clearSelection();
     promotionPending.value = null;
+    hintMove.value = null;
     sync();
+  }
+
+  // Parse langkah UCI (e2e4, e7e8q) jadi from/to/promotion.
+  function parseUci(uci: string): {
+    from: Square;
+    to: Square;
+    promotion?: PieceSymbol;
+  } {
+    return {
+      from: uci.slice(0, 2) as Square,
+      to: uci.slice(2, 4) as Square,
+      promotion: (uci[4] as PieceSymbol | undefined) ?? undefined,
+    };
+  }
+
+  // Minta langkah ke bot lalu jalankan. Dipanggil setelah langkah
+  // manusia (mode bot) dan saat bot pegang Putih di awal game.
+  async function maybeBotMove() {
+    if (!isBotTurn.value || botThinking.value) return;
+    botThinking.value = true;
+    try {
+      const cfg = getLevelConfig(botLevel.value);
+      const r = await stockfish.go(fen.value, {
+        depth: cfg.depth,
+        movetimeMs: cfg.movetimeMs,
+        multiPv: cfg.multiPv,
+        skill: cfg.skill,
+      });
+      // Level Mudah kadang sengaja ambil langkah ke-2/ke-3 terbaik.
+      let uci = r.bestMove;
+      if (
+        cfg.randomPickChance > 0 &&
+        r.lines.length > 1 &&
+        Math.random() < cfg.randomPickChance
+      ) {
+        const alt =
+          r.lines[1 + Math.floor(Math.random() * (r.lines.length - 1))]!;
+        if (alt.pv[0]) uci = alt.pv[0];
+      }
+      const { from, to, promotion } = parseUci(uci);
+      chess.move({ from, to, promotion });
+      clearSelection();
+      sync();
+    } catch (e) {
+      engineError.value =
+        e instanceof Error ? e.message : "Engine gagal berpikir.";
+    } finally {
+      botThinking.value = false;
+    }
+  }
+
+  // Mulai game lawan bot. Engine di-load dulu (download .wasm 99 MB
+  // di load pertama, lalu dari cache). Melempar error kalau load gagal.
+  async function newBotGame(level: BotLevel, colorChoice: HumanColorChoice) {
+    botLevel.value = level;
+    humanColor.value =
+      colorChoice === "random"
+        ? Math.random() < 0.5
+          ? "w"
+          : "b"
+        : colorChoice;
+    engineError.value = null;
+    stockfish.onProgress = (p) => {
+      engineProgress.value = p;
+    };
+    stockfish.onStatusChange = (s) => {
+      engineStatus.value = s;
+    };
+    await stockfish.load();
+    chess = new Chess();
+    mode.value = "bot";
+    orientation.value = humanColor.value;
+    phase.value = "playing";
+    clearSelection();
+    promotionPending.value = null;
+    hintMove.value = null;
+    sync();
+    // Bot pegang Putih: langsung jalan.
+    void maybeBotMove();
+  }
+
+  // Minta langkah terbaik engine buat posisi saat ini (mode bot saja).
+  async function hint() {
+    if (
+      mode.value !== "bot" ||
+      phase.value !== "playing" ||
+      isBotTurn.value ||
+      botThinking.value
+    ) {
+      return;
+    }
+    botThinking.value = true;
+    try {
+      const r = await stockfish.go(fen.value, {
+        depth: 10,
+        multiPv: 1,
+        skill: 20,
+      });
+      const { from, to } = parseUci(r.bestMove);
+      hintMove.value = { from, to };
+    } catch (e) {
+      engineError.value =
+        e instanceof Error ? e.message : "Hint gagal.";
+    } finally {
+      botThinking.value = false;
+    }
   }
 
   function toSetup() {
@@ -163,12 +294,17 @@ export const useChessStore = defineStore("chess", () => {
     }
     clearSelection();
     promotionPending.value = null;
+    hintMove.value = null;
     sync();
+    // Mode bot: giliran bot setelah langkah manusia.
+    void maybeBotMove();
   }
 
   function selectSquare(sq: Square) {
     if (phase.value !== "playing" || result.value) return;
     if (promotionPending.value) return;
+    // Giliran bot: input manusia dikunci.
+    if (isBotTurn.value || botThinking.value) return;
 
     // Klik target legal dari bidak terpilih = jalan.
     if (selected.value) {
@@ -204,24 +340,32 @@ export const useChessStore = defineStore("chess", () => {
     promotionPending.value = null;
   }
 
-  // Mode lokal: undo satu setengah langkah. Mode bot (C2): undo dua
+  // Mode lokal: undo satu setengah langkah. Mode bot: undo dua
   // (langkah manusia + balasan bot) supaya giliran kembali ke manusia.
   function undo() {
     if (phase.value !== "playing" && phase.value !== "over") return;
+    if (botThinking.value) return;
     const steps = mode.value === "bot" ? 2 : 1;
     for (let i = 0; i < steps; i++) {
       if (!chess.undo()) break;
     }
     clearSelection();
     promotionPending.value = null;
+    hintMove.value = null;
     result.value = null;
     if (phase.value === "over") phase.value = "playing";
     sync();
+    // Kalau setelah undo jadi giliran bot, bot jalan lagi.
+    void maybeBotMove();
   }
 
   function resign() {
     if (phase.value !== "playing") return;
-    result.value = `${COLOR_NAME[turn.value === "w" ? "b" : "w"]} menang (${COLOR_NAME[turn.value]} menyerah).`;
+    if (mode.value === "bot") {
+      result.value = "Bot menang (kamu menyerah).";
+    } else {
+      result.value = `${COLOR_NAME[turn.value === "w" ? "b" : "w"]} menang (${COLOR_NAME[turn.value]} menyerah).`;
+    }
     phase.value = "over";
     clearSelection();
   }
@@ -250,7 +394,15 @@ export const useChessStore = defineStore("chess", () => {
     moveList,
     captured,
     statusText,
+    engineStatus,
+    engineProgress,
+    engineError,
+    botThinking,
+    hintMove,
+    botColor,
+    isBotTurn,
     newLocalGame,
+    newBotGame,
     toSetup,
     selectSquare,
     choosePromotion,
@@ -259,5 +411,6 @@ export const useChessStore = defineStore("chess", () => {
     undo,
     resign,
     flip,
+    hint,
   };
 });
