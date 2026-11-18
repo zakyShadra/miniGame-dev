@@ -1,64 +1,81 @@
-# puzzle-game
+# puzzleGame
 
-Game jigsaw puzzle multiplayer di web, buat main bareng pacar (atau bestie).
-Satu board, dua orang susun piece bareng-bareng secara real-time.
-Terinspirasi reel @oftwominds._ (jigsawplanet.com + Google Meet).
+Real-time multiplayer jigsaw puzzle on the web. One board, two people,
+same puzzle. Built to play together with my girlfriend, inspired by a
+reel of two friends solving a jigsaw over a video call.
 
-Status: milestone M0 belum mulai. Lihat `ROADMAP.md` buat contekan lengkap.
+**Play it:** https://puzzle-game-avl.pages.dev/
 
-## Cara jalanin
+![Lobby](docs/screenshots/lobby.png)
+![Board](docs/screenshots/board.png)
+![Room with chat](docs/screenshots/room-chat.png)
 
-```bash
-cd ~/Projects/puzzle-game
-npm install
-npm run dev        # frontend di http://localhost:5173
-```
+## How to play
 
-PartyServer (multiplayer) di folder `party/`, lihat `ROADMAP.md` M2.
+1. Pick a photo (6 presets, or upload your own) and a piece count
+   (24, 48, 100, 200, or any number from 12 to 500).
+2. Play solo, or create a room and share the 6-letter code (or link)
+   with your partner.
+3. Drag pieces around the board. Pieces that fit together stick into
+   a group you can move as one.
+4. Drop a piece near its spot and it snaps in. Finish the whole
+   picture to win.
 
-## Cara main
+## Features
 
-```mermaid
-flowchart TD
-    A[0. Buka link room] --> B[1. Isi nickname + pilih warna]
-    B --> C[2. Pilih gambar + jumlah piece]
-    C --> D[3. Drag piece di Canvas]
-    D --> E{4. Semua piece terpasang?}
-    E -- Belum --> D
-    E -- Ya --> F[5. Menang, rayakan]
-```
+- **Real-time multiplayer:** live cursors with names, drag locks (a
+  piece your partner is holding cannot be grabbed), in-room chat,
+  system messages.
+- **Server-authoritative state:** piece positions live in a Durable
+  Object (SQLite), so a refresh or reconnect keeps your progress.
+- **Custom photos:** upload your own, compressed in the browser first
+  (long side max 1600px, target under 500 KB), stored in Workers KV.
+- **Custom piece counts:** any number from 12 to 500. Counts with an
+  awkward grid are rounded to the nearest count with a clean grid,
+  and the final count is shown.
+- **Piece grouping:** correctly adjacent pieces stick together and
+  move as one group. Grouping is only checked on drop, with a tight
+  tolerance, so it never gives away the answer.
+- **Synced timer and progress**, sort button, snap sound (mutable),
+  zoom and pan, ghost preview, full-image view.
+- **No login:** nickname + cursor color, join with a code or a link.
 
 ## Tech stack
 
-| Lapisan | Pakai apa |
+| Layer | What |
 | --- | --- |
-| Frontend | Vue 3 + Vite + TypeScript + Tailwind + Pinia |
-| Board | Canvas 2D |
-| Multiplayer | PartyServer + Durable Objects (Cloudflare Workers) |
-| Gambar upload | Cloudflare R2 |
-| Hosting | Cloudflare Pages + Workers (free tier, tanpa VPS) |
+| Frontend | Vue 3 (script setup) + Vite + TypeScript + Tailwind CSS v4 + Pinia |
+| Board | Canvas 2D (one canvas, no DOM per piece, light on low-spec laptops) |
+| Multiplayer | PartyServer on Cloudflare Workers + Durable Objects (SQLite), partysocket client |
+| Uploaded images | Workers KV |
+| Hosting | Cloudflare Pages + Workers, all free tier, no VPS |
 
-## Who does what
+## Project layout
 
-| Bagian | File | Tugas |
-| --- | --- | --- |
-| Mesin jigsaw | `app/src/game/` | Potong gambar, render, drag, snap |
-| UI board | `app/src/components/BoardCanvas.vue` | Canvas + interaksi |
-| Room server | `party/src/server.ts` | State piece, lock, cursor, chat |
-| Protokol | `shared/` | Tipe pesan + state yang dipakai dua sisi |
+- `app/` Vue frontend
+- `party/` PartyServer worker (room state, locks, chat, image upload and serving)
+- `shared/` protocol types + jigsaw engine (cutter, scatter, snap,
+  grouping) used by both sides
+- `docs/` screenshots, UI audit notes, CV + LinkedIn drafts
+- `ROADMAP.md` milestone cheat sheet (M0-M6), `DESIGN.md` design tokens
 
-## To change... | Edit...
+## Run it locally
 
-| Mau ubah... | Edit... |
-| --- | --- |
-| Jumlah piece / ukuran puzzle | `app/src/game/engine.ts` |
-| Warna + gaya UI | `DESIGN.md` dulu, baru komponen Vue |
-| Pesan multiplayer | `shared/protocol.ts` + `party/src/server.ts` |
-| Gambar preset | `app/public/images/` + `app/src/components/ImagePicker.vue` |
+```bash
+npm install
+npm run dev        # frontend at http://localhost:5173
+npm run party:dev  # PartyServer at http://localhost:8787
+```
 
-## Limitations to remember
+Note: npm 12 blocks install scripts by default. If the build fails on
+esbuild or workerd, run
+`npm install-scripts approve esbuild workerd && npm rebuild esbuild workerd`.
 
-- Video call tidak dibangun di sini, pakai Google Meet / WA call terpisah.
-- Tanpa login: siapa pun yang punya link room bisa join.
-- PartyKit hosted sudah tutup, pakai PartyServer.
-- Gratis semua: jangan aktifkan add-on berbayar tanpa izin.
+## Limitations
+
+- No built-in video call. Use Google Meet or a WhatsApp call
+  alongside, like the reel that inspired it.
+- No accounts or room history. Anyone with the link can join.
+- PartyKit's hosted platform shut down in October 2026. This uses
+  PartyServer (self-hosted on Cloudflare Workers) instead.
+- Everything runs on free tiers, no paid add-ons.
