@@ -59,9 +59,15 @@ Pick a game on the home screen: Puzzle or Chess.
 - **Chess vs Stockfish 19 (full):** 4 bot levels (skill + depth +
   movetime), pick your color, hint, undo, resign.
 - **Lichess-style analysis:** every move classified (Brilliant to
-  Blunder) from depth-18 engine evals, per-player accuracy, eval
-  chart, click any move to review the position with the best line.
+  Blunder) from engine evals, per-player accuracy, eval chart, click
+  any move in the sidebar move list to review the position with the
+  best line. Two modes: Fast (depth 16, default) and Thinking
+  (depth 18 multipv 2), both with progressive results; the engine is
+  prefetched in the background while you play.
 - **Live eval bar** during play (low-depth engine eval, throttled).
+- **Chess.com-style game end:** result modal over the board (no
+  dimming), red/green crown badges on the kings, game-end sound,
+  classification stats after analysis.
 
 ## Tech stack
 
@@ -104,7 +110,8 @@ esbuild or workerd, run
 - No accounts or room history. Anyone with the link can join.
 - PartyKit's hosted platform shut down in October 2026. This uses
   PartyServer (self-hosted on Cloudflare Workers) instead.
-- Chess is local or vs bot only for now. Online 2-player chess and
-  board animations are planned (C4).
+- Chess is local or vs bot only for now. Online 2-player chess is
+  planned (C4-online). Board animations, review effects, fast/thinking
+  analysis modes, and the game-end modal shipped in C4-polish.
 - The chess engine downloads ~99 MB on first use (then cached).
   Everything runs on free tiers, no paid add-ons.

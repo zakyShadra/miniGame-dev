@@ -21,7 +21,8 @@
 | C1 Catur: papan + aturan | ✅ selesai | 2026-11-18 | Papan DOM 8x8, chess.js, 2 pemain lokal; verifikasi live 13/13 |
 | C2 Catur: bot 4 level | ✅ selesai | 2026-11-18 | Stockfish 19 full, Mudah/Medium/Sulit/Extreme, hint, undo; verifikasi live 15/15 |
 | C3 Catur: analisa | ✅ selesai | 2026-11-18 | Depth 18 multipv 2, klasifikasi 7 level, akurasi, grafik eval, review + best line, eval bar live; verifikasi live 11/11 |
-| C4 Catur: online 2P + animasi | ⏳ belum mulai | - | Backlog: catur online 2 pemain, animasi bidak, rapikan layout mobile |
+| C4 Catur: polish | ✅ selesai | 2026-11-18 | Animasi slide, papan 3D, glyph + efek review, badge glyph di bidak, daftar langkah bisa diklik, mode analisa Cepat/Thinking + prefetch, modal akhir game ala chess.com; QA C4a 30/30, C4b 22/22, R2 22/22, C5 24/24 |
+| C4-online Catur: 2P online | ⏳ belum mulai | - | Backlog: catur online 2 pemain via room PartyServer |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
 
@@ -395,11 +396,28 @@ Puzzle + kartu Catur). Puzzle tidak disentuh kecuali lobby.
 - **C3 Analisa:** post-game depth 18 multipv 2, evaluasi tiap posisi,
   klasifikasi 7 level gaya lichess (Brilliant/Best/Excellent/Good/
   Inaccuracy/Mistake/Blunder, threshold di `app/src/games/chess/lib/
-  analysis.ts`), akurasi per pemain (rumus lichess dari rata-rata
-  cp loss), grafik evaluasi, klik langkah untuk review posisi +
-  best line engine. Eval bar live selama main (depth 6, throttled).
-  Verifikasi live 11/11 (Fool's mate: f3 Mistake, g4 Blunder,
-  e5 + Qh4# Best, akurasi 0%/85%).
+  analysis.ts`), akurasi per pemain (rumus lichess dari selisih Win%,
+  BUKAN cp loss mentah; bug C3 yang memasukkan ACPL langsung ke rumus
+  diperbaiki di C4-polish), grafik evaluasi, klik langkah untuk review
+  posisi + best line engine. Eval bar live selama main (depth 6,
+  throttled). Verifikasi live 11/11 (Fool's mate: f3 Mistake, g4
+  Blunder, e5 + Qh4# Best, akurasi Putih ~17%/Hitam 100%).
+- **C4-polish:** animasi slide bidak (reconciler jaga urutan array
+  stabil supaya Vue tidak memindah node DOM), papan 3D (frame
+  gradient + bayangan), glyph klasifikasi (!! ! ?! ? ??, bintang
+  Best) + efek review di petak (glow/flash/sparkle Brilliant),
+  layout mobile, hardening eval bar, fix akurasi (Win% loss).
+  Round 2: badge glyph di kanan atas bidak yang jalan saat review,
+  daftar LANGKAH samping bisa diklik (review + kembali ke live),
+  dua mode analisa (Cepat depth 16 multipv 1 default, Thinking
+  depth 18 multipv 2) + hasil progresif + prefetch engine saat game
+  berjalan (Cepat 25 dtk vs Thinking 84 dtk di game 23 langkah).
+  Efek skakmat ala chess.com: modal hasil di tengah papan tanpa
+  dimming (trofi + stats Best/Excellent/Miss + Main Lagi/Analisa),
+  badge mahkota merah di raja kalah + hijau di raja menang, pill
+  Draw saat remis, bunyi game-end WebAudio (tanpa confetti/pulse,
+  sesuai observasi chess.com). Verifikasi live: C4a 30/30, C4b
+  22/22, R2 22/22, C5 24/24.
 - **Engine:** file .wasm 99 MB TIDAK dibundel (Pages batas 25 MB/file).
   Load runtime dari unpkg (satu-satunya CDN yang lolos: CORS `*` +
   MIME application/wasm; GitHub release tanpa CORS, jsdelivr 403,
@@ -410,15 +428,13 @@ Puzzle + kartu Catur). Puzzle tidak disentuh kecuali lobby.
   `app/public/stockfish/`. Lisensi Stockfish.js GPLv3, lihat
   `app/public/stockfish/STOCKFISH.md`.
 
-Tidak masuk scope C1-C3: drag bidak, catur online 2 pemain (C4),
-animasi papan (C4, backlog dari feedback Zaky 2026-11-18: animasi
-gerak bidak slide, feedback seleksi, animasi capture, indikator
-skak jelas, transisi flip papan, rapikan layout mobile).
+Tidak masuk scope C1-C4-polish: drag bidak, catur online 2 pemain
+(C4-online, fase terpisah setelah C4-polish).
 
 File kunci: `app/src/games/chess/` (lib/engine.ts, lib/levels.ts,
 lib/analysis.ts, stores/chess.ts, components/ChessBoard.vue,
 ChessSetup.vue, ChessSidebar.vue, ChessGame.vue, EvalBar.vue,
-AnalysisPanel.vue), `app/src/components/GamePicker.vue`.
+AnalysisPanel.vue, GameEndModal.vue), `app/src/components/GamePicker.vue`.
 
 ## Backlog (v2, bukan sekarang)
 
@@ -522,3 +538,8 @@ cd party && npx wrangler deploy # PartyServer production
   Lobby jadi pemilih game. Online 2P catur + animasi papan ditunda
   ke C4. Zaky ditantang temannya untuk menyaingi chess.com di
   analisa move, jadi analisa harus tepat (depth 18, multipv 2).
+
+- 2026-11-18: C4-polish selesai (animasi slide, papan 3D, glyph +
+  efek review, badge glyph di bidak, daftar langkah bisa diklik,
+  mode analisa Cepat/Thinking + prefetch, efek skakmat ala
+  chess.com). C4-online (2P online) jadi fase terpisah berikutnya.
