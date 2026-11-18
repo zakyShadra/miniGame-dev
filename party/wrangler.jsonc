@@ -18,7 +18,7 @@
       "tag": "v1"
     }
   ],
-  "name": "puzzle-game-party",
+  "name": "minigames-party",
   "kv_namespaces": [
     {
       "binding": "IMAGES",
