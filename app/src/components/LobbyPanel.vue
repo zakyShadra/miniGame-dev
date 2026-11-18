@@ -126,10 +126,16 @@ async function start() {
 
 <template>
   <div class="w-full max-w-md rounded-2xl bg-surface-1 p-6 shadow-md">
-    <h1 class="font-display text-3xl font-bold tracking-tight text-ink">
-      puzzleGame
+    <h1
+      class="flex items-center gap-2 font-display text-3xl font-bold tracking-tight text-ink"
+    >
+      <img src="/favicon.svg" alt="" class="h-8 w-8" />
+      miniGame
     </h1>
-    <p class="mt-1 text-sm text-muted">Susun puzzle bareng, santai aja.</p>
+    <p class="mt-1 flex items-center gap-1.5 text-sm text-muted">
+      <img src="/icons/puzzle-piece.svg" alt="" class="h-4 w-4" />
+      Susun puzzle bareng, santai aja.
+    </p>
 
     <ImagePicker />
 

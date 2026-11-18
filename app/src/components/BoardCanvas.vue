@@ -439,7 +439,7 @@ onMounted(() => {
   // QA saja (dev): buka store ke window supaya Playwright bisa membaca
   // state piece (groupId, posisi) untuk asersi. Tidak ada di production.
   if (import.meta.env.DEV) {
-    (window as unknown as { __puzzleGame?: unknown }).__puzzleGame = {
+    (window as unknown as { __miniGame?: unknown }).__miniGame = {
       game: store,
       room,
     };

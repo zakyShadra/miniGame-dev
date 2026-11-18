@@ -33,6 +33,7 @@ function copyLink() {
   <header
     class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-surface-1 px-4 py-2"
   >
+    <img src="/favicon.svg" alt="miniGame" class="h-6 w-6" />
     <button
       type="button"
       class="rounded-full px-3 py-1.5 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-ink"
