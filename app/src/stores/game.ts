@@ -57,6 +57,9 @@ export const useGameStore = defineStore("game", {
     selectedId: null as number | null,
     startedAt: 0,
     elapsedMs: 0,
+    // Selisih jam server - jam lokal (ms), dari pesan state (M3).
+    // 0 di single-player; dipakai supaya timer tersinkron antar pemain.
+    clockOffset: 0,
     timerId: null as ReturnType<typeof setInterval> | null,
   }),
   getters: {
@@ -98,6 +101,7 @@ export const useGameStore = defineStore("game", {
       this.scattered = false;
       this.selectedId = null;
       this.elapsedMs = 0;
+      this.clockOffset = 0;
       this.startedAt = Date.now();
       this.status = "playing";
       this.startTimer();
@@ -145,7 +149,9 @@ export const useGameStore = defineStore("game", {
     // Multiplayer (M2): muat state room dari server. Cut dihitung lokal
     // dari seed (deterministik, sama persis dengan server); posisi piece
     // pakai data server apa adanya, jangan di-scatter ulang.
-    loadRoomState(state: RoomState) {
+    // serverNow = jam server saat state dikirim, dipakai mengoreksi
+    // selisih jam supaya timer sama di semua pemain (M3).
+    loadRoomState(state: RoomState, serverNow?: number) {
       this.stopTimer();
       this.imageUrl = state.imageUrl;
       this.imageName = state.imageName;
@@ -163,11 +169,36 @@ export const useGameStore = defineStore("game", {
       this.scattered = true;
       this.selectedId = null;
       this.startedAt = state.startedAt;
+      if (serverNow !== undefined) {
+        this.clockOffset = serverNow - Date.now();
+      }
       this.elapsedMs = state.solvedAt
         ? state.solvedAt - state.startedAt
-        : Date.now() - state.startedAt;
+        : this.nowCorrected() - state.startedAt;
       this.status = state.solvedAt ? "won" : "playing";
       if (!state.solvedAt) this.startTimer();
+    },
+
+    // Jam lokal yang sudah dikoreksi selisih jam server.
+    nowCorrected(): number {
+      return Date.now() + this.clockOffset;
+    },
+
+    // Rapikan (single-player): acak ulang posisi piece yang belum
+    // terpasang. Di multiplayer server yang melakukan ini (pesan sort).
+    sortPieces() {
+      if (!this.cut || !this.layout || this.status !== "playing") return;
+      const rng = mulberry32((Date.now() ^ (Math.random() * 0x7fffffff)) | 0);
+      const fresh = scatterPieces(this.cut, this.layout, rng);
+      const freshById = new Map(fresh.map((p) => [p.id, p]));
+      for (const piece of this.pieces) {
+        if (piece.placed) continue;
+        const pos = freshById.get(piece.id);
+        if (pos) {
+          piece.x = pos.x;
+          piece.y = pos.y;
+        }
+      }
     },
 
     // Terapkan posisi/status piece dari server (broadcast pemain lain
@@ -206,7 +237,7 @@ export const useGameStore = defineStore("game", {
 
     startTimer() {
       this.timerId = setInterval(() => {
-        this.elapsedMs = Date.now() - this.startedAt;
+        this.elapsedMs = this.nowCorrected() - this.startedAt;
       }, 250);
     },
 
@@ -216,7 +247,7 @@ export const useGameStore = defineStore("game", {
         this.timerId = null;
       }
       if (this.startedAt > 0) {
-        this.elapsedMs = Date.now() - this.startedAt;
+        this.elapsedMs = this.nowCorrected() - this.startedAt;
       }
     },
   },

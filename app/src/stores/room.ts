@@ -12,6 +12,17 @@ import { useGameStore } from "./game";
 
 export type RoomStatus = "idle" | "connecting" | "connected" | "error";
 
+// Pesan chat di room. Disimpan di store (bukan RoomState) supaya
+// riwayat tidak ikut tersimpan di server; rejoin mulai dari kosong.
+export interface ChatMessage {
+  kind: "chat" | "system";
+  playerId?: string;
+  name?: string;
+  color?: string;
+  text: string;
+  at: number;
+}
+
 export interface LastRoom {
   code: string;
   name: string;
@@ -38,6 +49,7 @@ export const useRoomStore = defineStore("room", () => {
   const players = ref<PlayerState[]>([]);
   const error = ref("");
   const lastRoom = ref<LastRoom | null>(loadLastRoom());
+  const messages = ref<ChatMessage[]>([]);
   // Grab yang ditolak server (piece direbut pemain lain). BoardCanvas
   // mengawasi ini untuk membatalkan drag.
   const grabDenied = ref<{ pieceId: number; at: number } | null>(null);
@@ -63,6 +75,14 @@ export const useRoomStore = defineStore("room", () => {
 
   function sendJoin() {
     send({ type: "join", name: myName.value, color: myColor.value });
+  }
+
+  function pushMessage(msg: ChatMessage) {
+    messages.value.push(msg);
+    // Batasi riwayat: 100 pesan terakhir saja.
+    if (messages.value.length > 100) {
+      messages.value.splice(0, messages.value.length - 100);
+    }
   }
 
   function sendCreate() {
@@ -102,7 +122,7 @@ export const useRoomStore = defineStore("room", () => {
         status.value = "connected";
         error.value = "";
         players.value = msg.state.players;
-        game.loadRoomState(msg.state);
+        game.loadRoomState(msg.state, msg.now);
         lastRoom.value = {
           code: code.value,
           name: myName.value,
@@ -140,8 +160,23 @@ export const useRoomStore = defineStore("room", () => {
       case "solved":
         game.markSolved(msg.at);
         break;
+      case "chat": {
+        const sender = players.value.find((p) => p.id === msg.playerId);
+        pushMessage({
+          kind: "chat",
+          playerId: msg.playerId,
+          name: msg.name,
+          color: sender?.color ?? "#9a9a9a",
+          text: msg.text,
+          at: msg.at,
+        });
+        break;
+      }
+      case "system":
+        pushMessage({ kind: "system", text: msg.text, at: Date.now() });
+        break;
       default:
-        break; // chat/system: M3
+        break;
     }
   }
 
@@ -175,6 +210,7 @@ export const useRoomStore = defineStore("room", () => {
     error.value = "";
     joined = false;
     players.value = [];
+    messages.value = [];
 
     const ws = createPartySocket(code.value);
     socket = ws;
@@ -207,6 +243,7 @@ export const useRoomStore = defineStore("room", () => {
     code.value = "";
     myId.value = "";
     players.value = [];
+    messages.value = [];
     error.value = "";
     joined = false;
     createConfig = null;
@@ -247,6 +284,15 @@ export const useRoomStore = defineStore("room", () => {
     send({ type: "drop", pieceId, x, y });
   }
 
+  function sendChat(text: string) {
+    if (!text.trim()) return;
+    send({ type: "chat", text: text.trim().slice(0, 500) });
+  }
+
+  function sendSort() {
+    send({ type: "sort" });
+  }
+
   return {
     status,
     code,
@@ -256,6 +302,7 @@ export const useRoomStore = defineStore("room", () => {
     players,
     error,
     lastRoom,
+    messages,
     grabDenied,
     connect,
     disconnect,
@@ -264,5 +311,7 @@ export const useRoomStore = defineStore("room", () => {
     sendGrab,
     sendMove,
     sendDrop,
+    sendChat,
+    sendSort,
   };
 });
