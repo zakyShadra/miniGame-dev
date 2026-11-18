@@ -1,15 +1,16 @@
 <!-- Modal hasil game ala chess.com (round 2, tugas 5): kartu charcoal
 di tengah papan, TANPA dimming (papan tetap terang, pointer-events
 hanya di kartu). Shell yang sama untuk menang/kalah/remis, konten
-beda. Stats klasifikasi muncul setelah analisa selesai; tombol
-Analisa menjalankan analisa Cepat dan modal tetap terbuka supaya
-stats mengisi sendiri. Tanpa confetti, tanpa pulse/glow (chess.com
-memang tidak punya itu).
+beda. Stats klasifikasi muncul setelah analisa selesai; dua tombol
+mode (Cepat + Thinking) supaya user bisa pilih dari modal, dan
+muncul lagi setelah selesai untuk analisa ulang mode lain. Tanpa
+confetti, tanpa pulse/glow (chess.com memang tidak punya itu).
 -->
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Color } from "chess.js";
 import { useChessStore } from "../stores/chess";
+import type { AnalysisMode } from "../lib/analysis";
 
 const store = useChessStore();
 
@@ -98,10 +99,10 @@ async function rematch() {
   }
 }
 
-function analyze() {
-  // Mode Cepat (default): modal tetap terbuka, stats mengisi
-  // sendiri begitu analisa selesai.
-  void store.startAnalysis("fast");
+function analyze(mode: AnalysisMode) {
+  // Mode dipilih user (bukan hardwired Cepat): modal tetap terbuka,
+  // stats mengisi sendiri begitu analisa selesai.
+  void store.startAnalysis(mode);
 }
 </script>
 
@@ -203,20 +204,33 @@ function analyze() {
         >
           {{ rematching ? "Memulai..." : "Main Lagi" }}
         </button>
+        <!-- Pilih mode dari modal (idle maupun selesai = analisa
+        ulang). Saat analisa jalan, tombol diganti indikator. -->
+        <template v-if="!analysisBusy">
+          <button
+            type="button"
+            data-testid="game-end-analyze"
+            class="rounded-full bg-white/10 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
+            @click="analyze('fast')"
+          >
+            Analisa Cepat
+          </button>
+          <button
+            type="button"
+            data-testid="game-end-analyze-thinking"
+            class="rounded-full bg-white/10 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
+            @click="analyze('thinking')"
+          >
+            Thinking
+          </button>
+        </template>
         <button
+          v-else
           type="button"
-          data-testid="game-end-analyze"
-          :disabled="analysisBusy || store.analysisStatus === 'done'"
-          class="rounded-full bg-white/10 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 disabled:opacity-50"
-          @click="analyze()"
+          disabled
+          class="rounded-full bg-white/10 py-2.5 text-sm font-semibold text-white opacity-50"
         >
-          {{
-            analysisBusy
-              ? "Menganalisa..."
-              : store.analysisStatus === "done"
-                ? "Sudah dianalisa"
-                : "Analisa"
-          }}
+          Menganalisa...
         </button>
       </div>
     </div>

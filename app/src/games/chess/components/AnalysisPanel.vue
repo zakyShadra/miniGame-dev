@@ -308,6 +308,38 @@ const progressPct = computed(() => {
       <p class="mt-2 text-[11px] text-subtle">
         Klik langkah untuk melihat posisi dan best line-nya.
       </p>
+
+      <!-- Selesai: boleh analisa ulang dengan mode lain. Sebelumnya
+      pemilih mode hilang total setelah analisa selesai, jadi user
+      terkunci di mode pertama dan tidak bisa pindah ke Thinking. -->
+      <div
+        v-if="store.analysisStatus === 'done'"
+        class="mt-4 border-t border-hairline pt-3"
+      >
+        <p class="text-xs font-semibold text-ink">
+          Analisa ulang dengan mode lain
+        </p>
+        <button
+          type="button"
+          class="mt-2 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
+          @click="store.startAnalysis('fast')"
+        >
+          {{ ANALYSIS_MODES.fast.label }}
+          <span class="block text-[11px] font-normal opacity-90">
+            {{ ANALYSIS_MODES.fast.hint }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="mt-2 w-full rounded-full bg-surface-2 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3"
+          @click="store.startAnalysis('thinking')"
+        >
+          {{ ANALYSIS_MODES.thinking.label }}
+          <span class="block text-[11px] font-normal text-muted">
+            {{ ANALYSIS_MODES.thinking.hint }}
+          </span>
+        </button>
+      </div>
     </template>
   </div>
 </template>
