@@ -5,6 +5,17 @@ export function getPartyHost(): string {
   return import.meta.env.VITE_PARTY_HOST ?? "localhost:8787";
 }
 
+// Origin Worker untuk HTTP biasa (upload gambar): localhost pakai
+// http, host lain https.
+export function getWorkerOrigin(): string {
+  const host = getPartyHost();
+  const protocol =
+    host.startsWith("localhost") || host.startsWith("127.")
+      ? "http"
+      : "https";
+  return `${protocol}://${host}`;
+}
+
 // Alfabet kode room: tanpa I, O, 0, 1 supaya gampang dibaca dan didikte.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
