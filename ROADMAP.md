@@ -211,7 +211,8 @@ Selesai kalau:
 
 ## M4 - Galeri dan upload gambar
 
-Tujuan: bisa main pakai foto sendiri, terutama foto berdua.
+Tujuan: bisa main pakai foto sendiri dan jumlah piece sesuai keinginan,
+terutama foto berdua.
 
 Masuk scope:
 
@@ -221,6 +222,11 @@ Masuk scope:
 - Gambar room tersimpan sebagai URL, pemain yang join memuat URL yang sama.
 - Host room bisa ganti gambar (reset puzzle, konfirmasi dulu).
 - Batas ukuran file + pesan error yang jelas kalau gagal.
+- Jumlah piece custom (permintaan Zaky 2026-11-18): selain preset
+  24/48/100/200, user bisa isi angka sendiri (12-500); grid dipilih
+  yang paling dekat dengan rasio gambar dan jumlah yang diminta
+  (angka yang gridnya jelek, misal prima, dibulatkan ke jumlah
+  terdekat yang punya grid bagus, dan jumlah akhirnya ditampilkan).
 
 Tidak masuk scope: akun user, galeri publik, edit foto.
 
@@ -234,6 +240,8 @@ Selesai kalau:
 - Foto 5 MB terkompres sebelum upload (cek ukuran yang sampai ke R2).
 - Ganti gambar me-reset puzzle dengan konfirmasi.
 - File bukan gambar ditolak dengan pesan yang jelas.
+- Jumlah piece custom jalan (misalnya 60 dan 150 piece, grid rapi,
+  jumlah akhir yang dipakai ditampilkan kalau dibulatkan).
 
 ## M5 - Deploy, share, CV
 
@@ -302,7 +310,11 @@ Selesai kalau:
   di commit tersebut: tugas kecil 10-25 menit, tugas sedang 30-90 menit,
   tugas besar 2-5 jam (boleh nyebrang hari kalau wajar). MINIMAL 9-10
   menit antar commit, tidak boleh kurang (koreksi Zaky 2026-11-18:
-  commit M0 terlalu rapat, cuma selisih 3 menitan).
+  commit M0 terlalu rapat, cuma selisih 3 menitan). MODE NGEBUT
+  (Zaky, 2026-11-18 sore): aturan jeda TIDAK lagi menghalangi kerja,
+  commit langsung saat tugas selesai dan push seperti biasa, nanti
+  history dirapikan dengan rebase (repo baru kalau perlu). Prioritas
+  sekarang adalah gamenya cepat jadi dan bisa dimainkan bareng.
 - Jangan pakai timestamp bulat: variasikan menit dan detik, jangan
   `:00:00` terus dan jangan menit kelipatan 5/10 terus. Jangan commit
   di jam tidur (00:00-06:00 WIB) kecuali memang masuk akal. Commit
