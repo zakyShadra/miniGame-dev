@@ -20,14 +20,26 @@
 //   (sebelum >= +200 cp, sesudah <= -200 cp dari sudut penggerak).
 //
 // Skor mate diubah ke cp supaya bisa dibandingkan: mate dalam N
-// langkah = 1000 - 10*N cp (dibatasi minimal 100). Jadi melewatkan
-// mate dalam 1 untuk mate dalam 5 hanya kehilangan ~40 cp (Good),
-// tapi melewatkan mate untuk posisi imbang = Blunder.
+// langkah = 10000 - 100*N cp (dibatasi minimal 100). Mate harus
+// selalu bernilai di atas eval cp biasa (yang bisa tembus 2000+ di
+// posisi menang telak); kalau tidak, langkah yang memberi mate bisa
+// terlihat "kehilangan" ratusan cp, dan langkah yang membiarkan mate
+// bisa terlihat tanpa kerugian. Batas 10000 cukup di atas eval cp
+// praktis mana pun, tapi penundaan mate (mate 3 jadi mate 5) tetap
+// hanya kehilangan 200 cp (Mistake), bukan ribuan.
 //
-// Akurasi per pemain memakai rumus lichess dari rata-rata cp loss
-// (acpl): accuracy = 103.1668 * e^(-0.04354 * acpl) - 3.1669,
-// dibatasi 0-100. Satu blunder besar tidak langsung menghancurkan
-// akurasi karena rumusnya eksponensial, sama seperti lichess.
+// Akurasi per pemain memakai metode lichess (bukan rata-rata cp
+// loss mentah): tiap evaluasi cp diubah dulu jadi peluang menang
+// (Win%) lewat kurva logistik lichess, lalu akurasi langkah dihitung
+// dari Win% yang hilang: accuracy = 103.1668 * e^(-0.04354 * win% loss)
+// - 3.1669. Versi lama (C3) keliru memasukkan ACPL (centipawn)
+// langsung ke rumus ini, padahal rumusnya mengharapkan selisih Win%
+// (skala 0-100); akibatnya akurasi bot Stockfish yang bermain
+// langkah terbaik pun tampil 9%. Akurasi game = rata-rata dari
+// volatility-weighted mean dan harmonic mean akurasi langkah,
+// sesuai metode lichess (lichess.org/page/accuracy).
+// Langkah yang sama dengan best move engine selalu 0 loss: selisih
+// eval apa pun di situ hanya noise engine, bukan kesalahan pemain.
 
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 import { stockfish, type EngineScore } from "./engine";
@@ -75,6 +87,10 @@ export interface AnalyzedMove {
   uci: string;
   color: Color;
   cpLoss: number;
+  // Win% (lichess) yang hilang akibat langkah ini + akurasi langkah
+  // (0-100) dari rumus lichess. Dipakai buat akurasi game.
+  winPercentLoss: number;
+  moveAccuracy: number;
   classification: Classification;
   bestMoveSan: string;
   bestLineSan: string[];
@@ -93,7 +109,7 @@ export interface GameAnalysis {
 
 function mateToCp(mate: number): number {
   const sign = mate > 0 ? 1 : -1;
-  return sign * Math.max(100, 1000 - 10 * Math.abs(mate));
+  return sign * Math.max(100, 10000 - 100 * Math.abs(mate));
 }
 
 // Skor engine (relatif terhadap giliran jalan) -> cp dari sudut
@@ -154,10 +170,14 @@ function classify(
   cpBeforeMover: number,
   cpAfterMover: number,
 ): Classification {
-  const winToLoss = cpBeforeMover >= 200 && cpAfterMover <= -200;
-  if (cpLoss >= 300 || winToLoss) return "blunder";
+  // Langkah terbaik engine tidak mungkin Blunder: kalau evaluasi
+  // sebelum/sesudah berayun, itu noise engine di posisi tajam,
+  // bukan kesalahan pemain. Jadi best move dicek duluan, sebelum
+  // aturan menang-jadi-kalah.
   if (isBest && sacrificed && !onlyMove && cpLoss < 25) return "brilliant";
   if (isBest) return "best";
+  const winToLoss = cpBeforeMover >= 200 && cpAfterMover <= -200;
+  if (cpLoss >= 300 || winToLoss) return "blunder";
   if (cpLoss < 25) return "excellent";
   if (cpLoss < 50) return "good";
   if (cpLoss < 100) return "inaccuracy";
@@ -165,11 +185,42 @@ function classify(
   return "blunder";
 }
 
-function accuracyFromLosses(losses: number[]): number {
-  if (losses.length === 0) return 100;
-  const acpl = losses.reduce((a, b) => a + b, 0) / losses.length;
-  const acc = 103.1668 * Math.exp(-0.04354 * acpl) - 3.1669;
-  return Math.max(0, Math.min(100, Math.round(acc)));
+// Akurasi satu langkah dari Win% yang hilang (rumus lichess).
+function moveAccuracy(winPercentLoss: number): number {
+  const acc = 103.1668 * Math.exp(-0.04354 * winPercentLoss) - 3.1669;
+  return Math.max(0, Math.min(100, acc));
+}
+
+// Akurasi game metode lichess: rata-rata dari volatility-weighted
+// mean dan harmonic mean akurasi langkah. Volatility tiap langkah =
+// simpangan baku Win% dalam jendela geser (ukuran jendela tumbuh
+// dengan panjang game); posisi yang Win%-nya bergejolak (langkah
+// kritis) berbobot lebih besar. Harmonic mean memastikan satu
+// blunder besar tetap terasa dan tidak tertutup langkah bersih.
+// winAfter = Win% si penggerak setelah tiap langkahnya.
+function gameAccuracy(
+  moves: { acc: number; winAfter: number }[],
+): number {
+  const n = moves.length;
+  if (n === 0) return 100;
+  const windowSize = Math.max(2, Math.ceil(n / 5));
+  const vols = moves.map((_, i) => {
+    const start = Math.max(0, i - windowSize + 1);
+    const win = moves.slice(start, i + 1).map((m) => m.winAfter);
+    const mean = win.reduce((a, b) => a + b, 0) / win.length;
+    const variance =
+      win.reduce((a, b) => a + (b - mean) ** 2, 0) / win.length;
+    return Math.sqrt(variance);
+  });
+  const volSum = vols.reduce((a, b) => a + b, 0);
+  const weighted =
+    volSum > 0
+      ? moves.reduce((a, m, i) => a + m.acc * vols[i]!, 0) / volSum
+      : moves.reduce((a, m) => a + m.acc, 0) / n;
+  const harmonic = moves.some((m) => m.acc <= 0)
+    ? 0
+    : n / moves.reduce((a, m) => a + 1 / m.acc, 0);
+  return Math.max(0, Math.min(100, Math.round((weighted + harmonic) / 2)));
 }
 
 function emptyCounts(): Record<Classification, number> {
@@ -227,7 +278,11 @@ export async function analyzeGame(
     w: emptyCounts(),
     b: emptyCounts(),
   };
-  const losses: Record<Color, number[]> = { w: [], b: [] };
+  // Akurasi langkah + Win% sesudah langkah, per warna (buat akurasi game).
+  const moveAccs: Record<Color, { acc: number; winAfter: number }[]> = {
+    w: [],
+    b: [],
+  };
 
   for (let i = 0; i < moves.length; i++) {
     const move = moves[i]!;
@@ -235,8 +290,20 @@ export async function analyzeGame(
     const after = evals[i + 1]!;
     const cpBeforeMover = scoreToCp(before.score, before.sideToMove, move.color);
     const cpAfterMover = scoreToCp(after.score, after.sideToMove, move.color);
-    const cpLoss = Math.max(0, cpBeforeMover - cpAfterMover);
     const isBest = move.uci === before.bestMove;
+    // Langkah terbaik engine = 0 loss. Selisih eval di sini hanya
+    // noise antar pencarian depth 18 di posisi tajam.
+    const cpLoss = isBest
+      ? 0
+      : Math.max(0, cpBeforeMover - cpAfterMover);
+    // Win% sebelum langkah = Win% eval posisi (sudah mengasumsikan
+    // langkah terbaik); Win% sesudah = Win% posisi hasil langkah.
+    const winBefore = cpToWinPercent(cpBeforeMover);
+    const winAfter = cpToWinPercent(cpAfterMover);
+    const winPercentLoss = isBest
+      ? 0
+      : Math.max(0, winBefore - winAfter);
+    const acc = moveAccuracy(winPercentLoss);
     // Korban materi: materi bersih si penggerak berkurang >= 200 cp
     // akibat langkahnya sendiri (misal korban kuda ambil pion).
     const sacrificed =
@@ -252,13 +319,15 @@ export async function analyzeGame(
       cpAfterMover,
     );
     counts[move.color][classification]++;
-    losses[move.color].push(cpLoss);
+    moveAccs[move.color].push({ acc, winAfter });
     analyzed.push({
       ply: i,
       san: move.san,
       uci: move.uci,
       color: move.color,
       cpLoss,
+      winPercentLoss,
+      moveAccuracy: acc,
       classification,
       bestMoveSan: before.bestLineSan[0] ?? "",
       bestLineSan: before.bestLineSan,
@@ -271,8 +340,8 @@ export async function analyzeGame(
   return {
     moves: analyzed,
     evals,
-    whiteAccuracy: accuracyFromLosses(losses.w),
-    blackAccuracy: accuracyFromLosses(losses.b),
+    whiteAccuracy: gameAccuracy(moveAccs.w),
+    blackAccuracy: gameAccuracy(moveAccs.b),
     counts,
   };
 }
