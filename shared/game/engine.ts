@@ -62,6 +62,7 @@ export function snapTolerance(cut: CutResult, layout: BoardLayout): number {
 
 // Coba snap piece ke posisi benarnya. Kalau jaraknya dalam toleransi,
 // piece dikunci di posisi benar dan mengembalikan true.
+// (Dipakai server sampai commit feat(m5) server; diganti trySnapGroup.)
 export function trySnap(
   piece: PieceState,
   spec: PieceSpec,
@@ -78,6 +79,136 @@ export function trySnap(
     return true;
   }
   return false;
+}
+
+// --- Piece grouping (M5) ---
+
+// Anggota grup piece ini (termasuk dirinya sendiri). Piece tanpa grup
+// (groupId null/undefined) mengembalikan dirinya saja. Data lama di
+// SQLite belum punya groupId, jadi ceknya falsy, bukan === null.
+export function groupMembers(
+  piece: PieceState,
+  pieces: PieceState[],
+): PieceState[] {
+  if (piece.groupId == null) return [piece];
+  return pieces.filter((p) => p.groupId === piece.groupId);
+}
+
+// Gabungkan grup dua piece jadi satu. groupId baru deterministik:
+// `g` + id terkecil di antara semua anggota, supaya client dan server
+// selalu sepakat tanpa perlu koordinasi.
+function mergeGroups(a: PieceState, b: PieceState, pieces: PieceState[]) {
+  const members = pieces.filter(
+    (p) =>
+      p.id === a.id ||
+      p.id === b.id ||
+      (a.groupId != null && p.groupId === a.groupId) ||
+      (b.groupId != null && p.groupId === b.groupId),
+  );
+  const minId = Math.min(...members.map((p) => p.id));
+  const gid = `g${minId}`;
+  for (const p of members) p.groupId = gid;
+}
+
+// Gabungkan piece yang di-drop dengan tetangga grid-nya yang posisinya
+// sudah pas. HANYA dipanggil saat drop (tidak pernah saat drag): tidak
+// ada magnet, tidak ada preview. Tetangga dicek dari SEMUA anggota grup
+// yang di-drop (bukan cuma piece yang dipegang), dan diulang sampai
+// tidak ada gabungan baru (rantai A-B-C ikut menyatu).
+// Mengembalikan true kalau ada gabungan baru.
+export function tryGroup(
+  dropped: PieceState,
+  pieces: PieceState[],
+  cut: CutResult,
+  layout: BoardLayout,
+  tolerance: number,
+): boolean {
+  if (dropped.placed) return false;
+  const specById = new Map(cut.pieces.map((s) => [s.id, s]));
+  const pieceById = new Map(pieces.map((p) => [p.id, p]));
+  const deltas = [
+    { dr: 0, dc: -1 },
+    { dr: 0, dc: 1 },
+    { dr: -1, dc: 0 },
+    { dr: 1, dc: 0 },
+  ];
+  let mergedAny = false;
+  // Fixpoint: gabungan baru bisa membuka tetangga baru.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const member of groupMembers(dropped, pieces)) {
+      const spec = specById.get(member.id);
+      if (!spec) continue;
+      const solved = solvedPosition(spec, layout);
+      for (const d of deltas) {
+        const r = spec.row + d.dr;
+        const c = spec.col + d.dc;
+        if (r < 0 || r >= cut.rows || c < 0 || c >= cut.cols) continue;
+        const nSpec = specById.get(r * cut.cols + c);
+        const nPiece = nSpec ? pieceById.get(nSpec.id) : undefined;
+        if (!nSpec || !nPiece || nPiece.placed) continue;
+        // Sudah satu grup: tidak perlu dicek lagi.
+        if (
+          nPiece.groupId != null &&
+          member.groupId != null &&
+          nPiece.groupId === member.groupId
+        ) {
+          continue;
+        }
+        const nSolved = solvedPosition(nSpec, layout);
+        const expDx = nSolved.x - solved.x;
+        const expDy = nSolved.y - solved.y;
+        const actDx = nPiece.x - member.x;
+        const actDy = nPiece.y - member.y;
+        if (
+          Math.abs(actDx - expDx) <= tolerance &&
+          Math.abs(actDy - expDy) <= tolerance
+        ) {
+          mergeGroups(member, nPiece, pieces);
+          mergedAny = true;
+          changed = true;
+        }
+      }
+    }
+  }
+  return mergedAny;
+}
+
+// Snap seluruh grup: kalau anggota yang di-drop dalam toleransi
+// targetnya, semua anggota dipindah ke posisi solved masing-masing dan
+// menjadi placed. Grup sudah sejajar secara internal, jadi kalau satu
+// anggota pas di target, semua anggota pas. Piece yang terpasang keluar
+// dari grup (groupId dihapus). Untuk piece tanpa grup, ini sama saja
+// dengan snap satu piece biasa.
+export function trySnapGroup(
+  piece: PieceState,
+  pieces: PieceState[],
+  cut: CutResult,
+  layout: BoardLayout,
+  tolerance: number,
+): boolean {
+  if (piece.placed) return false;
+  const specById = new Map(cut.pieces.map((s) => [s.id, s]));
+  const spec = specById.get(piece.id);
+  if (!spec) return false;
+  const target = solvedPosition(spec, layout);
+  if (
+    Math.abs(piece.x - target.x) > tolerance ||
+    Math.abs(piece.y - target.y) > tolerance
+  ) {
+    return false;
+  }
+  for (const m of groupMembers(piece, pieces)) {
+    const s = specById.get(m.id);
+    if (!s) continue;
+    const t = solvedPosition(s, layout);
+    m.x = t.x;
+    m.y = t.y;
+    m.placed = true;
+    m.groupId = null;
+  }
+  return true;
 }
 
 export function placedCount(pieces: PieceState[]): number {
@@ -150,6 +281,7 @@ export function scatterPieces(
         placed: false,
         lockedBy: null,
         lockedAt: null,
+        groupId: null,
       };
     }
     const cell = cells[i % cells.length]!;
@@ -164,6 +296,7 @@ export function scatterPieces(
       placed: false,
       lockedBy: null,
       lockedAt: null,
+      groupId: null,
     };
   });
 }

@@ -9,6 +9,10 @@ export interface PieceState {
   placed: boolean
   lockedBy: string | null
   lockedAt: number | null
+  // Id grup (M5): piece dengan groupId sama bergerak bersama. null =
+  // belum bergabung. Data lama di SQLite belum punya field ini
+  // (undefined), diperlakukan sama seperti null.
+  groupId: string | null
 }
 
 export interface PlayerState {

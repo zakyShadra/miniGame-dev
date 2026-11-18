@@ -5,11 +5,13 @@ import { defineStore } from "pinia";
 import type { PieceState, RoomState } from "../../../shared/types";
 import { cutPuzzle, type CutResult } from "../../../shared/game/cutter";
 import {
+  groupMembers,
   isSolved,
   progressPercent,
   scatterPieces,
   snapTolerance,
-  trySnap,
+  tryGroup,
+  trySnapGroup,
   type BoardLayout,
 } from "../../../shared/game/engine";
 import { hashSeed, mulberry32 } from "../../../shared/game/prng";
@@ -111,6 +113,7 @@ export const useGameStore = defineStore("game", {
         placed: false,
         lockedBy: null,
         lockedAt: null,
+        groupId: null,
       }));
       this.scattered = false;
       this.selectedId = null;
@@ -136,23 +139,33 @@ export const useGameStore = defineStore("game", {
       this.selectedId = id;
     },
 
+    // Pindahkan piece ke posisi absolut (x, y). Kalau piece punya grup,
+    // semua anggota ikut bergerak dengan delta yang sama (M5).
     movePiece(id: number, x: number, y: number) {
       const piece = this.pieces.find((p) => p.id === id);
       if (!piece || piece.placed) return;
-      piece.x = x;
-      piece.y = y;
+      const dx = x - piece.x;
+      const dy = y - piece.y;
+      for (const m of groupMembers(piece, this.pieces)) {
+        if (m.placed) continue;
+        m.x += dx;
+        m.y += dy;
+      }
     },
 
     dropPiece(id: number) {
       const piece = this.pieces.find((p) => p.id === id);
-      const spec = this.cut?.pieces.find((s) => s.id === id);
-      if (!piece || !spec || !this.layout || !this.cut) return;
+      if (!piece || !this.layout || !this.cut) return;
       if (piece.placed) return;
-      const snapped = trySnap(
+      const tolerance = snapTolerance(this.cut, this.layout);
+      // Snap dulu (seluruh grup ikut kalau ada); kalau tidak snap, coba
+      // gabung dengan tetangga yang posisinya sudah pas (M5, drop-only).
+      const snapped = trySnapGroup(
         piece,
-        spec,
+        this.pieces,
+        this.cut,
         this.layout,
-        snapTolerance(this.cut, this.layout),
+        tolerance,
       );
       if (snapped) {
         playSnap();
@@ -160,7 +173,9 @@ export const useGameStore = defineStore("game", {
           this.status = "won";
           this.stopTimer();
         }
+        return;
       }
+      tryGroup(piece, this.pieces, this.cut, this.layout, tolerance);
     },
 
     // Multiplayer (M2): muat state room dari server. Cut dihitung lokal
@@ -182,7 +197,11 @@ export const useGameStore = defineStore("game", {
         state.pieceCount,
         state.seed,
       );
-      this.pieces = state.pieces.map((p) => ({ ...p }));
+      // Normalisasi groupId: state lama di server belum punya field ini.
+      this.pieces = state.pieces.map((p) => ({
+        ...p,
+        groupId: p.groupId ?? null,
+      }));
       this.scattered = true;
       this.selectedId = null;
       this.startedAt = state.startedAt;
@@ -203,6 +222,8 @@ export const useGameStore = defineStore("game", {
 
     // Rapikan (single-player): acak ulang posisi piece yang belum
     // terpasang. Di multiplayer server yang melakukan ini (pesan sort).
+    // Grup dibubarkan: anggota yang di-scatter ulang ke posisi acak
+    // tidak lagi bergerak bersama (M5).
     sortPieces() {
       if (!this.cut || !this.layout || this.status !== "playing") return;
       const rng = mulberry32((Date.now() ^ (Math.random() * 0x7fffffff)) | 0);
@@ -214,6 +235,7 @@ export const useGameStore = defineStore("game", {
         if (pos) {
           piece.x = pos.x;
           piece.y = pos.y;
+          piece.groupId = null;
         }
       }
     },
@@ -231,6 +253,7 @@ export const useGameStore = defineStore("game", {
       local.placed = piece.placed;
       local.lockedBy = piece.lockedBy;
       local.lockedAt = piece.lockedAt;
+      local.groupId = piece.groupId ?? null;
     },
 
     applyRemoteLock(pieceId: number, playerId: string | null) {
