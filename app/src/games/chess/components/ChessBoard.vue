@@ -258,10 +258,12 @@ function reviewEffectClass(): string {
 </script>
 
 <template>
-  <div class="relative w-full">
+  <div
+    class="relative w-full rounded-2xl bg-gradient-to-b from-[#2a5a70] to-board-frame p-2 shadow-[0_12px_32px_rgba(26,61,74,0.35)]"
+  >
     <div class="relative w-full">
       <div
-        class="grid aspect-square w-full grid-cols-8 overflow-hidden rounded-xl shadow-md"
+        class="grid aspect-square w-full grid-cols-8 overflow-hidden rounded-lg shadow-[inset_0_2px_12px_rgba(0,0,0,0.22)]"
         role="grid"
         aria-label="Papan catur"
       >
@@ -388,6 +390,12 @@ function reviewEffectClass(): string {
         </template>
       </div>
 
+      <!-- Cahaya atas lembut di atas petak (efek 3D, di bawah bidak). -->
+      <div
+        class="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-b from-white/[0.08] via-transparent to-black/[0.04]"
+        aria-hidden="true"
+      />
+
       <!-- Lapisan bidak: tiap bidak diposisikan dengan transform,
       jadi perpindahan petak teranimasikan sebagai slide. -->
       <div class="pointer-events-none absolute inset-0" aria-hidden="true">
@@ -403,7 +411,7 @@ function reviewEffectClass(): string {
             :src="pieceUrl(p.color, p.type)"
             alt=""
             draggable="false"
-            class="h-[92%] w-[92%] transition-all duration-300"
+            class="h-[92%] w-[92%] drop-shadow-[0_3px_3px_rgba(0,0,0,0.35)] transition-all duration-300"
             :class="{
               'scale-50 opacity-0': p.leaving,
               'scale-75 opacity-0': p.entering,
@@ -417,7 +425,7 @@ function reviewEffectClass(): string {
       <!-- Pilih promosi saat pion sampai baris terakhir -->
       <div
         v-if="store.promotionPending"
-        class="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-ink/40"
+        class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-ink/40"
         @click="store.cancelPromotion()"
       >
         <div
