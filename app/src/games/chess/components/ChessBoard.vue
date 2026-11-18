@@ -88,85 +88,116 @@ function squareDist(a: Square, b: Square): number {
 }
 
 // Cocokkan bidak di papan baru dengan bidak tampil sebelumnya.
-// Prioritas: (1) bidak yang baru jalan (petak asal langkah terakhir,
-//    termasuk promosi yang tipenya berubah), (2) bidak diam di
-//    tempat, (3) bidak sejenis terdekat (rokade: raja + benteng
-//    slide bareng; lompat review). Bidak tanpa pasangan = baru
-//    (fade in); bidak lama tanpa pasangan = dimakan (fade out).
+// URUTAN ARRAY DIJAGA STABIL (urutan bidak lama + bidak baru di
+// akhir): kalau urutan berubah, Vue memindah node DOM dan transisi
+// transform batal (bidak teleport). Dengan urutan stabil, Vue hanya
+// mengubah style dan slide berjalan.
+//
+// Dua pass pencocokan:
+// (1a) bidak yang baru jalan (petak asal langkah terakhir, termasuk
+//     promosi yang tipenya berubah) dan bidak diam di tempat;
+// (1b) sisa bidak dicocokkan ke petak sejenis terdekat yang belum
+//     terpakai (rokade: benteng slide ke petak barunya; lompat
+//     review). Bidak tanpa pasangan = baru (fade in, di akhir
+//     array); bidak lama tanpa pasangan = dimakan (fade out).
 function reconcileBoard(
   board: Map<Square, { type: PieceSymbol; color: Color }>,
 ) {
   clearTimers();
-  const prev = displayedPieces.value.filter((p) => !p.leaving);
-  const prevLeaving = displayedPieces.value.filter((p) => p.leaving);
+  const prev = displayedPieces.value;
   const lastMove = store.displayLastMove;
-  const used = new Set<number>();
-  const next: DisplayedPiece[] = [];
+  const usedSquares = new Set<Square>();
+  // Hasil per bidak lama (id -> state baru), null = belum cocok.
+  const matched = new Map<number, DisplayedPiece | null>();
+  for (const p of prev) matched.set(p.id, null);
 
-  for (const [sq, piece] of board) {
-    let match: DisplayedPiece | undefined;
-    if (lastMove && lastMove.to === sq) {
-      match = prev.find(
-        (p) =>
-          p.square === lastMove.from &&
-          p.color === piece.color &&
-          !used.has(p.id),
-      );
+  // Bidak yang sedang fade out dipertahankan selama petaknya masih
+  // kosong; kalau petak terisi lagi (undo cepat), buang duplikatnya.
+  for (const p of prev) {
+    if (p.leaving && !board.has(p.square)) {
+      matched.set(p.id, p);
     }
-    if (!match) {
-      match = prev.find(
-        (p) =>
-          p.square === sq &&
-          p.type === piece.type &&
-          p.color === piece.color &&
-          !used.has(p.id),
-      );
-    }
-    if (!match) {
-      let best: DisplayedPiece | undefined;
-      let bestDist = Infinity;
-      for (const p of prev) {
-        if (used.has(p.id) || p.type !== piece.type || p.color !== piece.color)
-          continue;
-        const d = squareDist(p.square, sq);
-        if (d < bestDist) {
-          bestDist = d;
-          best = p;
-        }
+  }
+
+  // Pass 1a: langkah terakhir + bidak diam.
+  for (const p of prev) {
+    if (p.leaving) continue;
+    let target: Square | undefined;
+    let newType = p.type;
+    if (lastMove && p.square === lastMove.from) {
+      const dest = board.get(lastMove.to);
+      if (dest && dest.color === p.color) {
+        target = lastMove.to;
+        newType = dest.type;
       }
-      match = best;
     }
-    if (match) {
-      used.add(match.id);
-      next.push({
-        ...match,
-        square: sq,
-        type: piece.type,
+    if (!target && !usedSquares.has(p.square)) {
+      const here = board.get(p.square);
+      if (here && here.type === p.type && here.color === p.color) {
+        target = p.square;
+      }
+    }
+    if (target) {
+      usedSquares.add(target);
+      matched.set(p.id, {
+        ...p,
+        square: target,
+        type: newType,
         entering: false,
         leaving: false,
-        promoted: match.type !== piece.type,
+        promoted: newType !== p.type,
       });
-    } else {
-      next.push({
-        id: nextPieceId++,
-        color: piece.color,
-        type: piece.type,
-        square: sq,
-        entering: true,
+    }
+  }
+
+  // Pass 1b: sisa bidak ke petak sejenis terdekat yang belum terpakai.
+  for (const p of prev) {
+    if (p.leaving || matched.get(p.id)) continue;
+    let best: Square | undefined;
+    let bestDist = Infinity;
+    for (const [sq, piece] of board) {
+      if (usedSquares.has(sq)) continue;
+      if (piece.type !== p.type || piece.color !== p.color) continue;
+      const d = squareDist(p.square, sq);
+      if (d < bestDist) {
+        bestDist = d;
+        best = sq;
+      }
+    }
+    if (best) {
+      usedSquares.add(best);
+      matched.set(p.id, {
+        ...p,
+        square: best,
+        entering: false,
         leaving: false,
         promoted: false,
       });
     }
   }
+
+  // Susun daftar baru dalam urutan lama (stabil) + bidak baru di akhir.
+  const next: DisplayedPiece[] = [];
   for (const p of prev) {
-    if (!used.has(p.id)) {
+    const m = matched.get(p.id);
+    if (m) {
+      next.push(m);
+    } else {
+      // Bidak lama tanpa pasangan = dimakan (fade out di tempat).
       next.push({ ...p, leaving: true, entering: false, promoted: false });
     }
   }
-  // Bidak yang sedang fade out dipertahankan selama petaknya masih
-  // kosong; kalau petak terisi lagi (undo cepat), buang duplikatnya.
-  for (const p of prevLeaving) {
-    if (!board.has(p.square)) next.push(p);
+  for (const [sq, piece] of board) {
+    if (usedSquares.has(sq)) continue;
+    next.push({
+      id: nextPieceId++,
+      color: piece.color,
+      type: piece.type,
+      square: sq,
+      entering: true,
+      leaving: false,
+      promoted: false,
+    });
   }
   displayedPieces.value = next;
 
