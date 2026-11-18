@@ -269,9 +269,22 @@ function reviewEffectStyle(sq: Square): Record<string, string> | null {
   };
 }
 
-// Jenis animasi glow per klasifikasi: Brilliant/Best berdenyut,
-// Blunder berkedip cepat, Mistake/Inaccuracy berdenyut pelan,
-// Excellent/Good diam (tint saja).
+// Badge glyph di atas bidak yang jalan saat review analisa: simbol
+// klasifikasi (??, !!, bintang Best, dll) tampil kecil di kanan atas
+// bidak, selain warna petak highlight. Berlaku untuk semua bidak.
+// Excellent tidak punya simbol, jadi badgenya titik warna saja.
+function isReviewBadgePiece(p: DisplayedPiece): boolean {
+  const lm = store.displayLastMove;
+  return (
+    reviewMove.value !== null &&
+    reviewClass.value !== null &&
+    store.reviewPly !== null &&
+    !p.leaving &&
+    !!lm &&
+    p.square === lm.to
+  );
+}
+
 function reviewEffectClass(): string {
   switch (reviewClass.value) {
     case "brilliant":
@@ -450,6 +463,17 @@ function reviewEffectClass(): string {
               '-translate-y-[3px] brightness-110': isHoveredPiece(p),
             }"
           />
+          <!-- Badge glyph klasifikasi di kanan atas bidak yang jalan
+          (saat review analisa). -->
+          <span
+            v-if="isReviewBadgePiece(p) && reviewClass"
+            data-testid="review-glyph-badge"
+            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full text-[10px] font-black text-white shadow-md ring-2 ring-white/90"
+            :style="{
+              backgroundColor: CLASSIFICATION_META[reviewClass].color,
+            }"
+            >{{ CLASSIFICATION_META[reviewClass].symbol }}</span
+          >
         </div>
       </div>
 
@@ -573,5 +597,23 @@ function reviewEffectClass(): string {
 }
 .piece-pop {
   animation: piece-pop 0.3s ease-out;
+}
+/* Pop badge glyph: muncul membesar dari kecil. */
+@keyframes badge-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.badge-pop {
+  animation: badge-pop 0.25s ease-out;
 }
 </style>
