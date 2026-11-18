@@ -27,12 +27,28 @@ import {
   type AnalysisMode,
   type GameAnalysis,
 } from "../lib/analysis";
+import { ensureAudio, playGameEnd } from "../../../lib/sound";
 
 export type ChessMode = "local" | "bot";
 export type ChessPhase = "setup" | "playing" | "over";
 export type BotLevel = "easy" | "medium" | "hard" | "extreme";
 export type HumanColorChoice = "w" | "b" | "random";
 export type AnalysisStatus = "idle" | "loading" | "running" | "done" | "error";
+
+// Akhir game terstruktur (round 2, tugas 5): modal hasil + badge
+// raja butuh alasan dan pemenang, bukan cuma string result.
+export type GameEndKind =
+  | "checkmate"
+  | "resign"
+  | "stalemate"
+  | "repetition"
+  | "insufficient"
+  | "fifty"
+  | "draw";
+export interface GameEnd {
+  kind: GameEndKind;
+  winner: Color | null;
+}
 
 export interface MovePair {
   n: number;
@@ -116,9 +132,51 @@ export const useChessStore = defineStore("chess", () => {
   const turn = ref<Color>("w");
   const inCheck = ref(false);
   const result = ref<string | null>(null);
+  // Akhir game terstruktur + visibilitas modal hasil (tugas 5).
+  const gameEnd = ref<GameEnd | null>(null);
+  const endModalVisible = ref(false);
   const lastMove = ref<{ from: Square; to: Square } | null>(null);
   // Dipakai computed boardMap sebagai pemicu re-render.
   const version = ref(0);
+
+  // Bunyi + modal saat game baru saja berakhir. Dipanggil sekali
+  // pada transisi belum-berakhir -> berakhir (bukan tiap sync).
+  function onGameEnd() {
+    const end = gameEnd.value;
+    if (!end) return;
+    const outcome =
+      end.winner === null
+        ? "draw"
+        : mode.value === "bot" && end.winner !== humanColor.value
+          ? "loss"
+          : "win";
+    playGameEnd(outcome);
+    endModalVisible.value = true;
+  }
+
+  function dismissEndModal() {
+    endModalVisible.value = false;
+  }
+
+  // Buka lagi modal hasil setelah ditutup (tombol "Lihat hasil" di
+  // sidebar). Hanya kalau game memang sudah berakhir.
+  function showEndModal() {
+    if (gameEnd.value) endModalVisible.value = true;
+  }
+
+  function computeGameEnd(): GameEnd | null {
+    const side = chess.turn();
+    const other: Color = side === "w" ? "b" : "w";
+    if (chess.isCheckmate()) return { kind: "checkmate", winner: other };
+    if (chess.isStalemate()) return { kind: "stalemate", winner: null };
+    if (chess.isThreefoldRepetition())
+      return { kind: "repetition", winner: null };
+    if (chess.isInsufficientMaterial())
+      return { kind: "insufficient", winner: null };
+    if (chess.isDrawByFiftyMoves()) return { kind: "fifty", winner: null };
+    if (chess.isDraw()) return { kind: "draw", winner: null };
+    return null;
+  }
 
   function computeResult(): string | null {
     if (chess.isCheckmate()) {
@@ -141,7 +199,11 @@ export const useChessStore = defineStore("chess", () => {
     const last = historyVerbose.value[historyVerbose.value.length - 1];
     lastMove.value = last ? { from: last.from, to: last.to } : null;
     result.value = computeResult();
+    const prevEnd = gameEnd.value;
+    gameEnd.value = computeGameEnd();
     if (result.value) phase.value = "over";
+    // Game baru berakhir di sync ini: bunyi + modal.
+    if (!prevEnd && gameEnd.value) onGameEnd();
     version.value++;
     if (phase.value === "playing") scheduleLiveEval();
   }
@@ -195,6 +257,29 @@ export const useChessStore = defineStore("chess", () => {
     }
     return null;
   });
+
+  // Petak kedua raja di posisi AKHIR game (dari fen live, bukan
+  // posisi review), buat badge skakmat di papan (tugas 5).
+  const kingSquares = computed<Record<Color, Square | null>>(() => {
+    const out: Record<Color, Square | null> = { w: null, b: null };
+    const board = new Chess(fen.value).board();
+    for (const row of board) {
+      for (const cell of row) {
+        if (cell && cell.type === "k") out[cell.color] = cell.square;
+      }
+    }
+    return out;
+  });
+
+  // Badge akhir game tampil hanya saat papan menunjukkan posisi
+  // akhir (bukan saat review posisi lama: raja di sana beda petak).
+  const showEndBadges = computed(
+    () =>
+      phase.value === "over" &&
+      gameEnd.value !== null &&
+      (reviewPly.value === null ||
+        reviewPly.value === historyVerbose.value.length),
+  );
 
   // Langkah terakhir di posisi tampil (saat review = langkah yang
   // membawa ke posisi itu; posisi awal tidak punya langkah terakhir).
@@ -311,6 +396,7 @@ export const useChessStore = defineStore("chess", () => {
     // Eval bar ikut nyala kalau engine sudah siap dari game sebelumnya.
     evalBarEnabled.value = stockfish.status === "ready";
     liveEvalScore.value = null;
+    endModalVisible.value = false;
     sync();
     // Prefetch engine di background (round 2): download .wasm 99 MB
     // berjalan selagi game dimainkan, jadi analisa / eval bar nanti
@@ -402,6 +488,7 @@ export const useChessStore = defineStore("chess", () => {
     // Mode bot: engine sudah ter-load, eval bar langsung nyala.
     evalBarEnabled.value = true;
     liveEvalScore.value = null;
+    endModalVisible.value = false;
     sync();
     // Bot pegang Putih: langsung jalan.
     void maybeBotMove();
@@ -439,6 +526,8 @@ export const useChessStore = defineStore("chess", () => {
     clearSelection();
     promotionPending.value = null;
     result.value = null;
+    gameEnd.value = null;
+    endModalVisible.value = false;
   }
 
   function doMove(from: Square, to: Square, promotion?: PieceSymbol) {
@@ -457,6 +546,10 @@ export const useChessStore = defineStore("chess", () => {
   }
 
   function selectSquare(sq: Square) {
+    // Buka kunci audio di tiap klik papan (gesture user): supaya
+    // bunyi akhir game bisa berbunyi saat game berakhir, termasuk
+    // saat bot yang memberi skakmat (bukan di dalam gesture).
+    ensureAudio();
     if (phase.value !== "playing" || result.value) return;
     // Sedang review posisi lama: papan read-only.
     if (reviewPly.value !== null) return;
@@ -513,6 +606,7 @@ export const useChessStore = defineStore("chess", () => {
     promotionPending.value = null;
     hintMove.value = null;
     result.value = null;
+    endModalVisible.value = false;
     if (phase.value === "over") phase.value = "playing";
     sync();
     // Kalau setelah undo jadi giliran bot, bot jalan lagi.
@@ -523,11 +617,17 @@ export const useChessStore = defineStore("chess", () => {
     if (phase.value !== "playing") return;
     if (mode.value === "bot") {
       result.value = "Bot menang (kamu menyerah).";
+      gameEnd.value = { kind: "resign", winner: botColor.value };
     } else {
       result.value = `${COLOR_NAME[turn.value === "w" ? "b" : "w"]} menang (${COLOR_NAME[turn.value]} menyerah).`;
+      gameEnd.value = {
+        kind: "resign",
+        winner: turn.value === "w" ? "b" : "w",
+      };
     }
     phase.value = "over";
     clearSelection();
+    onGameEnd();
   }
 
   // Analisa pasca-game (C3, round 2: dua mode + progresif). Engine
@@ -665,6 +765,12 @@ export const useChessStore = defineStore("chess", () => {
     turn,
     inCheck,
     result,
+    gameEnd,
+    endModalVisible,
+    dismissEndModal,
+    showEndModal,
+    kingSquares,
+    showEndBadges,
     lastMove,
     displayFen,
     displayLastMove,

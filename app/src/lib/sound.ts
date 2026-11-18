@@ -45,6 +45,37 @@ export function ensureAudio() {
   }
 }
 
+// Bunyi akhir game catur (round 2, tugas 5): jingle pendek WebAudio,
+// tanpa file audio. Menang = 3 nada naik, kalah = 2 nada turun,
+// remis = 2 nada datar. Memanggil ensureAudio() dulu: kalau game
+// berakhir tepat di klik user (langkah skakmat), konteks dibuat di
+// dalam gesture dan langsung berbunyi.
+export function playGameEnd(outcome: "win" | "loss" | "draw") {
+  ensureAudio();
+  const ac = ctx;
+  if (muted.value || !ac || ac.state !== "running") return;
+  const notes =
+    outcome === "win"
+      ? [523.25, 659.25, 783.99]
+      : outcome === "loss"
+        ? [392.0, 311.13]
+        : [440.0, 440.0];
+  const now = ac.currentTime;
+  notes.forEach((freq, i) => {
+    const start = now + i * 0.11;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(start);
+    osc.stop(start + 0.18);
+  });
+}
+
 // Klik kayu lembut: osilator triangle 1200 -> 500 Hz dalam 80ms,
 // gain turun cepat. Tidak bunyi kalau belum ada interaksi user
 // (AudioContext masih suspended) atau kalau di-mute.
