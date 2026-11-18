@@ -1,5 +1,5 @@
 {
-  "name": "puzzle-game",
+  "name": "mini-game",
   "private": true,
   "scripts": {
     "build": "npm run build --workspace=app",
