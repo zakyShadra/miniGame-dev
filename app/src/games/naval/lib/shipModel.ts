@@ -310,14 +310,33 @@ export function buildShipModel(
     );
   }
 
-  // Kapal selam (tanpa tiang): menara conning + periskop, placeholder N6.
+  // Kapal selam (tanpa tiang): menara conning membulat + periskop +
+  // sirip selam haluan/buritan.
   if (def.masts === 0) {
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.8, 6), std(def.hullColor, 0.6));
-    tower.position.set(0, 3.2, -length * 0.05);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 2.2, 10), std(def.hullColor, 0.6));
+    tower.position.set(0, 3.4, -length * 0.05);
     group.add(tower);
-    const peri = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.2, 6), metal);
-    peri.position.set(0, 4.8, length * 0.05);
+    const towerCap = new THREE.Mesh(new THREE.SphereGeometry(1.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), std(def.hullColor, 0.6));
+    towerCap.position.set(0, 4.5, -length * 0.05);
+    group.add(towerCap);
+    const peri = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.6, 6), metal);
+    peri.position.set(0, 5.6, length * 0.02);
     group.add(peri);
+    const periTop = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.1), metal);
+    periTop.position.set(0, 6.8, length * 0.02 + 0.4);
+    group.add(periTop);
+    // Sirip selam: sepasang di haluan + buritan.
+    for (const fz of [length * 0.3, -length * 0.32]) {
+      for (const side of [-1, 1]) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 1.1), std(def.trimColor, 0.7));
+        fin.position.set(side * (beam * 0.42), 0.6, fz);
+        group.add(fin);
+      }
+    }
+    // Palka dek (lingkaran trim di geladak).
+    const hatch = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.25, 12), std(def.trimColor, 0.7));
+    hatch.position.set(0, 2.55, length * 0.22);
+    group.add(hatch);
   }
 
   // Layar segitiga (jib) di haluan (hanya kapal berlayar).

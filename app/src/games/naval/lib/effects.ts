@@ -198,6 +198,27 @@ export class Effects {
     }
   }
 
+  /** Buih jejak buritan kapal yang bergerak (putih, cepat hilang). */
+  wake(x: number, z: number): void {
+    for (let i = 0; i < 2; i++) {
+      this.spawn({
+        x: x + (Math.random() - 0.5) * 3,
+        y: 0.3,
+        z: z + (Math.random() - 0.5) * 3,
+        vx: (Math.random() - 0.5) * 1,
+        vy: 0.2,
+        vz: (Math.random() - 0.5) * 1,
+        maxLife: 0.9 + Math.random() * 0.5,
+        size: 2 + Math.random() * 2,
+        r: 0.95,
+        g: 0.98,
+        b: 1,
+        drag: 0.5,
+        grow: 2.5,
+      });
+    }
+  }
+
   /** Gelembung + asap kapal yang tenggelam. */
   sinkingSmoke(x: number, z: number): void {
     for (let i = 0; i < 3; i++) {

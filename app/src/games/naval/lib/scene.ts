@@ -32,6 +32,14 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
   sand.rotation.x = -Math.PI / 2;
   sand.position.y = 0.15;
   g.add(sand);
+  // Cincin buih di garis air (ombak memecah di pantai).
+  const foam = new THREE.Mesh(
+    new THREE.RingGeometry(isl.radius * 1.12, isl.radius * 1.28, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  foam.rotation.x = -Math.PI / 2;
+  foam.position.y = 0.12;
+  g.add(foam);
 
   const rockMat = std(0x8a8a84);
   const rockMat2 = std(0x6f6f68);
@@ -115,6 +123,8 @@ export class NavalScene {
   private effects!: Effects;
   private shellMeshes: THREE.Mesh[] = [];
   private sinkSmokeT = 0;
+  /** Waktu render terakhir jejak buih per kapal (throttle ~7/detik). */
+  private lastWake = new Map<string, number>();
 
   followId: string | null = null;
   // Default: seperempat kanan (starboard quarter) ala preview, bukan
@@ -145,6 +155,11 @@ export class NavalScene {
     const sun = new THREE.DirectionalLight(0xfff2d9, 1.7);
     sun.position.set(180, 240, 120);
     this.scene.add(sun);
+    // Lampu isi dari arah berlawanan (tanpa bayangan): sisi gelap kapal
+    // + pulau tidak hitam pekat.
+    const fill = new THREE.DirectionalLight(0xbfd9ff, 0.45);
+    fill.position.set(-160, 120, -140);
+    this.scene.add(fill);
     this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x2a6b8a, 1.25));
 
     // Laut: plane 72x72 segmen, vertex digoyang tiap frame (JS).
@@ -159,8 +174,8 @@ export class NavalScene {
       geo,
       new THREE.MeshStandardMaterial({
         color: WATER_COLOR,
-        roughness: 0.45,
-        metalness: 0,
+        roughness: 0.35,
+        metalness: 0.05,
         flatShading: true,
       }),
     );
@@ -451,6 +466,18 @@ export class NavalScene {
       for (const ship of state.ships) {
         if (ship.sinking) this.effects.sinkingSmoke(ship.x, ship.z);
       }
+    }
+    // Jejak buih buritan kapal yang bergerak (tiap ~0,15 d per kapal).
+    for (const ship of state.ships) {
+      if (!ship.alive || ship.sinking || Math.abs(ship.speed) < 4) continue;
+      const last = this.lastWake.get(ship.id) ?? -1;
+      if (time - last < 0.15) continue;
+      this.lastWake.set(ship.id, time);
+      const m = this.ships.get(ship.id);
+      const len = m ? m.def.length : 24;
+      const fx = Math.sin(ship.heading);
+      const fz = Math.cos(ship.heading);
+      this.effects.wake(ship.x - fx * len * 0.45, ship.z - fz * len * 0.45);
     }
     this.effects.update(dt);
 
