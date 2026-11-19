@@ -6,9 +6,9 @@
 import * as THREE from "three";
 import { mulberry32 } from "../../../../../shared/game/prng";
 import { Effects } from "./effects";
-import { SINK_DURATION, waveHeight } from "./sim";
+import { SINK_DURATION, waveHeight } from "../../../../../shared/naval/sim";
 import { buildShipModel, type ShipModel } from "./shipModel";
-import type { GameState, IslandDef, MapDef, ShipDef, ShipState, SimEvent } from "./types";
+import type { GameState, IslandDef, MapDef, ShipDef, ShipState, SimEvent } from "../../../../../shared/naval/types";
 
 const SKY_COLOR = 0x9fd4f0;
 const WATER_COLOR = 0x12b5a8;

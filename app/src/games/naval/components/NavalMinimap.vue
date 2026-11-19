@@ -2,7 +2,7 @@
 teal searah heading, musuh titik merah (hilang bila terhalang pulau). -->
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import { MAP_OPEN_BAY } from "../lib/maps";
+import { MAP_OPEN_BAY } from "../../../../../shared/naval/maps";
 
 const props = defineProps<{
   px: number;

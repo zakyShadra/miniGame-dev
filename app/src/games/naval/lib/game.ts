@@ -2,9 +2,9 @@
 // keyboard/mouse, dummy latihan yang berlayar melingkar. Combat (tembak)
 // menyusul di N2; di sini turet hanya mengikuti titik aim mouse.
 
-import { MAP_OPEN_BAY } from "./maps";
+import { MAP_OPEN_BAY } from "../../../../../shared/naval/maps";
 import { NavalScene } from "./scene";
-import { getShipDef } from "./ships";
+import { getShipDef } from "../../../../../shared/naval/ships";
 import {
   TICK_DT,
   createGame,
@@ -13,8 +13,8 @@ import {
   hasLineOfSight,
   stepGame,
   useAbility,
-} from "./sim";
-import type { GameState, ShipId, ShipInput, SimEvent } from "./types";
+} from "../../../../../shared/naval/sim";
+import type { GameState, ShipId, ShipInput, SimEvent } from "../../../../../shared/naval/types";
 
 export interface NavalHud {
   speed: number;

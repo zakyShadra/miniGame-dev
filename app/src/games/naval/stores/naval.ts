@@ -5,8 +5,8 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
 import { MATCH_DURATION, NavalGame, type NavalHud, type NavalWinner } from "../lib/game";
-import { getShipDef } from "../lib/ships";
-import type { ShipId } from "../lib/types";
+import { getShipDef } from "../../../../../shared/naval/ships";
+import type { ShipId } from "../../../../../shared/naval/types";
 
 export type NavalPhase = "setup" | "playing" | "over";
 

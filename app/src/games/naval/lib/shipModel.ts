@@ -6,7 +6,7 @@
 // jumlah meriam (sesuai preview yang di-approve Zaky).
 
 import * as THREE from "three";
-import type { ShipDef } from "./types";
+import type { ShipDef } from "../../../../../shared/naval/types";
 
 export interface ShipModel {
   group: THREE.Group;

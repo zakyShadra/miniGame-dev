@@ -5,8 +5,8 @@ HP pemain kiri atas, timer tengah atas, HP musuh kanan atas, kecepatan
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useNavalStore } from "../stores/naval";
-import { SHIP_LIST } from "../lib/ships";
-import type { ShipId } from "../lib/types";
+import { SHIP_LIST } from "../../../../../shared/naval/ships";
+import type { ShipId } from "../../../../../shared/naval/types";
 import NavalMinimap from "./NavalMinimap.vue";
 
 const store = useNavalStore();
