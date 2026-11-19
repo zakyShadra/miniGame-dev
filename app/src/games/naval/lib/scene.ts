@@ -34,15 +34,23 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
 
   const rockMat = std(0x8a7a68);
   const rockMat2 = std(0x6e6154);
-  const main = new THREE.Mesh(new THREE.ConeGeometry(isl.radius * 0.55, isl.height * 0.85, 7), rockMat);
-  main.position.y = isl.height * 0.4;
+  // Batu utama: kerucut lebar + pendek (bukan piramida runcing) + topi rumput.
+  const main = new THREE.Mesh(new THREE.ConeGeometry(isl.radius * 0.62, isl.height * 0.62, 9), rockMat);
+  main.position.y = isl.height * 0.3;
   main.rotation.y = rng() * Math.PI;
   g.add(main);
+  const cap = new THREE.Mesh(
+    new THREE.ConeGeometry(isl.radius * 0.4, isl.height * 0.16, 9),
+    std(0x5a9e4d),
+  );
+  cap.position.y = isl.height * 0.58;
+  cap.rotation.y = rng() * Math.PI;
+  g.add(cap);
   const second = new THREE.Mesh(
-    new THREE.ConeGeometry(isl.radius * 0.32, isl.height * 0.55, 6),
+    new THREE.ConeGeometry(isl.radius * 0.4, isl.height * 0.45, 7),
     rockMat2,
   );
-  second.position.set(isl.radius * 0.3 * (rng() - 0.5) * 2, isl.height * 0.26, isl.radius * 0.3 * (rng() - 0.5) * 2);
+  second.position.set(isl.radius * 0.3 * (rng() - 0.5) * 2, isl.height * 0.2, isl.radius * 0.3 * (rng() - 0.5) * 2);
   second.rotation.z = (rng() - 0.5) * 0.25;
   g.add(second);
   for (let i = 0; i < 3; i++) {
@@ -58,16 +66,16 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
   const palms = 1 + Math.floor(rng() * 3);
   for (let i = 0; i < palms; i++) {
     const palm = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 4.5, 6), std(0x7a5a3a));
-    trunk.position.y = 2.2;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.32, 5.5, 6), std(0x7a5a3a));
+    trunk.position.y = 2.7;
     trunk.rotation.z = 0.18;
     palm.add(trunk);
     const leafMat = std(rng() > 0.5 ? 0x3f9e4d : 0x57b25e);
     for (let l = 0; l < 6; l++) {
-      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 4), leafMat);
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.7, 3.0, 4), leafMat);
       leaf.scale.set(1, 1, 0.22);
       const ang = (l / 6) * Math.PI * 2;
-      leaf.position.set(Math.cos(ang) * 0.9, 4.4, Math.sin(ang) * 0.9);
+      leaf.position.set(Math.cos(ang) * 1.2, 5.4, Math.sin(ang) * 1.2);
       leaf.rotation.set(Math.sin(ang) * 1.1, 0, -Math.cos(ang) * 1.1);
       palm.add(leaf);
     }
@@ -128,10 +136,10 @@ export class NavalScene {
     );
     this.camera.position.set(0, 30, -60);
 
-    const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
+    const sun = new THREE.DirectionalLight(0xfff2d9, 1.7);
     sun.position.set(180, 240, 120);
     this.scene.add(sun);
-    this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x2a6b8a, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x2a6b8a, 1.25));
 
     // Laut: plane 72x72 segmen, vertex digoyang tiap frame (JS).
     const size = map.arenaRadius * 3.6;
@@ -145,8 +153,8 @@ export class NavalScene {
       geo,
       new THREE.MeshStandardMaterial({
         color: WATER_COLOR,
-        roughness: 0.32,
-        metalness: 0.05,
+        roughness: 0.45,
+        metalness: 0,
         flatShading: true,
       }),
     );
@@ -156,7 +164,12 @@ export class NavalScene {
 
     // Awan low-poly (gumpalan bola pipih), melayang pelan.
     const rng = mulberry32(99);
-    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      flatShading: true,
+      emissive: 0x555555,
+    });
     for (let i = 0; i < 8; i++) {
       const cloud = new THREE.Group();
       const n = 3 + Math.floor(rng() * 3);
@@ -176,12 +189,13 @@ export class NavalScene {
     const model = buildShipModel(def, opts);
     model.group.rotation.order = "YXZ";
     this.scene.add(model.group);
+    // Bayangan palsu: elips kecil di dalam footprint kapal (bukan noda besar).
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(def.radius * 1.05, 24),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false }),
+      new THREE.CircleGeometry(1, 24),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false }),
     );
     shadow.rotation.x = -Math.PI / 2;
-    shadow.scale.set(1, 1.7, 1);
+    shadow.scale.set(def.beam * 0.62, def.length * 0.52, 1);
     shadow.position.y = 0.06;
     this.scene.add(shadow);
     this.ships.set(id, { model, shadow, def, phase: Math.random() * 10 });
@@ -251,7 +265,7 @@ export class NavalScene {
     // Bayangan palsu di air (tetap datar, memudar saat tenggelam).
     m.shadow.position.set(x, 0.06, z);
     m.shadow.rotation.z = heading;
-    (m.shadow.material as THREE.MeshBasicMaterial).opacity = 0.22 * (1 - sinkP);
+    (m.shadow.material as THREE.MeshBasicMaterial).opacity = 0.18 * (1 - sinkP);
     m.shadow.visible = sinkP < 1;
 
     // Turet mengikuti titik aim (relatif terhadap haluan kapal).

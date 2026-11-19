@@ -26,7 +26,7 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     abilityDesc: "Volley berikutnya menembak 2x peluru.",
     abilityCooldown: 8,
     sailColor: "#d43d2a",
-    hullColor: "#6b4a2f",
+    hullColor: "#7a5230",
     trimColor: "#e8b94a",
   },
   battleship: {
