@@ -11,18 +11,21 @@ import { SHIP_LIST, getShipDef } from "../../../../../shared/naval/ships";
 import type { ShipId } from "../../../../../shared/naval/types";
 import NavalCoop from "./NavalCoop.vue";
 import NavalMinimap from "./NavalMinimap.vue";
+import NavalPvp from "./NavalPvp.vue";
 
 const store = useNavalStore();
 defineEmits<{ exit: [] }>();
 
 const canvasWrap = ref<HTMLDivElement | null>(null);
-// Mode layar naval: solo (vs bot sendiri) atau co-op (berdua vs bot).
-type NavalMode = "solo" | "coop";
+// Mode layar naval: solo (vs bot sendiri), co-op (berdua vs bot),
+// atau PvP (duel 1v1 online).
+type NavalMode = "solo" | "coop" | "pvp";
 const mode = ref<NavalMode>("solo");
 // Computed di script (tidak dipersempit control-flow template seperti
 // perbandingan langsung di dalam cabang v-else-if).
 const isSolo = computed(() => mode.value === "solo");
 const isCoop = computed(() => mode.value === "coop");
+const isPvp = computed(() => mode.value === "pvp");
 // Posisi kursor (buat crosshair).
 const crossX = ref(-100);
 const crossY = ref(-100);
@@ -140,6 +143,9 @@ const activeMap = computed(() => {
   <!-- CO-OP: layar room + game berdua vs bot (komponen mandiri). -->
   <NavalCoop v-if="mode === 'coop'" @exit="mode = 'solo'" />
 
+  <!-- PVP: duel 1v1 online (komponen mandiri). -->
+  <NavalPvp v-else-if="mode === 'pvp'" @exit="mode = 'solo'" />
+
   <!-- SETUP: menu gelap ala preview (NAVAL DUEL, emas + kaca gelap). -->
   <div
     v-else-if="store.phase === 'setup'"
@@ -158,11 +164,12 @@ const activeMap = computed(() => {
       </h1>
       <p class="mt-2 text-center text-sm text-white/70">
         Duel kapal 3D ala World of Warships. Pilih kapalmu, berlayar, dan
-        tenggelamkan lawan. Main solo lawan bot, atau mabar berdua lawan bot.
+        tenggelamkan lawan. Main solo lawan bot, mabar berdua lawan bot,
+        atau duel 1v1 lawan pemain lain.
       </p>
 
-      <!-- Pilih mode: solo vs bot, atau co-op berdua vs bot. -->
-      <div class="mt-4 grid grid-cols-2 gap-2">
+      <!-- Pilih mode: solo vs bot, co-op berdua vs bot, atau PvP 1v1. -->
+      <div class="mt-4 grid grid-cols-3 gap-2">
         <button
           type="button"
           class="rounded-xl border px-3 py-3 text-left backdrop-blur transition"
@@ -188,6 +195,19 @@ const activeMap = computed(() => {
         >
           <span class="block font-display text-sm font-bold text-white">Co-op vs Bot</span>
           <span class="mt-0.5 block text-xs text-white/60">Berdua lawan bot, lewat room</span>
+        </button>
+        <button
+          type="button"
+          class="rounded-xl border px-3 py-3 text-left backdrop-blur transition"
+          :class="
+            isPvp
+              ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+              : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
+          "
+          @click="mode = 'pvp'"
+        >
+          <span class="block font-display text-sm font-bold text-white">Battle PvP</span>
+          <span class="mt-0.5 block text-xs text-white/60">Duel 1v1, lewat room</span>
         </button>
       </div>
 
