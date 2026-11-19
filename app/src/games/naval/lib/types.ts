@@ -52,6 +52,10 @@ export interface ShipDef {
   sailColor: string;
   hullColor: string;
   trimColor: string;
+  /** Jumlah tiang layar (0 = kapal selam, tanpa layar). */
+  masts: number;
+  /** Meriam broadside dekoratif per sisi. */
+  cannonsPerSide: number;
 }
 
 export interface IslandDef {

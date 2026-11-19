@@ -187,7 +187,7 @@ export class NavalScene {
     }
   }
 
-  addShip(id: string, def: ShipDef, opts: { sailColor?: string; hullColor?: string } = {}): void {
+  addShip(id: string, def: ShipDef, opts: { enemy?: boolean } = {}): void {
     const model = buildShipModel(def, opts);
     model.group.rotation.order = "YXZ";
     this.scene.add(model.group);
