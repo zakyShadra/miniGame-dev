@@ -78,6 +78,8 @@ export interface MapDef {
   /** Titik spawn pemain (x, z, heading). */
   spawnA: { x: number; z: number; heading: number };
   spawnB: { x: number; z: number; heading: number };
+  /** Spawn pemain ke-2 mode co-op (dekat spawnA). Opsional. */
+  spawnC?: { x: number; z: number; heading: number };
 }
 
 export interface ShipState {
