@@ -409,14 +409,14 @@ const aimLabel = computed(() => {
     <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
       <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-white shadow-lg backdrop-blur-md sm:px-4 sm:py-3">
         <div class="text-[10px] font-bold tracking-widest text-white/60">KAMU</div>
-        <div class="font-display text-sm font-bold uppercase">{{ store.hud.shipName }}</div>
+        <div class="font-display text-xs font-bold uppercase leading-tight sm:text-sm">{{ store.hud.shipName }}</div>
         <div class="mt-1.5 h-2.5 w-24 overflow-hidden rounded-full bg-white/20 sm:w-40 lg:w-52">
           <div
             class="h-full rounded-full bg-[#3ddc84] transition-all"
             :style="{ width: `${hpPct}%` }"
           />
         </div>
-        <div class="mt-1 font-timer text-xs whitespace-nowrap text-white/80">
+        <div class="mt-1 font-timer text-xs text-white/80">
           Hull {{ store.hud.hp }} / {{ store.hud.maxHp }}
         </div>
       </div>
@@ -433,7 +433,7 @@ const aimLabel = computed(() => {
 
       <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-right text-white shadow-lg backdrop-blur-md sm:px-4 sm:py-3">
         <div class="text-[10px] font-bold tracking-widest text-white/60">LAWAN</div>
-        <div class="font-display text-sm font-bold uppercase">{{ store.hud.dummyName }}</div>
+        <div class="font-display text-xs font-bold uppercase leading-tight sm:text-sm">{{ store.hud.dummyName }}</div>
         <template v-if="store.hud.dummyVisible">
           <div class="mt-1.5 h-2.5 w-24 overflow-hidden rounded-full bg-white/20 sm:w-40 lg:w-52">
             <div
@@ -441,7 +441,7 @@ const aimLabel = computed(() => {
               :style="{ width: `${dummyPct}%` }"
             />
           </div>
-          <div class="mt-1 font-timer text-xs whitespace-nowrap text-white/80">
+          <div class="mt-1 font-timer text-xs text-white/80">
             Hull {{ store.hud.dummyHp }} / {{ store.hud.dummyMaxHp }} &middot; {{ distanceText }}
           </div>
         </template>
