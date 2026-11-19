@@ -12,6 +12,7 @@ import {
   GRAVITY,
   hasLineOfSight,
   moveShip,
+  shipForward,
 } from "../../../../../shared/naval/sim";
 import type {
   GameState,
@@ -125,6 +126,8 @@ export class NavalRemoteGame {
   private lastOrbitX = 0;
   private disposed = false;
   private over = false;
+  /** Input joystick sentuh (digabung dengan keyboard di currentInput). */
+  private touchInput: ShipInput = { throttle: 0, rudder: 0 };
 
   constructor(container: HTMLElement, opts: NavalRemoteGameOptions) {
     this.container = container;
@@ -166,6 +169,17 @@ export class NavalRemoteGame {
       this.scene.addShip(s.key, getShipDef(s.defId));
     }
     this.scene.followId = cfg.myShipKey;
+    // Bidik awal: 200 m di depan spawn kapal sendiri (tombol tembak
+    // mobile langsung bisa dipakai tanpa aim dulu).
+    const sp =
+      cfg.myShipKey === "p1"
+        ? this.map.spawnA
+        : cfg.mode === "pvp"
+          ? this.map.spawnB
+          : (this.map.spawnC ?? this.map.spawnA);
+    const fwd = shipForward(sp.heading);
+    this.scene.aimX = sp.x + fwd.x * 200;
+    this.scene.aimZ = sp.z + fwd.z * 200;
     this.synth = {
       map: this.map,
       ships: [],
@@ -244,6 +258,37 @@ export class NavalRemoteGame {
       // per mode: co-op "players"/"bot", PvP "p1"/"p2").
       this.opts.onMatchEnd(snap.winnerId);
     }
+  }
+
+  /** Input joystick sentuh (dari NavalTouchControls). */
+  setTouchInput(input: ShipInput): void {
+    this.touchInput = {
+      throttle: Math.max(-1, Math.min(1, input.throttle)),
+      rudder: Math.max(-1, Math.min(1, input.rudder)),
+    };
+  }
+
+  /** Arahkan turet dari koordinat layar (drag/tap area aim mobile). */
+  setAimFromScreen(clientX: number, clientY: number): void {
+    const p = this.scene?.screenToAim(clientX, clientY);
+    if (p && this.scene) {
+      this.scene.aimX = p.x;
+      this.scene.aimZ = p.z;
+    }
+  }
+
+  /** Tembak ke titik aim saat ini (tombol tembak mobile). */
+  fireAtAim(): void {
+    const aimX = this.scene?.aimX;
+    const aimZ = this.scene?.aimZ;
+    if (!this.over && aimX != null && aimZ != null) {
+      this.opts.onFire(aimX, aimZ);
+    }
+  }
+
+  /** Pakai kemampuan kapal (tombol kemampuan mobile). */
+  useAbilityNow(): void {
+    if (!this.over) this.opts.onAbility();
   }
 
   /** Tampilkan/sembunyikan mesh lawan (dipanggil applySnapshot; publik
@@ -344,6 +389,9 @@ export class NavalRemoteGame {
     let rudder = 0;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) rudder -= 1;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) rudder += 1;
+    // Joystick sentuh mengisi sumbu yang tidak dipakai keyboard.
+    if (throttle === 0) throttle = this.touchInput.throttle;
+    if (rudder === 0) rudder = this.touchInput.rudder;
     return { throttle, rudder };
   }
 

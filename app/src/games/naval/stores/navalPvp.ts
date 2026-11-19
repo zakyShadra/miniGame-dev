@@ -393,6 +393,23 @@ export const useNavalPvpStore = defineStore("naval-pvp", () => {
     send({ type: "naval-rematch" });
   }
 
+  /** Kontrol sentuh (dari NavalTouchControls). No-op bila game belum jalan. */
+  function setTouchInput(input: ShipInput): void {
+    remote?.setTouchInput(input);
+  }
+
+  function touchFire(): void {
+    remote?.fireAtAim();
+  }
+
+  function touchAbility(): void {
+    remote?.useAbilityNow();
+  }
+
+  function touchAim(clientX: number, clientY: number): void {
+    remote?.setAimFromScreen(clientX, clientY);
+  }
+
   return {
     status,
     phase,
@@ -420,5 +437,9 @@ export const useNavalPvpStore = defineStore("naval-pvp", () => {
     sendFire,
     sendAbility,
     sendRematch,
+    setTouchInput,
+    touchFire,
+    touchAbility,
+    touchAim,
   };
 });

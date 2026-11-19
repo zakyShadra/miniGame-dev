@@ -12,6 +12,7 @@ import {
   fireVolley,
   getShip,
   hasLineOfSight,
+  shipForward,
   stepGame,
   useAbility,
 } from "../../../../../shared/naval/sim";
@@ -99,6 +100,8 @@ export class NavalGame {
   private lastOrbitX = 0;
   private disposed = false;
   private over = false;
+  /** Input joystick sentuh (digabung dengan keyboard di collectInputs). */
+  private touchInput: ShipInput = { throttle: 0, rudder: 0 };
 
   constructor(container: HTMLElement, opts: NavalGameOptions) {
     this.container = container;
@@ -114,6 +117,12 @@ export class NavalGame {
     this.scene.addShip(PLAYER_ID, getShipDef(opts.shipId));
     this.scene.addShip(DUMMY_ID, getShipDef(this.botDefId), { enemy: true });
     this.scene.followId = PLAYER_ID;
+    // Bidik awal: 200 m di depan kapal (tombol tembak mobile langsung
+    // bisa dipakai tanpa aim dulu; mouse menimpa begitu bergerak).
+    const me = getShip(this.state, PLAYER_ID)!;
+    const fwd = shipForward(me.heading);
+    this.scene.aimX = me.x + fwd.x * 200;
+    this.scene.aimZ = me.z + fwd.z * 200;
 
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
@@ -162,6 +171,35 @@ export class NavalGame {
     this.raf = requestAnimationFrame(loop);
   }
 
+  /** Input joystick sentuh (dari NavalTouchControls). */
+  setTouchInput(input: ShipInput): void {
+    this.touchInput = {
+      throttle: Math.max(-1, Math.min(1, input.throttle)),
+      rudder: Math.max(-1, Math.min(1, input.rudder)),
+    };
+  }
+
+  /** Arahkan turet dari koordinat layar (drag/tap area aim mobile). */
+  setAimFromScreen(clientX: number, clientY: number): void {
+    const p = this.scene.screenToAim(clientX, clientY);
+    if (p) {
+      this.scene.aimX = p.x;
+      this.scene.aimZ = p.z;
+    }
+  }
+
+  /** Tembak satu volley ke titik aim saat ini (tombol tembak mobile). */
+  fireAtAim(): void {
+    if (!this.over && this.scene.aimX !== null && this.scene.aimZ !== null) {
+      fireVolley(this.state, PLAYER_ID, this.scene.aimX, this.scene.aimZ);
+    }
+  }
+
+  /** Pakai kemampuan kapal (tombol kemampuan mobile). */
+  useAbilityNow(): void {
+    if (!this.over) useAbility(this.state, PLAYER_ID);
+  }
+
   /** Teruskan event sim ke efek visual + angka damage + flash kena hit. */
   private handleEvent(ev: SimEvent): void {
     this.scene.playEvent(ev);
@@ -204,6 +242,9 @@ export class NavalGame {
     let rudder = 0;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) rudder -= 1;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) rudder += 1;
+    // Joystick sentuh mengisi sumbu yang tidak dipakai keyboard.
+    if (throttle === 0) throttle = this.touchInput.throttle;
+    if (rudder === 0) rudder = this.touchInput.rudder;
     // Q/E mengorbit kamera (bukan kendali kapal).
     if (this.keys.has("KeyQ")) this.scene.addOrbit(0.02);
     if (this.keys.has("KeyE")) this.scene.addOrbit(-0.02);

@@ -12,6 +12,7 @@ import type { ShipId } from "../../../../../shared/naval/types";
 import NavalCoop from "./NavalCoop.vue";
 import NavalMinimap from "./NavalMinimap.vue";
 import NavalPvp from "./NavalPvp.vue";
+import NavalTouchControls from "./NavalTouchControls.vue";
 
 const store = useNavalStore();
 defineEmits<{ exit: [] }>();
@@ -321,6 +322,16 @@ const activeMap = computed(() => {
     @mousemove="trackMouse"
   >
     <div ref="canvasWrap" class="absolute inset-0"></div>
+
+    <!-- Kontrol sentuh (hanya tampil di perangkat pointer kasar). -->
+    <NavalTouchControls
+      v-if="store.phase === 'playing'"
+      :ability-name="store.hud.abilityName"
+      @input="store.setTouchInput"
+      @fire="store.touchFire"
+      @ability="store.touchAbility"
+      @aim="(x, y) => store.touchAim(x, y)"
+    />
 
     <!-- Crosshair mengikuti mouse (cincin emas + salib putih + label jarak/lead). -->
     <div

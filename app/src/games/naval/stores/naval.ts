@@ -144,6 +144,23 @@ export const useNavalStore = defineStore("naval", () => {
     begin();
   }
 
+  /** Kontrol sentuh (dari NavalTouchControls). No-op bila game belum jalan. */
+  function setTouchInput(input: { throttle: number; rudder: number }): void {
+    game?.setTouchInput(input);
+  }
+
+  function touchFire(): void {
+    game?.fireAtAim();
+  }
+
+  function touchAbility(): void {
+    game?.useAbilityNow();
+  }
+
+  function touchAim(clientX: number, clientY: number): void {
+    game?.setAimFromScreen(clientX, clientY);
+  }
+
   function disposeGame(): void {
     game?.dispose();
     game = null;
@@ -156,5 +173,5 @@ export const useNavalStore = defineStore("naval", () => {
     phase.value = "setup";
   }
 
-  return { phase, selectedShip, level, unlockedLevel, justUnlocked, hud, winner, damageNums, hitFlash, begin, attachGame, rematch, toSetup };
+  return { phase, selectedShip, level, unlockedLevel, justUnlocked, hud, winner, damageNums, hitFlash, begin, attachGame, rematch, toSetup, setTouchInput, touchFire, touchAbility, touchAim };
 });
