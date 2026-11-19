@@ -1,8 +1,8 @@
-// Orkestrasi game naval solo (N1): loop fixed-timestep 20 Hz, input
-// keyboard/mouse, dummy latihan yang berlayar melingkar. Combat (tembak)
-// menyusul di N2; di sini turet hanya mengikuti titik aim mouse.
+// Orkestrasi game naval solo (N1-N4): loop fixed-timestep 20 Hz, input
+// keyboard/mouse, lawan bot AI (N3) dengan level + map per level (N4).
 
-import { MAP_OPEN_BAY } from "../../../../../shared/naval/maps";
+import { BOT_LEVELS, BotController, type BotLevel } from "../../../../../shared/naval/bot";
+import { getMap } from "../../../../../shared/naval/maps";
 import { NavalScene } from "./scene";
 import { getShipDef } from "../../../../../shared/naval/ships";
 import {
@@ -65,6 +65,9 @@ export interface DamageNumber {
 
 export interface NavalGameOptions {
   shipId: ShipId;
+  /** Level bot (menentukan kapal musuh + map lewat BOT_LEVELS). */
+  botLevel: BotLevel;
+  mapId: string;
   onHud: (hud: NavalHud) => void;
   onMatchEnd: (winner: NavalWinner) => void;
   onDamage: (d: DamageNumber) => void;
@@ -76,14 +79,16 @@ const DUMMY_ID = "dummy";
 /** Durasi match (detik). Habis waktu = HP tertinggi menang. */
 export const MATCH_DURATION = 300;
 
-/** Dummy latihan: throttle + rudder konstan (melingkar pelan). Bukan AI. */
-const DUMMY_INPUT: ShipInput = { throttle: 0.45, rudder: 0.18 };
+/** Nomor level tampil (1-3) per BotLevel, buat nama musuh di HUD. */
+const LEVEL_NUM: Record<BotLevel, number> = { medium: 1, hard: 2, extreme: 3 };
 
 export class NavalGame {
   readonly state: GameState;
   readonly scene: NavalScene;
   private container: HTMLElement;
   private opts: NavalGameOptions;
+  private bot: BotController;
+  private botDefId: ShipId;
   private raf = 0;
   private lastT = 0;
   private acc = 0;
@@ -97,13 +102,16 @@ export class NavalGame {
   constructor(container: HTMLElement, opts: NavalGameOptions) {
     this.container = container;
     this.opts = opts;
-    this.state = createGame(MAP_OPEN_BAY, [
+    const map = getMap(opts.mapId);
+    this.botDefId = BOT_LEVELS[opts.botLevel].botShip;
+    this.bot = new BotController(opts.botLevel, DUMMY_ID);
+    this.state = createGame(map, [
       { id: PLAYER_ID, defId: opts.shipId, spawn: "A" },
-      { id: DUMMY_ID, defId: "galleon", spawn: "B" },
+      { id: DUMMY_ID, defId: this.botDefId, spawn: "B" },
     ]);
-    this.scene = new NavalScene(container, MAP_OPEN_BAY);
+    this.scene = new NavalScene(container, map);
     this.scene.addShip(PLAYER_ID, getShipDef(opts.shipId));
-    this.scene.addShip(DUMMY_ID, getShipDef("galleon"), { enemy: true });
+    this.scene.addShip(DUMMY_ID, getShipDef(this.botDefId), { enemy: true });
     this.scene.followId = PLAYER_ID;
 
     window.addEventListener("keydown", this.onKeyDown);
@@ -131,7 +139,13 @@ export class NavalGame {
       this.lastT = t;
       this.acc += dt;
       while (this.acc >= TICK_DT) {
-        const events = stepGame(this.state, this.collectInputs(), TICK_DT);
+        // Bot diputuskan tiap tick; saat match over bot berhenti (input nol).
+        const botDecision = this.over ? null : this.bot.update(this.state, TICK_DT);
+        if (botDecision?.fireAt) {
+          fireVolley(this.state, DUMMY_ID, botDecision.fireAt.x, botDecision.fireAt.z);
+        }
+        if (botDecision?.useAbility) useAbility(this.state, DUMMY_ID);
+        const events = stepGame(this.state, this.collectInputs(botDecision?.input), TICK_DT);
         for (const ev of events) this.handleEvent(ev);
         this.acc -= TICK_DT;
       }
@@ -176,7 +190,7 @@ export class NavalGame {
     }
   }
 
-  private collectInputs(): Map<string, ShipInput> {
+  private collectInputs(botInput?: ShipInput): Map<string, ShipInput> {
     if (this.over) {
       return new Map([
         [PLAYER_ID, { throttle: 0, rudder: 0 }],
@@ -194,7 +208,7 @@ export class NavalGame {
     if (this.keys.has("KeyE")) this.scene.addOrbit(-0.02);
     return new Map([
       [PLAYER_ID, { throttle, rudder }],
-      [DUMMY_ID, DUMMY_INPUT],
+      [DUMMY_ID, botInput ?? { throttle: 0, rudder: 0 }],
     ]);
   }
 
@@ -253,7 +267,7 @@ export class NavalGame {
       abilityLeft,
       abilityName: def.abilityName,
       shipName: def.name,
-      dummyName: getShipDef("galleon").name,
+      dummyName: `${getShipDef(this.botDefId).name} · Lv ${LEVEL_NUM[this.opts.botLevel]} ${BOT_LEVELS[this.opts.botLevel].label}`,
       aimDist,
       aimLead,
       aimBlocked,

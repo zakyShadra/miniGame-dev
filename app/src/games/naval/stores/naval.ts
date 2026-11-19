@@ -5,15 +5,38 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
 import { MATCH_DURATION, NavalGame, type NavalHud, type NavalWinner } from "../lib/game";
+import { BOT_LEVELS, type BotLevel } from "../../../../../shared/naval/bot";
 import { getShipDef } from "../../../../../shared/naval/ships";
 import type { ShipId } from "../../../../../shared/naval/types";
 
 export type NavalPhase = "setup" | "playing" | "over";
+export type NavalLevel = 1 | 2 | 3;
 
-/** HUD awal dari stats kapal yang dipilih (musuh latihan = Galleon). */
-function freshHud(shipId: ShipId): NavalHud {
+/** Nomor level (1-3) -> BotLevel (menentukan kapal musuh + map). */
+export const LEVEL_TO_BOT: Record<NavalLevel, BotLevel> = {
+  1: "medium",
+  2: "hard",
+  3: "extreme",
+};
+
+/** localStorage: level tertinggi yang sudah terbuka. */
+const UNLOCK_KEY = "minigame:naval-unlocked";
+
+function readUnlocked(): number {
+  try {
+    const v = Number(localStorage.getItem(UNLOCK_KEY));
+    if (Number.isInteger(v) && v >= 1 && v <= 3) return v;
+  } catch {
+    // localStorage tidak tersedia: mulai dari level 1.
+  }
+  return 1;
+}
+
+/** HUD awal dari stats kapal yang dipilih + kapal musuh level saat ini. */
+function freshHud(shipId: ShipId, level: NavalLevel): NavalHud {
   const me = getShipDef(shipId);
-  const foe = getShipDef("galleon");
+  const info = BOT_LEVELS[LEVEL_TO_BOT[level]];
+  const foe = getShipDef(info.botShip);
   return {
     speed: 0,
     maxSpeed: me.maxSpeed,
@@ -35,7 +58,7 @@ function freshHud(shipId: ShipId): NavalHud {
     abilityLeft: 0,
     abilityName: me.abilityName,
     shipName: me.name,
-    dummyName: foe.name,
+    dummyName: `${foe.name} · Lv ${level} ${info.label}`,
     aimDist: -1,
     aimLead: -1,
     aimBlocked: false,
@@ -54,7 +77,13 @@ export const useNavalStore = defineStore("naval", () => {
   const phase = ref<NavalPhase>("setup");
   // Default Frigate (kapal pemain di preview yang di-approve).
   const selectedShip = ref<ShipId>("frigate");
-  const hud = ref<NavalHud>(freshHud("frigate"));
+  /** Level yang dipilih di setup (1-3). */
+  const level = ref<NavalLevel>(1);
+  /** Level tertinggi yang terbuka (persist localStorage). */
+  const unlockedLevel = ref<number>(readUnlocked());
+  /** Level yang baru terbuka dari kemenangan terakhir (buat modal). */
+  const justUnlocked = ref<number | null>(null);
+  const hud = ref<NavalHud>(freshHud("frigate", 1));
   const winner = ref<NavalWinner | null>(null);
   const damageNums = ref<DamageNum[]>([]);
   const hitFlash = ref(0);
@@ -64,8 +93,9 @@ export const useNavalStore = defineStore("naval", () => {
 
   /** Masuk layar game (render container dulu, game dipasang menyusul). */
   function begin(): void {
-    hud.value = freshHud(selectedShip.value);
+    hud.value = freshHud(selectedShip.value, level.value);
     winner.value = null;
+    justUnlocked.value = null;
     damageNums.value = [];
     phase.value = "playing";
   }
@@ -73,13 +103,26 @@ export const useNavalStore = defineStore("naval", () => {
   /** Pasang game ke container yang sudah ter-render. */
   function attachGame(container: HTMLElement): void {
     disposeGame();
+    const botLevel = LEVEL_TO_BOT[level.value];
     game = new NavalGame(container, {
       shipId: selectedShip.value,
+      botLevel,
+      mapId: BOT_LEVELS[botLevel].mapId,
       onHud: (h) => {
         hud.value = h;
       },
       onMatchEnd: (w) => {
         winner.value = w;
+        // Menang di level tertinggi yang terbuka = buka level berikutnya.
+        if (w === "player" && level.value === unlockedLevel.value && level.value < 3) {
+          unlockedLevel.value = level.value + 1;
+          justUnlocked.value = unlockedLevel.value;
+          try {
+            localStorage.setItem(UNLOCK_KEY, String(unlockedLevel.value));
+          } catch {
+            // localStorage tidak tersedia: unlock hanya di sesi ini.
+          }
+        }
         phase.value = "over";
       },
       onDamage: (d) => {
@@ -109,8 +152,9 @@ export const useNavalStore = defineStore("naval", () => {
   function toSetup(): void {
     disposeGame();
     winner.value = null;
+    justUnlocked.value = null;
     phase.value = "setup";
   }
 
-  return { phase, selectedShip, hud, winner, damageNums, hitFlash, begin, attachGame, rematch, toSetup };
+  return { phase, selectedShip, level, unlockedLevel, justUnlocked, hud, winner, damageNums, hitFlash, begin, attachGame, rematch, toSetup };
 });
