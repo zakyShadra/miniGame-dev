@@ -103,6 +103,9 @@ export class BotController {
   private waypoint: { x: number; z: number } | null = null;
   private waypointUntil = 0;
   private lastRepickAt = -999;
+  private evadeUntil = 0;
+  private evadeRudder = 0;
+  private evadeThrottle = 1;
   private maneuverUntil = 0;
   private maneuverRudder = 0;
   private maneuverThrottle = 1;
@@ -115,6 +118,8 @@ export class BotController {
   private slowTime = 0;
   private lastFireAtSeen: number = Number.NaN;
   private nextFireAt = 0;
+  private nextAbilityAt = 0;
+  private answeredShells = new Set<number>();
 
   constructor(level: BotLevel, botShipId: string, opts?: { rng?: () => number }) {
     this.level = level;
@@ -128,6 +133,7 @@ export class BotController {
     this.waypoint = null;
     this.waypointUntil = 0;
     this.lastRepickAt = -999;
+    this.evadeUntil = 0;
     this.maneuverUntil = 0;
     this.maneuverPhase2Until = 0;
     this.nextManeuverAt =
@@ -136,6 +142,8 @@ export class BotController {
     this.slowTime = 0;
     this.lastFireAtSeen = Number.NaN;
     this.nextFireAt = 0;
+    this.nextAbilityAt = 0;
+    this.answeredShells.clear();
   }
 
   update(state: GameState, dt: number): BotDecision {
@@ -147,15 +155,16 @@ export class BotController {
     const target = this.pickTarget(state, bot);
 
     this.updateStuck(bot, dt, t);
-    if (t >= this.nextManeuverAt && t >= this.reverseUntil) {
+    this.checkIncoming(state, bot, t);
+    if (t >= this.nextManeuverAt && t >= this.evadeUntil && t >= this.reverseUntil) {
       this.startRandomManeuver(t);
     }
     this.updateWaypoint(state, bot, target, t);
 
     const input = this.steer(state, bot, t);
     const fireAt = isDiving(bot, t) ? null : this.aim(state, bot, target, def, t);
-    // Kemampuan taktis menyusul (commit berikut); sementara tidak dipakai.
-    return { input, fireAt, useAbility: false };
+    const useAbility = this.decideAbility(state, bot, target, t);
+    return { input, fireAt, useAbility };
   }
 
   /** Musuh terdekat yang hidup dan tidak menyelam (null bila tak ada). */
@@ -190,6 +199,34 @@ export class BotController {
       this.waypointUntil = 0;
       this.reverseUntil = t + 1.5;
       this.reverseRudder = this.rng() < 0.5 ? -0.7 : 0.7;
+    }
+  }
+
+  /** Evasion: peluru musuh yang diprediksi jatuh < 30 m dalam < 2 detik. */
+  private checkIncoming(state: GameState, bot: ShipState, t: number): void {
+    if (t < this.evadeUntil) return;
+    for (const id of this.answeredShells) {
+      if (!state.shells.some((s) => s.id === id)) this.answeredShells.delete(id);
+    }
+    const fwd = shipForward(bot.heading);
+    for (const sh of state.shells) {
+      if (sh.fromShipId === bot.id || this.answeredShells.has(sh.id)) continue;
+      const disc = sh.vy * sh.vy + 2 * GRAVITY * sh.y;
+      const tof = (sh.vy + Math.sqrt(Math.max(0, disc))) / GRAVITY;
+      if (tof < 0 || tof > 2) continue;
+      const lx = sh.x + sh.vx * tof;
+      const lz = sh.z + sh.vz * tof;
+      if (Math.hypot(lx - bot.x, lz - bot.z) > 30) continue;
+      // Satu peluru hanya diundi sekali (gagal = tidak menghindar).
+      this.answeredShells.add(sh.id);
+      if (this.rng() >= this.tuning.evadeChance) continue;
+      const tx = lx - bot.x;
+      const tz = lz - bot.z;
+      const cross = fwd.x * tz - fwd.z * tx;
+      this.evadeRudder = cross > 0 ? 1 : -1; // belok menjauhi titik jatuh
+      this.evadeThrottle = this.rng() < 0.5 ? 1 : 0.25;
+      this.evadeUntil = t + 1.2 + this.rng() * 1.3;
+      return;
     }
   }
 
@@ -237,6 +274,14 @@ export class BotController {
     this.lastRepickAt = t;
     this.waypointUntil = t + 4 + this.rng() * 5;
 
+    const hpFrac = bot.hp / bot.maxHp;
+    if (target && hpFrac < 0.4 && this.tuning.useCover) {
+      const cover = this.coverPoint(state, bot, target);
+      if (cover) {
+        this.waypoint = cover;
+        return;
+      }
+    }
     if (!target) {
       this.waypoint = this.randomPoint(state);
       return;
@@ -266,6 +311,33 @@ export class BotController {
     const ang = this.rng() * Math.PI * 2;
     const off = 30 + this.rng() * 30;
     this.waypoint = { x: target.x + Math.cos(ang) * off, z: target.z + Math.sin(ang) * off };
+  }
+
+  /** Titik di balik pulau terdekat (pulau di antara bot dan target). */
+  private coverPoint(
+    state: GameState,
+    bot: ShipState,
+    target: ShipState,
+  ): { x: number; z: number } | null {
+    let best: { x: number; z: number } | null = null;
+    let bestD = Infinity;
+    for (const isl of state.map.islands) {
+      const dBot = Math.hypot(isl.x - bot.x, isl.z - bot.z);
+      if (dBot > 180) continue;
+      const dx = isl.x - target.x;
+      const dz = isl.z - target.z;
+      const d = Math.hypot(dx, dz) || 1;
+      const px = isl.x + (dx / d) * (isl.radius + 45);
+      const pz = isl.z + (dz / d) * (isl.radius + 45);
+      if (Math.hypot(px, pz) > state.map.arenaRadius - 40) continue;
+      if (this.pointBlocked(state, px, pz, 20)) continue;
+      if (hasLineOfSight(state.map.islands, px, pz, target.x, target.z)) continue;
+      if (dBot < bestD) {
+        bestD = dBot;
+        best = { x: px, z: pz };
+      }
+    }
+    return best;
   }
 
   private randomPoint(state: GameState): { x: number; z: number } {
@@ -353,9 +425,10 @@ export class BotController {
     return Math.hypot(px - (ax + abx * t), pz - (az + abz * t));
   }
 
-  /** Steering: prioritas mundur anti-stuck > manuver > waypoint. */
+  /** Steering: prioritas mundur anti-stuck > menghindar > manuver > waypoint. */
   private steer(state: GameState, bot: ShipState, t: number): ShipInput {
     if (t < this.reverseUntil) return { throttle: -0.7, rudder: this.reverseRudder };
+    if (t < this.evadeUntil) return { throttle: this.evadeThrottle, rudder: this.evadeRudder };
     if (t < this.maneuverUntil) {
       return { throttle: this.maneuverThrottle, rudder: this.maneuverRudder };
     }
@@ -465,5 +538,62 @@ export class BotController {
     const err = this.tuning.aimErrMin + this.rng() * (this.tuning.aimErrMax - this.tuning.aimErrMin);
     const ang = this.rng() * Math.PI * 2;
     return { x: aimX + Math.cos(ang) * err, z: aimZ + Math.sin(ang) * err };
+  }
+
+  // ----- kemampuan -----
+
+  /** Pakai kemampuan saat ada kesempatan (diundi per jendela ~2 detik). */
+  private decideAbility(
+    state: GameState,
+    bot: ShipState,
+    target: ShipState | null,
+    t: number,
+  ): boolean {
+    if (t < bot.abilityReadyAt) return false;
+    if (bot.abilityUntil > t) return false;
+    if (t < this.nextAbilityAt) return false;
+    this.nextAbilityAt = t + 1.5 + this.rng() * 1.5;
+
+    const def = getShipDef(bot.defId);
+    const hpFrac = bot.hp / bot.maxHp;
+    const underFire = state.shells.some(
+      (s) => s.fromShipId !== bot.id && Math.hypot(s.x - bot.x, s.z - bot.z) < 150,
+    );
+    let opportunity = false;
+    switch (def.ability) {
+      case "double-shot": {
+        if (!target) break;
+        const dist = Math.hypot(target.x - bot.x, target.z - bot.z);
+        const maxRange = (def.shellSpeed * def.shellSpeed) / GRAVITY;
+        opportunity = dist <= maxRange * 0.95 && t - bot.lastFireAt >= def.reloadSeconds;
+        break;
+      }
+      case "armor":
+        opportunity = hpFrac < 0.5 && underFire;
+        break;
+      case "splash": {
+        if (!target) break;
+        const nearIsland = state.map.islands.some(
+          (isl) => Math.hypot(target.x - isl.x, target.z - isl.z) < isl.radius + 40,
+        );
+        const enemies = state.ships.filter((s) => s.id !== bot.id && s.alive && !s.sinking);
+        const clustered =
+          enemies.length > 1 &&
+          enemies.some((a) => enemies.some((b) => b !== a && Math.hypot(a.x - b.x, a.z - b.z) < 60));
+        opportunity = nearIsland || clustered;
+        break;
+      }
+      case "dive":
+        opportunity =
+          hpFrac < 0.35 &&
+          (underFire ||
+            (!!target && hasLineOfSight(state.map.islands, target.x, target.z, bot.x, bot.z)));
+        break;
+      case "radar":
+        opportunity = target === null;
+        break;
+    }
+    if (!opportunity) return false;
+    return this.rng() < this.tuning.abilityChance;
   }
 }
