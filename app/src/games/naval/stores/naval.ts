@@ -26,16 +26,21 @@ export const useNavalStore = defineStore("naval", () => {
 
   let game: NavalGame | null = null;
 
-  function startGame(container: HTMLElement): void {
-    disposeGame();
+  /** Masuk layar game (render container dulu, game dipasang menyusul). */
+  function begin(): void {
     hud.value = { ...EMPTY_HUD };
+    phase.value = "playing";
+  }
+
+  /** Pasang game ke container yang sudah ter-render. */
+  function attachGame(container: HTMLElement): void {
+    disposeGame();
     game = new NavalGame(container, {
       shipId: selectedShip.value,
       onHud: (h) => {
         hud.value = h;
       },
     });
-    phase.value = "playing";
   }
 
   function disposeGame(): void {
@@ -48,5 +53,5 @@ export const useNavalStore = defineStore("naval", () => {
     phase.value = "setup";
   }
 
-  return { phase, selectedShip, hud, startGame, toSetup };
+  return { phase, selectedShip, hud, begin, attachGame, toSetup };
 });
