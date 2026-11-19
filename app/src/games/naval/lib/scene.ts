@@ -1,0 +1,318 @@
+// Scene Three.js game naval: laut bergelombang, pulau low-poly, langit,
+// awan, kamera third-person yang mengikuti kapal. Tanpa shadow map dan
+// tanpa post-processing (target laptop kentang). Render di-interpolasi
+// dari state sim (prev -> current, alpha 0..1) supaya gerak mulus 60fps.
+
+import * as THREE from "three";
+import { mulberry32 } from "../../../../../shared/game/prng";
+import { SINK_DURATION, waveHeight } from "./sim";
+import { buildShipModel, type ShipModel } from "./shipModel";
+import type { GameState, IslandDef, MapDef, ShipDef, ShipState } from "./types";
+
+const SKY_COLOR = 0xa8d8f0;
+const WATER_COLOR = 0x1e7fa8;
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+function std(color: number, roughness = 0.9): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+}
+
+/** Satu pulau: pasir + batu + palem (seeded, deterministik). */
+function buildIslandMesh(isl: IslandDef): THREE.Group {
+  const rng = mulberry32(isl.seed);
+  const g = new THREE.Group();
+  const sand = new THREE.Mesh(new THREE.CircleGeometry(isl.radius * 1.12, 28), std(0xe6d3a1));
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.y = 0.15;
+  g.add(sand);
+
+  const rockMat = std(0x8a7a68);
+  const rockMat2 = std(0x6e6154);
+  const main = new THREE.Mesh(new THREE.ConeGeometry(isl.radius * 0.55, isl.height * 0.85, 7), rockMat);
+  main.position.y = isl.height * 0.4;
+  main.rotation.y = rng() * Math.PI;
+  g.add(main);
+  const second = new THREE.Mesh(
+    new THREE.ConeGeometry(isl.radius * 0.32, isl.height * 0.55, 6),
+    rockMat2,
+  );
+  second.position.set(isl.radius * 0.3 * (rng() - 0.5) * 2, isl.height * 0.26, isl.radius * 0.3 * (rng() - 0.5) * 2);
+  second.rotation.z = (rng() - 0.5) * 0.25;
+  g.add(second);
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.DodecahedronGeometry(isl.radius * 0.09 + rng() * 2, 0), rockMat2);
+    const a = rng() * Math.PI * 2;
+    const d = isl.radius * (0.55 + rng() * 0.4);
+    b.position.set(Math.cos(a) * d, 0.8, Math.sin(a) * d);
+    b.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+    g.add(b);
+  }
+
+  // Palem: batang miring + 6 daun kerucut pipih.
+  const palms = 1 + Math.floor(rng() * 3);
+  for (let i = 0; i < palms; i++) {
+    const palm = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 4.5, 6), std(0x7a5a3a));
+    trunk.position.y = 2.2;
+    trunk.rotation.z = 0.18;
+    palm.add(trunk);
+    const leafMat = std(rng() > 0.5 ? 0x3f9e4d : 0x57b25e);
+    for (let l = 0; l < 6; l++) {
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 4), leafMat);
+      leaf.scale.set(1, 1, 0.22);
+      const ang = (l / 6) * Math.PI * 2;
+      leaf.position.set(Math.cos(ang) * 0.9, 4.4, Math.sin(ang) * 0.9);
+      leaf.rotation.set(Math.sin(ang) * 1.1, 0, -Math.cos(ang) * 1.1);
+      palm.add(leaf);
+    }
+    const a = rng() * Math.PI * 2;
+    const d = isl.radius * (0.35 + rng() * 0.35);
+    palm.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d);
+    palm.rotation.y = rng() * Math.PI * 2;
+    g.add(palm);
+  }
+
+  g.position.set(isl.x, 0, isl.z);
+  return g;
+}
+
+interface ShipMesh {
+  model: ShipModel;
+  shadow: THREE.Mesh;
+  def: ShipDef;
+  phase: number;
+}
+
+export class NavalScene {
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera;
+  private container: HTMLElement;
+  private water!: THREE.Mesh;
+  private waterPos!: THREE.BufferAttribute;
+  private waterBase: { x: number; z: number }[] = [];
+  private clouds: THREE.Group[] = [];
+  private ships = new Map<string, ShipMesh>();
+  private raycaster = new THREE.Raycaster();
+  private waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private camPos = new THREE.Vector3();
+  private camInit = false;
+
+  followId: string | null = null;
+  orbitYaw = 0;
+  distance = 48;
+  aimX: number | null = null;
+  aimZ: number | null = null;
+
+  constructor(container: HTMLElement, map: MapDef) {
+    this.container = container;
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(this.renderer.domElement);
+
+    this.scene.background = new THREE.Color(SKY_COLOR);
+    this.scene.fog = new THREE.Fog(SKY_COLOR, 280, 950);
+
+    this.camera = new THREE.PerspectiveCamera(
+      55,
+      container.clientWidth / Math.max(1, container.clientHeight),
+      0.5,
+      2000,
+    );
+    this.camera.position.set(0, 30, -60);
+
+    const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
+    sun.position.set(180, 240, 120);
+    this.scene.add(sun);
+    this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x2a6b8a, 0.9));
+
+    // Laut: plane 72x72 segmen, vertex digoyang tiap frame (JS).
+    const size = map.arenaRadius * 3.6;
+    const geo = new THREE.PlaneGeometry(size, size, 72, 72);
+    geo.rotateX(-Math.PI / 2);
+    this.waterPos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < this.waterPos.count; i++) {
+      this.waterBase.push({ x: this.waterPos.getX(i), z: this.waterPos.getZ(i) });
+    }
+    this.water = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        color: WATER_COLOR,
+        roughness: 0.32,
+        metalness: 0.05,
+        flatShading: true,
+      }),
+    );
+    this.scene.add(this.water);
+
+    for (const isl of map.islands) this.scene.add(buildIslandMesh(isl));
+
+    // Awan low-poly (gumpalan bola pipih), melayang pelan.
+    const rng = mulberry32(99);
+    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+    for (let i = 0; i < 8; i++) {
+      const cloud = new THREE.Group();
+      const n = 3 + Math.floor(rng() * 3);
+      for (let j = 0; j < n; j++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + rng() * 8, 7, 6), cloudMat);
+        puff.position.set(j * 9 - n * 4.5, rng() * 3, rng() * 6 - 3);
+        puff.scale.y = 0.55;
+        cloud.add(puff);
+      }
+      cloud.position.set(rng() * 1200 - 600, 70 + rng() * 35, rng() * 1200 - 600);
+      this.clouds.push(cloud);
+      this.scene.add(cloud);
+    }
+  }
+
+  addShip(id: string, def: ShipDef, opts: { sailColor?: string; hullColor?: string } = {}): void {
+    const model = buildShipModel(def, opts);
+    model.group.rotation.order = "YXZ";
+    this.scene.add(model.group);
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(def.radius * 1.05, 24),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false }),
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.scale.set(1, 1.7, 1);
+    shadow.position.y = 0.06;
+    this.scene.add(shadow);
+    this.ships.set(id, { model, shadow, def, phase: Math.random() * 10 });
+  }
+
+  removeShip(id: string): void {
+    const m = this.ships.get(id);
+    if (!m) return;
+    this.scene.remove(m.model.group);
+    this.scene.remove(m.shadow);
+    this.ships.delete(id);
+  }
+
+  /** Titik di permukaan air dari posisi kursor (buat aim). */
+  screenToWater(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+    const p = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(this.waterPlane, p)) return null;
+    return { x: p.x, z: p.z };
+  }
+
+  addOrbit(dYaw: number): void {
+    this.orbitYaw += dYaw;
+  }
+
+  addZoom(d: number): void {
+    this.distance = Math.max(26, Math.min(85, this.distance + d));
+  }
+
+  resize(): void {
+    const w = this.container.clientWidth;
+    const h = Math.max(1, this.container.clientHeight);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  }
+
+  private syncShip(ship: ShipState, alpha: number, time: number): void {
+    const m = this.ships.get(ship.id);
+    if (!m) return;
+    const x = ship.prevX + (ship.x - ship.prevX) * alpha;
+    const z = ship.prevZ + (ship.z - ship.prevZ) * alpha;
+    const heading = lerpAngle(ship.prevHeading, ship.heading, alpha);
+    const sinkP = ship.sinking ? Math.min(1, ship.sinkTime / SINK_DURATION) : 0;
+
+    // Goyangan ombak: naik-turun + angguk dari kemiringan gelombang.
+    const w = waveHeight(x, z, time);
+    const fwdX = Math.sin(heading);
+    const fwdZ = Math.cos(heading);
+    const rightX = -fwdZ;
+    const rightZ = fwdX;
+    const slopeF =
+      (waveHeight(x + fwdX * 3, z + fwdZ * 3, time) - waveHeight(x - fwdX * 3, z - fwdZ * 3, time)) / 6;
+    const slopeR =
+      (waveHeight(x + rightX * 3, z + rightZ * 3, time) - waveHeight(x - rightX * 3, z - rightZ * 3, time)) / 6;
+
+    const g = m.model.group;
+    g.position.set(x, w * 0.55 - sinkP * sinkP * 7, z);
+    g.rotation.y = heading;
+    g.rotation.x = -slopeF * 0.5 + sinkP * 0.22;
+    g.rotation.z = ship.heel - slopeR * 0.5 + sinkP * 1.05;
+    g.visible = sinkP < 1;
+
+    // Bayangan palsu di air (tetap datar, memudar saat tenggelam).
+    m.shadow.position.set(x, 0.06, z);
+    m.shadow.rotation.z = heading;
+    (m.shadow.material as THREE.MeshBasicMaterial).opacity = 0.22 * (1 - sinkP);
+    m.shadow.visible = sinkP < 1;
+
+    // Turet mengikuti titik aim (relatif terhadap haluan kapal).
+    if (this.aimX !== null && this.aimZ !== null && !ship.sinking) {
+      const want = Math.atan2(this.aimX - x, this.aimZ - z) - heading;
+      m.model.turret.rotation.y = lerpAngle(m.model.turret.rotation.y, want, 0.12);
+    }
+
+    // Bendera berkibar.
+    m.model.flag.rotation.y = Math.sin(time * 2.5 + m.phase) * 0.28;
+  }
+
+  private syncCamera(dt: number): void {
+    if (!this.followId) return;
+    const m = this.ships.get(this.followId);
+    if (!m) return;
+    const g = m.model.group;
+    const heading = g.rotation.y + this.orbitYaw;
+    const fx = Math.sin(heading);
+    const fz = Math.cos(heading);
+    const target = new THREE.Vector3(g.position.x, 3, g.position.z);
+    const desired = new THREE.Vector3(
+      target.x - fx * this.distance,
+      target.y + this.distance * 0.42,
+      target.z - fz * this.distance,
+    );
+    desired.y = Math.max(5, desired.y);
+    if (!this.camInit) {
+      this.camPos.copy(desired);
+      this.camInit = true;
+    } else {
+      const k = 1 - Math.exp(-4 * dt);
+      this.camPos.lerp(desired, k);
+    }
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(target.x + fx * 6, 2, target.z + fz * 6);
+  }
+
+  /** Render satu frame: sinkron state sim + gambar. */
+  render(state: GameState, alpha: number, time: number, dt: number): void {
+    // Laut bergelombang.
+    for (let i = 0; i < this.waterPos.count; i++) {
+      const b = this.waterBase[i]!;
+      this.waterPos.setY(i, waveHeight(b.x, b.z, time));
+    }
+    this.waterPos.needsUpdate = true;
+
+    for (const ship of state.ships) this.syncShip(ship, alpha, time);
+
+    // Awan melayang pelan, bungkus di tepi.
+    for (const c of this.clouds) {
+      c.position.x += dt * 1.5;
+      if (c.position.x > 700) c.position.x = -700;
+    }
+
+    this.syncCamera(dt);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  dispose(): void {
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+  }
+}
