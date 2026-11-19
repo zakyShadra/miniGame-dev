@@ -52,10 +52,10 @@ const label = computed(() => {
     "
   >
     <div
-      class="absolute inset-0 overflow-hidden rounded-md bg-[#1a3d4a]"
+      class="absolute inset-0 overflow-hidden rounded-md bg-board-frame"
     >
       <div
-        class="absolute bottom-0 left-0 w-full bg-[#f5f0e0] transition-all duration-500"
+        class="absolute bottom-0 left-0 w-full bg-board-light transition-all duration-500"
         :style="{ height: whitePct + '%' }"
       />
     </div>

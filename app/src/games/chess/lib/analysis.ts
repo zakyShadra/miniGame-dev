@@ -104,6 +104,33 @@ export const CLASSIFICATION_META: Record<
   blunder: { symbol: "??", label: "Blunder", color: "#ef4444" },
 };
 
+// Penjelasan klasifikasi langkah (Zaky 19 Nov 20:08): alasan kenapa
+// langkah ini dapat simbol itu. cpLoss = kerugian centipawn dari
+// sudut penggerak (0 untuk Best/Brilliant).
+export function classificationExplanation(
+  c: Classification,
+  cpLoss: number,
+): string {
+  // Desimal Indonesia pakai koma (1,5 pion).
+  const pawns = (cpLoss / 100).toFixed(1).replace(".", ",");
+  switch (c) {
+    case "brilliant":
+      return "Pengorbanan/taktik sulit yang menemukan satu-satunya langkah terbaik, mempertahankan/memenangkan posisi.";
+    case "best":
+      return "Langkah terbaik di posisi ini menurut engine.";
+    case "excellent":
+      return "Langkah kuat, hampir sebaik langkah terbaik.";
+    case "good":
+      return "Langkah solid, mempertahankan posisi.";
+    case "inaccuracy":
+      return `Sedikit melemahkan posisi (kehilangan ~${pawns} pion).`;
+    case "mistake":
+      return `Melemahkan posisi secara signifikan (kehilangan ~${pawns} pion).`;
+    case "blunder":
+      return `Kesalahan besar, kehilangan material/posisi (kehilangan ~${pawns} pion).`;
+  }
+}
+
 export interface PositionEval {
   fen: string;
   score: EngineScore;

@@ -683,7 +683,7 @@ function onPointerCancel() {
           <span
             v-else-if="endBadgeKind(p) === 'draw'"
             data-testid="king-badge-draw"
-            class="badge-pop absolute top-0 right-0 flex h-[30%] min-h-[16px] items-center justify-center rounded-full bg-zinc-600 px-1 text-[9px] leading-none font-bold whitespace-nowrap text-white shadow-md ring-2 ring-white/90"
+            class="badge-pop absolute top-0 right-0 flex h-[30%] min-h-[16px] items-center justify-center rounded-full bg-board-frame px-1 text-[9px] leading-none font-bold whitespace-nowrap text-white shadow-md ring-2 ring-white/90"
             >{{ p.color === "w" ? "Draw 1/2" : "Draw" }}</span
           >
         </div>

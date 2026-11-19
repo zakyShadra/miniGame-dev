@@ -101,7 +101,7 @@ function gameDate(game: ChessComGame): string {
     >
       Import &amp; analisa
     </button>
-    <p v-if="importError" class="mt-3 text-center text-xs text-red-500">
+    <p v-if="importError" class="mt-3 text-center text-xs text-danger">
       {{ importError }}
     </p>
 
@@ -136,7 +136,7 @@ function gameDate(game: ChessComGame): string {
     >
       {{ ccLoading ? "Mencari..." : "Cari game" }}
     </button>
-    <p v-if="ccError" class="mt-3 text-center text-xs text-red-500">
+    <p v-if="ccError" class="mt-3 text-center text-xs text-danger">
       {{ ccError }}
     </p>
     <p

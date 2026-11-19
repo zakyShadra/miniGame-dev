@@ -9,6 +9,7 @@ import { useChessStore } from "../stores/chess";
 import {
   ANALYSIS_MODES,
   CLASSIFICATION_META,
+  classificationExplanation,
   type Classification,
 } from "../lib/analysis";
 
@@ -58,6 +59,29 @@ const reviewMove = computed(() => {
 const progressPct = computed(() => {
   const p = store.analysisProgress;
   return p.total > 0 ? Math.floor((p.done / p.total) * 100) : 0;
+});
+
+// Format eval centipawn jadi +1.2 / -0.5. Skor mate (dikodekan
+// >= 9000 cp) tampil sebagai #N.
+function formatEval(cp: number): string {
+  if (Math.abs(cp) >= 9000) {
+    const n = Math.round((10000 - Math.abs(cp)) / 100);
+    return cp > 0 ? `#${n}` : `-#${n}`;
+  }
+  const v = cp / 100;
+  return v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
+}
+
+// Eval sebelum/sesudah langkah yang di-review, dari sudut penggerak
+// (bukan Putih, supaya angkanya masuk akal buat langkah Hitam).
+const reviewEvals = computed(() => {
+  const m = reviewMove.value;
+  if (!m) return null;
+  const sign = m.color === "w" ? 1 : -1;
+  return {
+    before: m.evalBeforeCpWhite * sign,
+    after: m.evalAfterCpWhite * sign,
+  };
 });
 </script>
 
@@ -138,7 +162,7 @@ const progressPct = computed(() => {
 
     <!-- Analisa error: pilih mode lagi untuk coba ulang -->
     <template v-else-if="store.analysisStatus === 'error'">
-      <p class="mt-2 text-xs text-red-500">{{ store.analysisError }}</p>
+      <p class="mt-2 text-xs text-danger">{{ store.analysisError }}</p>
       <button
         type="button"
         class="mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover"
@@ -200,9 +224,11 @@ const progressPct = computed(() => {
           >
             <span class="text-muted">
               <span
-                class="mr-1 inline-block h-2 w-2 rounded-full"
-                :style="{ background: CLASSIFICATION_META[c].color }"
-              />
+                class="mr-1 inline-block w-5 text-center text-xs font-black"
+                :style="{ color: CLASSIFICATION_META[c].color }"
+              >
+                {{ CLASSIFICATION_META[c].symbol }}
+              </span>
               {{ CLASSIFICATION_META[c].label }}
             </span>
             <span class="text-right font-medium text-ink">
@@ -246,6 +272,72 @@ const progressPct = computed(() => {
         />
       </svg>
 
+      <!-- Eksplorasi interaktif (C5): user gerakkan bidak bebas di
+      posisi review/akhir, engine menunjukkan best move posisi fork
+      (panah di papan + notasi di sini). -->
+      <div
+        v-if="store.exploreFen !== null"
+        class="mt-3 rounded-xl bg-surface-2 p-3"
+      >
+        <p class="text-xs font-semibold text-ink">
+          Eksplorasi
+          <span
+            v-if="store.exploreMoves.length > 0"
+            class="font-normal text-muted"
+          >
+            {{ store.exploreMoves.map((m) => m.san).join(" ") }}
+          </span>
+        </p>
+        <p v-if="store.exploreBestMoveLoading" class="mt-1 text-xs text-muted">
+          Memuat engine untuk best move...
+        </p>
+        <p v-else-if="store.exploreBestMove" class="mt-1 text-xs text-muted">
+          Best move:
+          <span class="font-semibold text-ink">{{
+            store.exploreBestMove.san
+          }}</span>
+          <span v-if="store.exploreBestMove.evalCp !== null">
+            ({{ formatEval(store.exploreBestMove.evalCp) }})
+          </span>
+        </p>
+        <p v-else class="mt-1 text-xs text-muted">
+          Gerakkan bidak untuk menjelajahi variasi.
+        </p>
+        <button
+          type="button"
+          class="mt-2 w-full rounded-full bg-surface-1 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-3"
+          @click="store.exitExplore()"
+        >
+          Kembali ke game
+        </button>
+      </div>
+
+      <!-- Best move posisi review (saat belum ada analisa, dari engine
+      live; kalau analisa sudah ada, best move-nya dari analisa di
+      bawah). -->
+      <div
+        v-else-if="
+          store.phase === 'over' &&
+          store.reviewPly !== null &&
+          !reviewMove &&
+          (store.exploreBestMove || store.exploreBestMoveLoading)
+        "
+        class="mt-3 rounded-xl bg-surface-2 p-3"
+      >
+        <p v-if="store.exploreBestMoveLoading" class="text-xs text-muted">
+          Memuat engine untuk best move...
+        </p>
+        <p v-else-if="store.exploreBestMove" class="text-xs text-muted">
+          Best move:
+          <span class="font-semibold text-ink">{{
+            store.exploreBestMove.san
+          }}</span>
+          <span v-if="store.exploreBestMove.evalCp !== null">
+            ({{ formatEval(store.exploreBestMove.evalCp) }})
+          </span>
+        </p>
+      </div>
+
       <!-- Review: best line posisi yang dipilih -->
       <div
         v-if="reviewMove"
@@ -269,6 +361,20 @@ const progressPct = computed(() => {
           class="mt-0.5 text-xs text-muted"
         >
           Lanjutan: {{ reviewMove.bestLineSan.slice(1, 6).join(" ") }}
+        </p>
+        <!-- Penjelasan klasifikasi (C5 poin 7): kenapa langkah ini
+        dapat simbol itu + angka eval sebelum/sesudah. -->
+        <p class="mt-2 text-xs text-body">
+          {{
+            classificationExplanation(
+              reviewMove.classification,
+              reviewMove.cpLoss,
+            )
+          }}
+        </p>
+        <p v-if="reviewEvals" class="mt-0.5 text-xs text-muted tabular-nums">
+          Eval: {{ formatEval(reviewEvals.before) }} &rarr;
+          {{ formatEval(reviewEvals.after) }}
         </p>
         <button
           type="button"

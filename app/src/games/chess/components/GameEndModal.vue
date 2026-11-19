@@ -145,13 +145,13 @@ function analyze(mode: AnalysisMode) {
     class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
   >
     <div
-      class="modal-pop pointer-events-auto relative w-[86%] max-w-[300px] rounded-2xl bg-[#262421] p-5 text-center text-white shadow-2xl"
+      class="modal-pop pointer-events-auto relative w-[86%] max-w-[300px] rounded-2xl bg-board-frame p-5 text-center text-white shadow-2xl"
     >
       <button
         type="button"
         data-testid="game-end-close"
         aria-label="Tutup hasil game"
-        class="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-zinc-400 transition hover:bg-white/10 hover:text-white"
+        class="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-subtle transition hover:bg-white/10 hover:text-white"
         @click="store.dismissEndModal()"
       >
         &times;
@@ -163,7 +163,7 @@ function analyze(mode: AnalysisMode) {
           v-if="trophyState !== 'half'"
           viewBox="0 0 24 24"
           class="h-10 w-10"
-          :class="trophyState === 'gold' ? 'text-amber-400' : 'text-zinc-500'"
+          :class="trophyState === 'gold' ? 'text-ochre' : 'text-subtle'"
           fill="currentColor"
           aria-hidden="true"
         >
@@ -173,7 +173,7 @@ function analyze(mode: AnalysisMode) {
         </svg>
         <span
           v-else
-          class="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-600 text-lg font-black"
+          class="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-lg font-black"
           aria-hidden="true"
           >½</span
         >
@@ -187,7 +187,7 @@ function analyze(mode: AnalysisMode) {
       </h2>
       <p
         data-testid="game-end-subtitle"
-        class="mt-0.5 text-sm text-zinc-400"
+        class="mt-0.5 text-sm text-subtle"
       >
         {{ subtitle }}
       </p>
@@ -201,28 +201,28 @@ function analyze(mode: AnalysisMode) {
         <span
           class="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
         >
-          <span class="text-green-400">★</span> {{ stats.best }} Best
+          <span class="text-success">★</span> {{ stats.best }} Best
         </span>
         <span
           class="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
         >
-          <span class="text-teal-400">●</span> {{ stats.excellent }} Excellent
+          <span class="text-lavender">!</span> {{ stats.excellent }} Excellent
         </span>
         <span
           class="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
         >
-          <span class="text-red-400">✕</span> {{ stats.miss }} Miss
+          <span class="text-danger">✕</span> {{ stats.miss }} Miss
         </span>
       </div>
       <p
         v-else-if="analysisBusy"
-        class="mt-3 text-xs text-zinc-400"
+        class="mt-3 text-xs text-subtle"
       >
         Menganalisa... {{ store.analysisProgress.done }}/{{
           store.analysisProgress.total
         }}
       </p>
-      <p v-else class="mt-3 text-xs text-zinc-400">
+      <p v-else class="mt-3 text-xs text-subtle">
         Analisa untuk melihat stats langkahmu.
       </p>
 

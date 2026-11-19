@@ -179,7 +179,7 @@ const COLOR_OPTIONS: { id: HumanColorChoice; label: string }[] = [
         Download sekali saja (~99 MB), berikutnya dari cache.
       </p>
     </div>
-    <p v-if="error" class="mt-3 text-center text-xs text-red-500">
+    <p v-if="error" class="mt-3 text-center text-xs text-danger">
       {{ error }}
     </p>
 
@@ -251,7 +251,7 @@ const COLOR_OPTIONS: { id: HumanColorChoice; label: string }[] = [
     </div>
     <p
       v-if="onlineError || room.error"
-      class="mt-3 text-center text-xs text-red-500"
+      class="mt-3 text-center text-xs text-danger"
     >
       {{ onlineError || room.error }}
     </p>
