@@ -286,8 +286,8 @@ export class NavalScene {
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
         vertexColors: true,
-        roughness: 0.18,
-        metalness: 0.08,
+        roughness: 0.3,
+        metalness: 0.05,
         flatShading: true,
       }),
     );
