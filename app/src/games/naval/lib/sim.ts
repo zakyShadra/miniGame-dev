@@ -65,17 +65,24 @@ export function createShip(
   };
 }
 
+/** Spawn yang dipakai satu kapal di createGame (C = co-op pemain ke-2). */
+export type SpawnSlot = "A" | "B" | "C";
+
 export function createGame(
   map: MapDef,
-  shipA: { id: string; defId: ShipDef["id"] },
-  shipB: { id: string; defId: ShipDef["id"] },
+  ships: Array<{ id: string; defId: ShipDef["id"]; spawn: SpawnSlot }>,
 ): GameState {
   return {
     map,
-    ships: [
-      createShip(shipA.id, shipA.defId, map.spawnA.x, map.spawnA.z, map.spawnA.heading),
-      createShip(shipB.id, shipB.defId, map.spawnB.x, map.spawnB.z, map.spawnB.heading),
-    ],
+    ships: ships.map((s) => {
+      const sp =
+        s.spawn === "A"
+          ? map.spawnA
+          : s.spawn === "B"
+            ? map.spawnB
+            : (map.spawnC ?? { x: map.spawnA.x, z: map.spawnA.z + 60, heading: map.spawnA.heading });
+      return createShip(s.id, s.defId, sp.x, sp.z, sp.heading);
+    }),
     shells: [],
     time: 0,
     nextShellId: 1,
@@ -145,7 +152,6 @@ function stepShip(
   dt: number,
   events: SimEvent[],
 ): void {
-  const def = getShipDef(ship.defId);
   ship.prevX = ship.x;
   ship.prevZ = ship.z;
   ship.prevHeading = ship.heading;
@@ -158,13 +164,34 @@ function stepShip(
     if (ship.sinkTime >= SINK_DURATION && ship.alive) {
       ship.alive = false;
       events.push({ type: "sunk", shipId: ship.id });
-      const other = state.ships.find((s) => s.id !== ship.id);
-      if (other && state.winnerId === null) state.winnerId = other.id;
+      // Pemenang hanya bila tepat satu kapal tersisa hidup (di 1v1 sama
+      // seperti dulu; di co-op 3 kapal, penentuan menang tim di orchestrator).
+      if (state.winnerId === null) {
+        const alive = state.ships.filter((s) => s.alive);
+        const last = alive[0];
+        if (alive.length === 1 && last) state.winnerId = last.id;
+      }
     }
     return;
   }
   if (!ship.alive) return;
 
+  moveShip(state, ship, input, dt, events);
+}
+
+/**
+ * Fisika gerak satu kapal saja: kecepatan, belok, kemiringan lambung,
+ * posisi, tabrakan pulau, batas arena. Diekspor buat prediksi client
+ * (N5). Jangan dipanggil untuk kapal yang sedang tenggelam / mati.
+ */
+export function moveShip(
+  state: GameState,
+  ship: ShipState,
+  input: ShipInput,
+  dt: number,
+  events?: SimEvent[],
+): void {
+  const def = getShipDef(ship.defId);
   // Kecepatan: mendekati target dengan akselerasi / deselerasi (momentum).
   const target =
     input.throttle >= 0 ? input.throttle * def.maxSpeed : input.throttle * def.reverseSpeed;
@@ -199,7 +226,7 @@ function stepShip(
       ship.z = isl.z + nz * minDist;
       const into = fwd.x * -nx + fwd.z * -nz;
       if (ship.speed > 4 && into > 0.3) {
-        events.push({ type: "bump", shipId: ship.id });
+        events?.push({ type: "bump", shipId: ship.id });
       }
       if (into > 0) ship.speed *= 0.35;
     }
@@ -215,28 +242,36 @@ function stepShip(
   }
 }
 
+/** Tabrakan antar kapal: semua pasangan (bukan hanya 2 kapal pertama). */
 function stepShipPair(state: GameState, events: SimEvent[]): void {
-  const [a, b] = state.ships;
-  if (!a || !b || !a.alive || !b.alive || a.sinking || b.sinking) return;
-  const ra = getShipDef(a.defId).radius;
-  const rb = getShipDef(b.defId).radius;
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const dist = Math.hypot(dx, dz);
-  const minDist = (ra + rb) * 0.8;
-  if (dist < minDist && dist > 0.001) {
-    const nx = dx / dist;
-    const nz = dz / dist;
-    const overlap = (minDist - dist) / 2;
-    a.x -= nx * overlap;
-    a.z -= nz * overlap;
-    b.x += nx * overlap;
-    b.z += nz * overlap;
-    a.speed *= 0.5;
-    b.speed *= 0.5;
-    if (Math.abs(a.speed) > 3 || Math.abs(b.speed) > 3) {
-      events.push({ type: "bump", shipId: a.id });
-      events.push({ type: "bump", shipId: b.id });
+  const ships = state.ships;
+  for (let i = 0; i < ships.length; i++) {
+    for (let j = i + 1; j < ships.length; j++) {
+      const a = ships[i];
+      const b = ships[j];
+      if (!a || !b) continue;
+      if (!a.alive || !b.alive || a.sinking || b.sinking) continue;
+      const ra = getShipDef(a.defId).radius;
+      const rb = getShipDef(b.defId).radius;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const dist = Math.hypot(dx, dz);
+      const minDist = (ra + rb) * 0.8;
+      if (dist < minDist && dist > 0.001) {
+        const nx = dx / dist;
+        const nz = dz / dist;
+        const overlap = (minDist - dist) / 2;
+        a.x -= nx * overlap;
+        a.z -= nz * overlap;
+        b.x += nx * overlap;
+        b.z += nz * overlap;
+        a.speed *= 0.5;
+        b.speed *= 0.5;
+        if (Math.abs(a.speed) > 3 || Math.abs(b.speed) > 3) {
+          events.push({ type: "bump", shipId: a.id });
+          events.push({ type: "bump", shipId: b.id });
+        }
+      }
     }
   }
 }

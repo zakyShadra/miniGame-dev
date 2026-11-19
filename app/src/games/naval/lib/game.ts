@@ -97,11 +97,10 @@ export class NavalGame {
   constructor(container: HTMLElement, opts: NavalGameOptions) {
     this.container = container;
     this.opts = opts;
-    this.state = createGame(
-      MAP_OPEN_BAY,
-      { id: PLAYER_ID, defId: opts.shipId },
-      { id: DUMMY_ID, defId: "galleon" },
-    );
+    this.state = createGame(MAP_OPEN_BAY, [
+      { id: PLAYER_ID, defId: opts.shipId, spawn: "A" },
+      { id: DUMMY_ID, defId: "galleon", spawn: "B" },
+    ]);
     this.scene = new NavalScene(container, MAP_OPEN_BAY);
     this.scene.addShip(PLAYER_ID, getShipDef(opts.shipId));
     this.scene.addShip(DUMMY_ID, getShipDef("galleon"), { enemy: true });
