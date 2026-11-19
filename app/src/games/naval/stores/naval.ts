@@ -36,7 +36,18 @@ function freshHud(shipId: ShipId): NavalHud {
     abilityName: me.abilityName,
     shipName: me.name,
     dummyName: foe.name,
+    aimDist: -1,
+    aimLead: -1,
+    aimBlocked: false,
+    aimOutOfRange: false,
   };
+}
+
+export interface DamageNum {
+  id: number;
+  x: number;
+  y: number;
+  amount: number;
 }
 
 export const useNavalStore = defineStore("naval", () => {
@@ -45,13 +56,17 @@ export const useNavalStore = defineStore("naval", () => {
   const selectedShip = ref<ShipId>("frigate");
   const hud = ref<NavalHud>(freshHud("frigate"));
   const winner = ref<NavalWinner | null>(null);
+  const damageNums = ref<DamageNum[]>([]);
+  const hitFlash = ref(0);
 
   let game: NavalGame | null = null;
+  let dmgId = 0;
 
   /** Masuk layar game (render container dulu, game dipasang menyusul). */
   function begin(): void {
     hud.value = freshHud(selectedShip.value);
     winner.value = null;
+    damageNums.value = [];
     phase.value = "playing";
   }
 
@@ -66,6 +81,16 @@ export const useNavalStore = defineStore("naval", () => {
       onMatchEnd: (w) => {
         winner.value = w;
         phase.value = "over";
+      },
+      onDamage: (d) => {
+        const id = ++dmgId;
+        damageNums.value.push({ ...d, id });
+        setTimeout(() => {
+          damageNums.value = damageNums.value.filter((n) => n.id !== id);
+        }, 1000);
+      },
+      onPlayerHit: () => {
+        hitFlash.value++;
       },
     });
   }
@@ -87,5 +112,5 @@ export const useNavalStore = defineStore("naval", () => {
     phase.value = "setup";
   }
 
-  return { phase, selectedShip, hud, winner, begin, attachGame, rematch, toSetup };
+  return { phase, selectedShip, hud, winner, damageNums, hitFlash, begin, attachGame, rematch, toSetup };
 });

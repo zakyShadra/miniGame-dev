@@ -13,6 +13,14 @@ const store = useNavalStore();
 defineEmits<{ exit: [] }>();
 
 const canvasWrap = ref<HTMLDivElement | null>(null);
+// Posisi kursor (buat crosshair).
+const crossX = ref(-100);
+const crossY = ref(-100);
+
+function trackMouse(e: MouseEvent): void {
+  crossX.value = e.clientX;
+  crossY.value = e.clientY;
+}
 
 // Pasang game begitu layar playing ter-render.
 watch(
@@ -78,6 +86,13 @@ const overSub = computed(() => {
   if (store.hud.dummyHp <= 0) return "Kapal musuh tenggelam ke dasar laut.";
   if (store.hud.hp <= 0) return "Kapalmu tenggelam. Coba lagi, Kapiten.";
   return "Waktu habis. Pemenang ditentukan HP tertinggi.";
+});
+
+const aimLabel = computed(() => {
+  const h = store.hud;
+  if (h.aimDist < 0) return "";
+  if (h.aimOutOfRange) return "Di luar jangkauan meriam";
+  return `${Math.round(h.aimDist)} m, lead ${h.aimLead.toFixed(1).replace(".", ",")} detik`;
 });
 
 function selectShip(id: ShipId) {
@@ -149,8 +164,8 @@ function selectShip(id: ShipId) {
       </h2>
       <ul class="mt-2 space-y-1 text-sm text-white/80">
         <li><b class="text-white">W/S</b> maju/mundur &middot; <b class="text-white">A/D</b> belok kiri/kanan</li>
-        <li><b class="text-white">Mouse</b> arahkan turet &middot; <b class="text-white">Klik kanan + drag</b> orbit kamera</li>
-        <li><b class="text-white">Scroll</b> zoom &middot; <b class="text-white">Q/E</b> orbit kamera</li>
+        <li><b class="text-white">Mouse</b> arahkan turet &middot; <b class="text-white">Klik kiri</b> tembak &middot; <b class="text-white">Spasi</b> kemampuan</li>
+        <li><b class="text-white">Klik kanan + drag</b> orbit kamera &middot; <b class="text-white">Scroll</b> zoom &middot; <b class="text-white">Q/E</b> orbit</li>
       </ul>
 
       <button
@@ -164,8 +179,57 @@ function selectShip(id: ShipId) {
   </div>
 
   <!-- PLAYING: laut 3D + HUD. -->
-  <div v-else class="relative h-screen w-full overflow-hidden bg-[#9fd4f0]">
+  <div
+    v-else
+    class="relative h-screen w-full overflow-hidden bg-[#9fd4f0]"
+    @mousemove="trackMouse"
+  >
     <div ref="canvasWrap" class="absolute inset-0"></div>
+
+    <!-- Crosshair mengikuti mouse (cincin emas + salib putih + label jarak/lead). -->
+    <div
+      v-if="store.phase === 'playing'"
+      class="pointer-events-none absolute z-10"
+      :style="{ left: `${crossX}px`, top: `${crossY}px`, transform: 'translate(-50%, -50%)' }"
+    >
+      <div class="relative h-12 w-12">
+        <div class="absolute inset-0 rounded-full border-2 border-[#e8a33d]" />
+        <div class="absolute top-1/2 left-1/2 h-[2px] w-7 -translate-x-1/2 -translate-y-1/2 bg-white shadow" />
+        <div class="absolute top-1/2 left-1/2 h-7 w-[2px] -translate-x-1/2 -translate-y-1/2 bg-white shadow" />
+        <div class="absolute top-1/2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+      </div>
+      <div
+        v-if="aimLabel"
+        class="mt-1 -translate-x-1/2 rounded-full bg-[rgba(4,24,32,0.75)] px-2.5 py-1 font-timer text-[11px] whitespace-nowrap text-white backdrop-blur"
+        :class="store.hud.aimOutOfRange ? 'text-[#ff5a47]' : ''"
+        style="margin-left: 50%"
+      >
+        {{ aimLabel }}
+      </div>
+    </div>
+
+    <!-- Peringatan: bidikan terhalang pulau. -->
+    <div
+      v-if="store.phase === 'playing' && store.hud.aimBlocked && store.hud.aimDist >= 0"
+      class="pointer-events-none absolute inset-x-0 top-[18%] z-10 flex justify-center"
+    >
+      <div class="rounded-xl border-2 border-[#e8a33d] bg-[rgba(4,24,32,0.8)] px-4 py-2 text-sm font-bold text-[#e8a33d] shadow-lg backdrop-blur">
+        Terhalang pulau, tembakan tidak akan kena
+      </div>
+    </div>
+
+    <!-- Angka damage mengambang. -->
+    <div
+      v-for="n in store.damageNums"
+      :key="n.id"
+      class="dmg-num pointer-events-none absolute z-10 font-display text-xl font-bold text-[#e8a33d] drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]"
+      :style="{ left: `${n.x}px`, top: `${n.y}px` }"
+    >
+      -{{ n.amount }} HIT
+    </div>
+
+    <!-- Flash merah saat kapal pemain kena hit. -->
+    <div v-if="store.hitFlash > 0" :key="store.hitFlash" class="hit-flash z-10" />
 
     <!-- HUD atas: pemain (kiri), timer (tengah), musuh (kanan). -->
     <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
@@ -244,7 +308,7 @@ function selectShip(id: ShipId) {
 
       <div class="hidden items-center gap-2 sm:flex">
         <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-center text-xs font-medium text-white/80 backdrop-blur-md">
-          WASD gerak &middot; Mouse aim &middot; Klik kanan orbit &middot; Scroll zoom
+          WASD gerak &middot; Mouse aim &middot; Klik kiri tembak &middot; Spasi kemampuan &middot; Klik kanan orbit &middot; Scroll zoom
         </div>
         <button
           type="button"
@@ -325,3 +389,39 @@ function selectShip(id: ShipId) {
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes dmg-float {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -160%);
+  }
+}
+.dmg-num {
+  animation: dmg-float 1s ease-out forwards;
+}
+
+@keyframes hit-flash-anim {
+  0% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.hit-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(255, 40, 30, 0.55) 100%
+  );
+  animation: hit-flash-anim 0.6s ease-out forwards;
+}
+</style>

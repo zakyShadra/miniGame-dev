@@ -8,11 +8,13 @@ import { getShipDef } from "./ships";
 import {
   TICK_DT,
   createGame,
+  fireVolley,
   getShip,
   hasLineOfSight,
   stepGame,
+  useAbility,
 } from "./sim";
-import type { GameState, ShipId, ShipInput } from "./types";
+import type { GameState, ShipId, ShipInput, SimEvent } from "./types";
 
 export interface NavalHud {
   speed: number;
@@ -43,14 +45,30 @@ export interface NavalHud {
   abilityName: string;
   shipName: string;
   dummyName: string;
+  /** Jarak ke titik aim (m), -1 bila mouse belum pernah bergerak. */
+  aimDist: number;
+  /** Waktu terbang peluru ke titik aim (detik), -1 bila di luar jangkauan. */
+  aimLead: number;
+  /** Garis bidik ke titik aim terhalang pulau. */
+  aimBlocked: boolean;
+  /** Titik aim di luar jangkauan meriam (v^2/g). */
+  aimOutOfRange: boolean;
 }
 
 export type NavalWinner = "player" | "dummy" | "draw";
+
+export interface DamageNumber {
+  x: number;
+  y: number;
+  amount: number;
+}
 
 export interface NavalGameOptions {
   shipId: ShipId;
   onHud: (hud: NavalHud) => void;
   onMatchEnd: (winner: NavalWinner) => void;
+  onDamage: (d: DamageNumber) => void;
+  onPlayerHit: () => void;
 }
 
 const PLAYER_ID = "player";
@@ -114,7 +132,8 @@ export class NavalGame {
       this.lastT = t;
       this.acc += dt;
       while (this.acc >= TICK_DT) {
-        stepGame(this.state, this.collectInputs(), TICK_DT);
+        const events = stepGame(this.state, this.collectInputs(), TICK_DT);
+        for (const ev of events) this.handleEvent(ev);
         this.acc -= TICK_DT;
       }
       this.checkMatchEnd();
@@ -127,6 +146,18 @@ export class NavalGame {
       }
     };
     this.raf = requestAnimationFrame(loop);
+  }
+
+  /** Teruskan event sim ke efek visual + angka damage + flash kena hit. */
+  private handleEvent(ev: SimEvent): void {
+    this.scene.playEvent(ev);
+    if (ev.type === "hit" && ev.byShipId === PLAYER_ID) {
+      const pt = this.scene.projectToScreen(ev.x, ev.y + 2, ev.z);
+      if (pt) this.opts.onDamage({ x: pt.x, y: pt.y, amount: ev.damage });
+    }
+    if (ev.type === "hit" && ev.shipId === PLAYER_ID) {
+      this.opts.onPlayerHit();
+    }
   }
 
   /** Match selesai: tenggelam (winnerId sim) atau waktu habis (HP tertinggi). */
@@ -175,6 +206,28 @@ export class NavalGame {
     const t = this.state.time;
     const reloadLeft = Math.max(0, def.reloadSeconds - (t - p.lastFireAt));
     const abilityLeft = Math.max(0, p.abilityReadyAt - t);
+    // Info bidik: jarak + lead balistik + halangan pulau + jangkauan.
+    let aimDist = -1;
+    let aimLead = -1;
+    let aimBlocked = false;
+    let aimOutOfRange = false;
+    if (this.scene.aimX !== null && this.scene.aimZ !== null) {
+      aimDist = Math.hypot(this.scene.aimX - p.x, this.scene.aimZ - p.z);
+      const v = def.shellSpeed;
+      const maxRange = (v * v) / 9.8;
+      aimOutOfRange = aimDist > maxRange;
+      if (!aimOutOfRange) {
+        const theta = 0.5 * Math.asin(Math.min(1, (9.8 * aimDist) / (v * v)));
+        aimLead = aimDist / (v * Math.cos(theta));
+      }
+      aimBlocked = !hasLineOfSight(
+        this.state.map.islands,
+        p.x,
+        p.z,
+        this.scene.aimX,
+        this.scene.aimZ,
+      );
+    }
     return {
       speed: p.speed,
       maxSpeed: def.maxSpeed,
@@ -202,12 +255,20 @@ export class NavalGame {
       abilityName: def.abilityName,
       shipName: def.name,
       dummyName: getShipDef("galleon").name,
+      aimDist,
+      aimLead,
+      aimBlocked,
+      aimOutOfRange,
     };
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return;
     this.keys.add(e.code);
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (!this.over) useAbility(this.state, PLAYER_ID);
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -223,7 +284,12 @@ export class NavalGame {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
-    if (e.button === 2) {
+    if (e.button === 0) {
+      // Klik kiri: tembak satu volley ke titik aim.
+      if (!this.over && this.scene.aimX !== null && this.scene.aimZ !== null) {
+        fireVolley(this.state, PLAYER_ID, this.scene.aimX, this.scene.aimZ);
+      }
+    } else if (e.button === 2) {
       this.orbiting = true;
       this.lastOrbitX = e.clientX;
     }
