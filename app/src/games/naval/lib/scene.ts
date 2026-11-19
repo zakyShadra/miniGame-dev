@@ -5,9 +5,10 @@
 
 import * as THREE from "three";
 import { mulberry32 } from "../../../../../shared/game/prng";
+import { Effects } from "./effects";
 import { SINK_DURATION, waveHeight } from "./sim";
 import { buildShipModel, type ShipModel } from "./shipModel";
-import type { GameState, IslandDef, MapDef, ShipDef, ShipState } from "./types";
+import type { GameState, IslandDef, MapDef, ShipDef, ShipState, SimEvent } from "./types";
 
 const SKY_COLOR = 0x9fd4f0;
 const WATER_COLOR = 0x12b5a8;
@@ -111,6 +112,9 @@ export class NavalScene {
   private waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private camPos = new THREE.Vector3();
   private camInit = false;
+  private effects!: Effects;
+  private shellMeshes: THREE.Mesh[] = [];
+  private sinkSmokeT = 0;
 
   followId: string | null = null;
   // Default: seperempat kanan (starboard quarter) ala preview, bukan
@@ -185,6 +189,17 @@ export class NavalScene {
       this.clouds.push(cloud);
       this.scene.add(cloud);
     }
+
+    this.effects = new Effects(this.scene);
+    // Pool mesh peluru (bola hitam kecil, 12 cukup buat 2 volley bersamaan).
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 });
+    const shellGeo = new THREE.SphereGeometry(0.55, 8, 8);
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(shellGeo, shellMat);
+      m.visible = false;
+      this.scene.add(m);
+      this.shellMeshes.push(m);
+    }
   }
 
   addShip(id: string, def: ShipDef, opts: { enemy?: boolean } = {}): void {
@@ -220,6 +235,57 @@ export class NavalScene {
     const p = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.waterPlane, p)) return null;
     return { x: p.x, z: p.z };
+  }
+
+  /** Mainkan efek visual untuk satu event simulasi. */
+  playEvent(ev: SimEvent): void {
+    switch (ev.type) {
+      case "fire":
+        this.effects.muzzleFlash(ev.x, ev.y, ev.z);
+        break;
+      case "hit":
+        this.effects.explosion(ev.x, ev.y, ev.z);
+        break;
+      case "splash":
+        this.effects.splash(ev.x, ev.z);
+        break;
+      case "island-hit":
+        this.effects.islandHit(ev.x, ev.y, ev.z);
+        break;
+      case "sink-start": {
+        const m = this.ships.get(ev.shipId);
+        if (m) {
+          this.effects.explosion(m.model.group.position.x, 2, m.model.group.position.z);
+        }
+        break;
+      }
+      case "sunk": {
+        const m = this.ships.get(ev.shipId);
+        if (m) {
+          this.effects.splash(m.model.group.position.x, m.model.group.position.z);
+        }
+        break;
+      }
+      case "bump": {
+        const m = this.ships.get(ev.shipId);
+        if (m) {
+          const g = m.model.group.position;
+          this.effects.splash(g.x, g.z);
+        }
+        break;
+      }
+    }
+  }
+
+  /** Proyeksikan titik 3D ke koordinat pixel layar (buat angka damage). */
+  projectToScreen(x: number, y: number, z: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    if (v.z > 1) return null; // di belakang kamera
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: ((v.x + 1) / 2) * rect.width + rect.left,
+      y: ((-v.y + 1) / 2) * rect.height + rect.top,
+    };
   }
 
   addOrbit(dYaw: number): void {
@@ -317,6 +383,30 @@ export class NavalScene {
 
     for (const ship of state.ships) this.syncShip(ship, alpha, time);
 
+    // Peluru: sinkron mesh pool dengan state sim (interpolasi kasar: posisi
+    // saat ini, karena peluru cepat dan step 20 Hz cukup rapat).
+    const aliveShells = state.shells.filter((s) => s.alive);
+    for (let i = 0; i < this.shellMeshes.length; i++) {
+      const mesh = this.shellMeshes[i]!;
+      const sh = aliveShells[i];
+      if (sh) {
+        mesh.visible = true;
+        mesh.position.set(sh.x, sh.y, sh.z);
+      } else {
+        mesh.visible = false;
+      }
+    }
+
+    // Asap kapal yang sedang tenggelam (tiap ~0,25 d).
+    this.sinkSmokeT += dt;
+    if (this.sinkSmokeT > 0.25) {
+      this.sinkSmokeT = 0;
+      for (const ship of state.ships) {
+        if (ship.sinking) this.effects.sinkingSmoke(ship.x, ship.z);
+      }
+    }
+    this.effects.update(dt);
+
     // Awan melayang pelan, bungkus di tepi.
     for (const c of this.clouds) {
       c.position.x += dt * 1.5;
@@ -328,6 +418,7 @@ export class NavalScene {
   }
 
   dispose(): void {
+    this.effects.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
