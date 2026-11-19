@@ -9,10 +9,26 @@ import { Chess, type Color, type Square } from "chess.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol";
 import type {
   ChessRoomState,
+  NavalRoomState,
+  NavalShipSnap,
+  NavalSnapshot,
   PieceState,
   PlayerState,
   RoomState,
 } from "../../shared/types";
+import { BotController, BOT_LEVELS, type BotLevel } from "../../shared/naval/bot";
+import { getMap } from "../../shared/naval/maps";
+import { SHIPS } from "../../shared/naval/ships";
+import {
+  createGame,
+  fireVolley,
+  getShip,
+  hasLineOfSight,
+  stepGame,
+  TICK_DT,
+  useAbility,
+} from "../../shared/naval/sim";
+import type { GameState, ShipInput, SimEvent } from "../../shared/naval/types";
 import { cutPuzzle, type CutResult } from "../../shared/game/cutter";
 import {
   computeLayout,
@@ -33,6 +49,22 @@ type Env = {
   IMAGES: KVNamespace;
 };
 
+/** Level angka (1-3) -> difficulty bot. */
+const NAVAL_LEVEL_TO_BOT: Record<1 | 2 | 3, BotLevel> = {
+  1: "medium",
+  2: "hard",
+  3: "extreme",
+};
+
+/** Durasi match naval (detik). Habis waktu = total HP tertinggi menang. */
+const NAVAL_MATCH_DURATION = 300;
+/** Interval tick game loop (20 Hz). */
+const NAVAL_TICK_MS = 50;
+/** Tenggang reconnect: match dijeda, lalu forfeit bila tak kembali. */
+const NAVAL_DISCONNECT_GRACE_MS = 60_000;
+/** Id kapal di sim: p1/p2 = pemain (sama dengan shipKey kursi). */
+const NAVAL_BOT_ID = "bot";
+
 export class Room extends Server<Env> {
   private state: RoomState | null = null;
   private cut: CutResult | null = null;
@@ -41,6 +73,18 @@ export class Room extends Server<Env> {
   private lastPersist = 0;
   // Throttle chat per pemain (anti spam): pesan terakhir per conn id.
   private lastChatAt = new Map<string, number>();
+
+  // State game naval co-op (in-memory saja, tidak di-persist: sim
+  // 20 Hz terlalu berat buat SQLite per tick). Kalau DO restart di
+  // tengah match, match ditandai seri saat load (lihat ensureLoaded).
+  private navalGame: GameState | null = null;
+  private navalBot: BotController | null = null;
+  private navalTimer: ReturnType<typeof setInterval> | null = null;
+  // Input terakhir per kapal pemain ("p1"/"p2").
+  private navalInputs = new Map<string, ShipInput>();
+  private navalDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // Event di luar tick (tembakan pemain/bot) yang ikut snapshot berikut.
+  private navalPendingEvents: SimEvent[] = [];
 
   // Muat state dari SQLite sekali per aktivasi DO. Dipanggil di awal
   // tiap handler supaya tidak ada balapan antar pesan.
@@ -174,6 +218,21 @@ export class Room extends Server<Env> {
         break;
       case "chess-rematch":
         this.handleChessRematch(conn);
+        break;
+      case "create-naval":
+        this.handleCreateNaval(conn, msg);
+        break;
+      case "join-naval":
+        this.handleJoinNaval(conn, msg);
+        break;
+      case "naval-input":
+        this.handleNavalInput(conn, msg);
+        break;
+      case "naval-fire":
+        this.handleNavalFire(conn, msg);
+        break;
+      case "naval-ability":
+        this.handleNavalAbility(conn);
         break;
       default:
         break;
@@ -779,6 +838,443 @@ export class Room extends Server<Env> {
     this.sendSystem(
       `${color === "w" ? cs.whiteName : cs.blackName} minta rematch.`,
     );
+  }
+
+  // ---------- Naval co-op (2 pemain vs bot) ----------
+  //
+  // Server authoritative: sim murni (shared/naval) jalan di DO dengan
+  // tick 20 Hz via setInterval (BUKAN alarm, supaya tidak hibernate
+  // di tengah match). Client hanya mengirim input + aksi dan menerima
+  // snapshot per tick. LoS server-side: kapal bot tidak dikirim ke
+  // pemain yang garis pandangnya terhalang pulau.
+  //
+  // Kursi p1/p2 diikat ke playerKey (stabil antar reconnect), sama
+  // seperti kursi catur. Match dijeda saat satu pemain putus (60 detik
+  // tenggang reconnect), forfeit (bot menang) bila tidak kembali.
+
+  private navalRoomMessage(): ServerMessage {
+    return {
+      type: "naval-room",
+      room: this.state!.naval!,
+      players: this.state!.players,
+    };
+  }
+
+  // Kursi naval yang dipegang koneksi ini (null bila bukan pemain).
+  private navalSeatOf(
+    conn: Connection,
+  ): NavalRoomState["seats"][number] | null {
+    const naval = this.state?.naval;
+    if (!naval) return null;
+    const key = this.playerKeyOf(conn);
+    if (!key) return null;
+    return naval.seats.find((s) => s.key === key) ?? null;
+  }
+
+  private handleCreateNaval(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "create-naval" }>,
+  ) {
+    if (this.state) {
+      this.send(conn, {
+        type: "error",
+        message: "Room sudah ada, coba kode lain.",
+      });
+      return;
+    }
+    if (
+      !msg.playerKey ||
+      !(msg.level === 1 || msg.level === 2 || msg.level === 3) ||
+      !Object.hasOwn(SHIPS, msg.shipId)
+    ) {
+      this.send(conn, { type: "error", message: "Data room tidak valid." });
+      return;
+    }
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    const player: PlayerState = {
+      id: conn.id,
+      name,
+      color: msg.color,
+      cursor: null,
+      connected: true,
+      lastSeen: Date.now(),
+      key: msg.playerKey,
+    };
+    const info = BOT_LEVELS[NAVAL_LEVEL_TO_BOT[msg.level]];
+    this.state = {
+      code: this.name,
+      kind: "naval",
+      chess: null,
+      naval: {
+        level: msg.level,
+        mapId: info.mapId,
+        status: "waiting",
+        seats: [{ key: msg.playerKey, name, shipId: msg.shipId, shipKey: "p1" }],
+        winner: null,
+        rematchPendingBy: null,
+        gameNumber: 1,
+      },
+      // Field puzzle tidak dipakai di room naval.
+      imageUrl: "",
+      imageName: "",
+      imageW: 0,
+      imageH: 0,
+      pieceCount: 0,
+      seed: 0,
+      pieces: [],
+      players: [player],
+      hostId: conn.id,
+      startedAt: Date.now(),
+      solvedAt: null,
+    };
+    this.persist();
+    this.send(conn, this.navalRoomMessage());
+  }
+
+  private handleJoinNaval(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "join-naval" }>,
+  ) {
+    if (!this.state || !this.state.naval) {
+      this.send(conn, {
+        type: "error",
+        message: "Room tidak ditemukan, cek kodenya.",
+      });
+      return;
+    }
+    if (this.state.kind !== "naval") {
+      this.send(conn, {
+        type: "error",
+        message: "Room ini bukan room naval.",
+      });
+      return;
+    }
+    if (!msg.playerKey || !Object.hasOwn(SHIPS, msg.shipId)) {
+      this.send(conn, { type: "error", message: "Data room tidak valid." });
+      return;
+    }
+    const naval = this.state.naval;
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    // Rejoin kursi sendiri (refresh/reconnect): key cocok dengan kursi.
+    const seat = naval.seats.find((s) => s.key === msg.playerKey);
+    if (seat) {
+      const existing = this.state.players.find(
+        (p) => p.key === msg.playerKey,
+      );
+      if (existing) {
+        existing.id = conn.id;
+        existing.name = name;
+        existing.color = msg.color;
+        existing.connected = true;
+        existing.lastSeen = Date.now();
+      }
+      // Batalkan timer forfeit; match yang dijeda dilanjutkan hanya
+      // bila SEMUA kursi sudah kembali (kalau tidak, timer baru jalan
+      // untuk pemain yang masih putus).
+      if (this.navalDisconnectTimer) {
+        clearTimeout(this.navalDisconnectTimer);
+        this.navalDisconnectTimer = null;
+      }
+      if (naval.status === "paused" && this.navalGame) {
+        const allBack = naval.seats.every((s) => {
+          const p = this.state!.players.find((pl) => pl.key === s.key);
+          return p?.connected;
+        });
+        if (allBack) {
+          naval.status = "playing";
+          this.startNavalTick();
+          this.sendSystem(`${name} kembali, match dilanjutkan!`);
+        }
+        // Kalau belum semua kembali, match tetap dijeda (timer forfeit
+        // menyusul di commit berikutnya).
+      }
+      this.persist();
+      this.send(conn, this.navalRoomMessage());
+      // Kirim snapshot terakhir supaya client langsung sinkron.
+      if (this.navalGame && naval.status === "playing") {
+        const snap = this.navalSnapshotFor(seat.shipKey, []);
+        if (snap) this.send(conn, { type: "naval-snapshot", snap });
+      }
+      return;
+    }
+    // Kursi p2 masih kosong: pemain kedua masuk, match dimulai.
+    if (naval.seats.length < 2) {
+      naval.seats.push({
+        key: msg.playerKey,
+        name,
+        shipId: msg.shipId,
+        shipKey: "p2",
+      });
+      const player: PlayerState = {
+        id: conn.id,
+        name,
+        color: msg.color,
+        cursor: null,
+        connected: true,
+        lastSeen: Date.now(),
+        key: msg.playerKey,
+      };
+      this.state.players.push(player);
+      this.sendAll({ type: "player-joined", player }, [conn.id]);
+      this.sendSystem(`${name} bergabung, match dimulai!`);
+      this.startNavalMatch();
+      this.sendAll(this.navalRoomMessage());
+      return;
+    }
+    this.send(conn, {
+      type: "error",
+      message: "Room naval sudah penuh (2 pemain).",
+    });
+  }
+
+  // Buat game baru dari kursi yang ada (p1 spawn A, p2 spawn C, bot B)
+  // dan mulai tick. Dipakai saat match pertama dan tiap rematch.
+  private startNavalMatch(): void {
+    const naval = this.state?.naval;
+    if (!naval) return;
+    const p1 = naval.seats.find((s) => s.shipKey === "p1");
+    const p2 = naval.seats.find((s) => s.shipKey === "p2");
+    if (!p1 || !p2) return;
+    const botLevel = NAVAL_LEVEL_TO_BOT[naval.level];
+    const map = getMap(naval.mapId);
+    this.navalGame = createGame(map, [
+      { id: "p1", defId: p1.shipId, spawn: "A" },
+      { id: "p2", defId: p2.shipId, spawn: "C" },
+      { id: NAVAL_BOT_ID, defId: BOT_LEVELS[botLevel].botShip, spawn: "B" },
+    ]);
+    this.navalBot = new BotController(botLevel, NAVAL_BOT_ID);
+    this.navalInputs.clear();
+    this.navalPendingEvents = [];
+    naval.status = "playing";
+    naval.winner = null;
+    naval.rematchPendingBy = null;
+    this.persist();
+    this.startNavalTick();
+  }
+
+  private startNavalTick(): void {
+    this.stopNavalTick();
+    this.navalTimer = setInterval(() => this.navalTick(), NAVAL_TICK_MS);
+  }
+
+  private stopNavalTick(): void {
+    if (this.navalTimer) {
+      clearInterval(this.navalTimer);
+      this.navalTimer = null;
+    }
+  }
+
+  private navalTick(): void {
+    const naval = this.state?.naval;
+    const game = this.navalGame;
+    const bot = this.navalBot;
+    if (!naval || !game || !bot || naval.status !== "playing") {
+      this.stopNavalTick();
+      return;
+    }
+    const inputs = new Map<string, ShipInput>();
+    for (const seat of naval.seats) {
+      inputs.set(
+        seat.shipKey,
+        this.navalInputs.get(seat.shipKey) ?? { throttle: 0, rudder: 0 },
+      );
+    }
+    // Bot: keputusan + tembakan + kemampuan sebelum step.
+    const decision = bot.update(game, TICK_DT);
+    inputs.set(NAVAL_BOT_ID, decision.input);
+    if (decision.fireAt) {
+      const botShip = getShip(game, NAVAL_BOT_ID);
+      if (
+        botShip &&
+        fireVolley(game, NAVAL_BOT_ID, decision.fireAt.x, decision.fireAt.z)
+      ) {
+        this.navalPendingEvents.push({
+          type: "fire",
+          shipId: NAVAL_BOT_ID,
+          x: botShip.x,
+          y: 4,
+          z: botShip.z,
+        });
+      }
+    }
+    if (decision.useAbility) useAbility(game, NAVAL_BOT_ID);
+
+    const events = stepGame(game, inputs, TICK_DT);
+    const allEvents = [...this.navalPendingEvents, ...events];
+    this.navalPendingEvents = [];
+
+    // Akhir match (tim, bukan kapal tunggal): bot tenggelam -> pemain
+    // menang; kedua pemain tenggelam -> bot menang; waktu habis ->
+    // total HP pemain vs HP bot, seri bila sama.
+    const botShip = getShip(game, NAVAL_BOT_ID);
+    const p1 = getShip(game, "p1");
+    const p2 = getShip(game, "p2");
+    if (botShip && !botShip.alive) {
+      this.endNavalMatch("players", allEvents);
+      return;
+    }
+    if (p1 && p2 && !p1.alive && !p2.alive) {
+      this.endNavalMatch("bot", allEvents);
+      return;
+    }
+    if (game.time >= NAVAL_MATCH_DURATION) {
+      const playersHp = (p1?.hp ?? 0) + (p2?.hp ?? 0);
+      const botHp = botShip?.hp ?? 0;
+      this.endNavalMatch(
+        playersHp > botHp ? "players" : botHp > playersHp ? "bot" : "draw",
+        allEvents,
+      );
+      return;
+    }
+
+    this.broadcastNavalSnapshot(allEvents, game.winnerId);
+  }
+
+  private endNavalMatch(
+    winner: "players" | "bot" | "draw",
+    events: SimEvent[],
+  ): void {
+    const naval = this.state?.naval;
+    if (!naval) return;
+    this.stopNavalTick();
+    naval.status = "over";
+    naval.winner = winner;
+    this.persist();
+    // Snapshot terakhir membawa hasil tim di winnerId (bukan id kapal).
+    this.broadcastNavalSnapshot(events, winner);
+    this.sendAll(this.navalRoomMessage());
+    this.sendSystem(
+      winner === "players"
+        ? "Kalian menang! Kapal bot tenggelam."
+        : winner === "bot"
+          ? "Bot menang. Kapal kalian tenggelam."
+          : "Seri! HP kedua tim sama.",
+    );
+  }
+
+  // Snapshot per pemain: kapal bot dihilangkan bila tidak ada garis
+  // pandang dari kapal pemain itu (kecuali bot sedang tenggelam/mati,
+  // supaya animasi tenggelam tetap terlihat).
+  private navalSnapshotFor(
+    shipKey: "p1" | "p2",
+    events: SimEvent[],
+    winnerId: string | null = null,
+  ): NavalSnapshot | null {
+    const game = this.navalGame;
+    if (!game) return null;
+    const me = getShip(game, shipKey);
+    const bot = getShip(game, NAVAL_BOT_ID);
+    let botVisible = false;
+    if (me && bot) {
+      botVisible =
+        hasLineOfSight(game.map.islands, me.x, me.z, bot.x, bot.z) ||
+        bot.sinking ||
+        !bot.alive;
+    }
+    const ships: NavalShipSnap[] = [];
+    for (const s of game.ships) {
+      if (s.id === NAVAL_BOT_ID && !botVisible) continue;
+      ships.push({
+        id: s.id,
+        defId: s.defId,
+        x: s.x,
+        z: s.z,
+        heading: s.heading,
+        speed: s.speed,
+        hp: s.hp,
+        maxHp: s.maxHp,
+        alive: s.alive,
+        sinking: s.sinking,
+        sinkTime: s.sinkTime,
+        heel: s.heel,
+        turn: s.turn,
+        lastFireAt: s.lastFireAt,
+        abilityReadyAt: s.abilityReadyAt,
+      });
+    }
+    // Event tembakan bot dibuang bila bot tidak terlihat (posisi
+    // muzzle flash akan membocorkan lokasinya).
+    const visibleEvents = botVisible
+      ? events
+      : events.filter((e) => !(e.type === "fire" && e.shipId === NAVAL_BOT_ID));
+    return {
+      t: game.time,
+      timeLeft: Math.max(0, NAVAL_MATCH_DURATION - game.time),
+      winnerId: winnerId ?? game.winnerId,
+      ships,
+      shells: game.shells
+        .filter((s) => s.alive)
+        .map((s) => ({ x: s.x, y: s.y, z: s.z })),
+      events: visibleEvents,
+      botVisible,
+    };
+  }
+
+  private broadcastNavalSnapshot(
+    events: SimEvent[],
+    winnerId: string | null,
+  ): void {
+    const naval = this.state?.naval;
+    if (!naval) return;
+    const conns = new Map<string, Connection>();
+    for (const c of this.getConnections()) conns.set(c.id, c);
+    for (const seat of naval.seats) {
+      const player = this.state!.players.find((p) => p.key === seat.key);
+      if (!player || !player.connected) continue;
+      const conn = conns.get(player.id);
+      if (!conn) continue;
+      const snap = this.navalSnapshotFor(seat.shipKey, events, winnerId);
+      if (snap) this.send(conn, { type: "naval-snapshot", snap });
+    }
+  }
+
+  private handleNavalInput(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "naval-input" }>,
+  ) {
+    const naval = this.state?.naval;
+    if (!naval || naval.status !== "playing") return;
+    const seat = this.navalSeatOf(conn);
+    if (!seat) return;
+    if (!Number.isFinite(msg.throttle) || !Number.isFinite(msg.rudder)) {
+      return;
+    }
+    // Jepit ke [-1, 1] (client nakal tidak bisa ngebut di luar batas).
+    this.navalInputs.set(seat.shipKey, {
+      throttle: Math.max(-1, Math.min(1, msg.throttle)),
+      rudder: Math.max(-1, Math.min(1, msg.rudder)),
+    });
+  }
+
+  private handleNavalFire(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "naval-fire" }>,
+  ) {
+    const naval = this.state?.naval;
+    const game = this.navalGame;
+    if (!naval || !game || naval.status !== "playing") return;
+    const seat = this.navalSeatOf(conn);
+    if (!seat) return;
+    if (!Number.isFinite(msg.aimX) || !Number.isFinite(msg.aimZ)) return;
+    const ship = getShip(game, seat.shipKey);
+    if (ship && fireVolley(game, seat.shipKey, msg.aimX, msg.aimZ)) {
+      this.navalPendingEvents.push({
+        type: "fire",
+        shipId: seat.shipKey,
+        x: ship.x,
+        y: 4,
+        z: ship.z,
+      });
+    }
+  }
+
+  private handleNavalAbility(conn: Connection) {
+    const naval = this.state?.naval;
+    const game = this.navalGame;
+    if (!naval || !game || naval.status !== "playing") return;
+    const seat = this.navalSeatOf(conn);
+    if (!seat) return;
+    useAbility(game, seat.shipKey);
   }
 
   async onClose(conn: Connection) {
