@@ -24,6 +24,7 @@ import {
 } from "../lib/engine";
 import { getLevelConfig } from "../lib/levels";
 import {
+  ANALYSIS_MODES,
   analyzeGame,
   scoreToCp,
   type AnalysisMode,
@@ -112,6 +113,26 @@ export const useChessStore = defineStore("chess", () => {
   // Posisi yang di-review (indeks 0 = posisi awal, N = posisi akhir).
   // null = tampilkan posisi live.
   const reviewPly = ref<number | null>(null);
+  // Eksplorasi analisa interaktif (C5): fork dari posisi tampil saat
+  // game sudah berakhir. exploreGame = instance Chess non-reaktif
+  // dari posisi fork; exploreMoves = daftar langkah fork (SAN);
+  // exploreFen = FEN posisi fork (null = tidak eksplorasi). Game
+  // asli tidak berubah.
+  let exploreGame: Chess | null = null;
+  const exploreMoves = ref<Move[]>([]);
+  const exploreFen = ref<string | null>(null);
+  // Best move posisi tampil (saat review/eksplorasi pasca-game),
+  // dari engine (depth ikut mode analisa). Null = belum dihitung
+  // (atau posisi sudah skakmat/stalemate).
+  const exploreBestMove = ref<{
+    from: Square;
+    to: Square;
+    san: string;
+    evalCp: number | null;
+  } | null>(null);
+  const exploreBestMoveLoading = ref(false);
+  let exploreBestMoveTimer: ReturnType<typeof setTimeout> | null = null;
+  let exploreBestMoveRequestId = 0;
   // Evaluasi live mentah (skor engine + giliran jalan), null = belum
   // ada. Skor mentah disimpan supaya eval bar bisa menampilkan mate
   // sebagai #N, bukan angka cp raksasa. liveEvalCp turunannya.
@@ -262,9 +283,11 @@ export const useChessStore = defineStore("chess", () => {
     return game.fen();
   }
 
-  // FEN yang ditampilkan di papan: posisi review kalau sedang
-  // review, kalau tidak posisi live.
+  // FEN yang ditampilkan di papan: posisi fork kalau sedang
+  // eksplorasi, posisi review kalau sedang review, kalau tidak
+  // posisi live.
   const displayFen = computed(() => {
+    if (exploreFen.value !== null) return exploreFen.value;
     if (reviewPly.value !== null) {
       return (
         analysis.value?.evals[reviewPly.value]?.fen ??
@@ -273,6 +296,11 @@ export const useChessStore = defineStore("chess", () => {
     }
     return fen.value;
   });
+
+  // Giliran jalan di posisi TAMPIL (buat input eksplorasi: bidak
+  // yang boleh digerakkan adalah bidak giliran posisi tampil,
+  // bukan giliran live).
+  const displayTurn = computed<Color>(() => new Chess(displayFen.value).turn());
 
   // Petak -> bidak, buat render papan. Bergantung pada version dan
   // posisi review.
@@ -322,9 +350,15 @@ export const useChessStore = defineStore("chess", () => {
         reviewPly.value === historyVerbose.value.length),
   );
 
-  // Langkah terakhir di posisi tampil (saat review = langkah yang
-  // membawa ke posisi itu; posisi awal tidak punya langkah terakhir).
+  // Langkah terakhir di posisi tampil: langkah fork kalau sedang
+  // eksplorasi (kalau belum ada, jatuh ke logika review), saat
+  // review = langkah yang membawa ke posisi itu, posisi awal tidak
+  // punya langkah terakhir.
   const displayLastMove = computed<{ from: Square; to: Square } | null>(() => {
+    if (exploreMoves.value.length > 0) {
+      const m = exploreMoves.value[exploreMoves.value.length - 1]!;
+      return { from: m.from, to: m.to };
+    }
     if (reviewPly.value !== null) {
       if (reviewPly.value === 0) return null;
       const m = historyVerbose.value[reviewPly.value - 1];
@@ -362,6 +396,12 @@ export const useChessStore = defineStore("chess", () => {
   });
 
   const statusText = computed(() => {
+    if (exploreFen.value !== null) {
+      const n = exploreMoves.value.length;
+      return n === 0
+        ? "Eksplorasi: gerakkan bidak bebas"
+        : `Eksplorasi: ${exploreMoves.value.map((m) => m.san).join(" ")}`;
+    }
     if (reviewPly.value !== null) {
       if (reviewPly.value === 0) return "Review: posisi awal";
       const m = historyVerbose.value[reviewPly.value - 1];
@@ -424,6 +464,23 @@ export const useChessStore = defineStore("chess", () => {
     analysis.value = null;
     analysisError.value = null;
     reviewPly.value = null;
+    // Eksplorasi ikut dibatalkan (fork tidak berlaku lagi).
+    exploreGame = null;
+    exploreMoves.value = [];
+    exploreFen.value = null;
+    exploreBestMove.value = null;
+  }
+
+  // Keluar dari eksplorasi kembali ke posisi game (review/live).
+  // Dipakai tombol "Kembali ke game" + navigasi review.
+  function exitExplore() {
+    exploreGame = null;
+    exploreMoves.value = [];
+    exploreFen.value = null;
+    exploreBestMove.value = null;
+    clearSelection();
+    promotionPending.value = null;
+    version.value++;
   }
 
   function resetOnlineState() {
@@ -771,6 +828,13 @@ export const useChessStore = defineStore("chess", () => {
     // bunyi akhir game bisa berbunyi saat game berakhir, termasuk
     // saat bot yang memberi skakmat (bukan di dalam gesture).
     ensureAudio();
+    // Pasca-game: papan bisa dieksplorasi bebas (fork dari posisi
+    // tampil, game asli tidak berubah). Berlaku saat review maupun
+    // di posisi akhir.
+    if (phase.value === "over") {
+      selectExploreSquare(sq);
+      return;
+    }
     if (phase.value !== "playing" || result.value) return;
     // Sedang review posisi lama: papan read-only.
     if (reviewPly.value !== null) return;
@@ -817,7 +881,117 @@ export const useChessStore = defineStore("chess", () => {
   function choosePromotion(piece: PieceSymbol) {
     const pending = promotionPending.value;
     if (!pending) return;
+    // Promosi saat eksplorasi: terapkan ke fork, bukan game asli.
+    if (exploreGame) {
+      applyExploreMove(pending.from, pending.to, piece);
+      return;
+    }
     doMove(pending.from, pending.to, piece);
+  }
+
+  // Pilih/gerakkan bidak di posisi eksplorasi (fork). Fork dimulai
+  // dari posisi tampil saat pertama kali bidak dipilih; langkah
+  // diterapkan ke fork, bukan ke game asli.
+  function selectExploreSquare(sq: Square) {
+    if (!exploreGame) {
+      exploreGame = new Chess(displayFen.value);
+      exploreMoves.value = [];
+    }
+    const game = exploreGame;
+    if (promotionPending.value) return;
+    // Klik target legal dari bidak terpilih = jalan di fork.
+    if (selected.value) {
+      const options = targets.value.filter((m) => m.to === sq);
+      if (options.length > 0) {
+        if (options.some((m) => m.promotion)) {
+          promotionPending.value = { from: selected.value, to: sq };
+        } else {
+          applyExploreMove(selected.value, sq);
+        }
+        return;
+      }
+    }
+    // Klik bidak giliran jalan di posisi fork = pilih.
+    const piece = game.get(sq);
+    if (piece && piece.color === game.turn()) {
+      selected.value = sq;
+      targets.value = game.moves({ square: sq, verbose: true });
+      return;
+    }
+    clearSelection();
+  }
+
+  function applyExploreMove(from: Square, to: Square, promotion?: PieceSymbol) {
+    if (!exploreGame) return;
+    const m = exploreGame.move({ from, to, promotion });
+    exploreMoves.value = [...exploreMoves.value, m];
+    exploreFen.value = exploreGame.fen();
+    clearSelection();
+    promotionPending.value = null;
+    version.value++;
+    scheduleExploreBestMove();
+  }
+
+  // Best move posisi tampil (review/eksplorasi pasca-game). Dijalankan
+  // tertunda 300 ms setelah navigasi/langkah fork; dilewati kalau
+  // engine sedang dipakai analisa/bot (tidak antre). Depth ikut mode
+  // analisa yang dipilih (Cepat 16 / Thinking 18).
+  function scheduleExploreBestMove() {
+    if (exploreBestMoveTimer) clearTimeout(exploreBestMoveTimer);
+    exploreBestMoveTimer = setTimeout(() => void refreshExploreBestMove(), 300);
+  }
+
+  async function refreshExploreBestMove() {
+    if (phase.value !== "over") return;
+    if (reviewPly.value === null && exploreFen.value === null) return;
+    const fenAtStart = displayFen.value;
+    if (stockfish.status !== "ready") {
+      // Engine belum siap (user belum pernah analisa): load on demand
+      // (dari cache kalau pernah, download 99 MB kalau belum).
+      exploreBestMoveLoading.value = true;
+      try {
+        await stockfish.load();
+      } catch {
+        exploreBestMoveLoading.value = false;
+        return;
+      }
+      exploreBestMoveLoading.value = false;
+    }
+    if (
+      analysisStatus.value === "running" ||
+      analysisStatus.value === "loading" ||
+      botThinking.value
+    ) {
+      return;
+    }
+    const requestId = ++exploreBestMoveRequestId;
+    const depth = ANALYSIS_MODES[analysisMode.value].depth;
+    try {
+      const r = await stockfish.go(fenAtStart, { depth, multiPv: 1 });
+      if (requestId !== exploreBestMoveRequestId || displayFen.value !== fenAtStart) {
+        return;
+      }
+      // "0000" = tidak ada langkah (skakmat/stalemate).
+      if (!r.bestMove || r.bestMove === "0000") {
+        exploreBestMove.value = null;
+        return;
+      }
+      const { from, to, promotion } = parseUci(r.bestMove);
+      const game = new Chess(fenAtStart);
+      const m = game.move({ from, to, promotion });
+      const score = r.lines[0]?.score ?? null;
+      exploreBestMove.value = {
+        from,
+        to,
+        san: m.san,
+        evalCp: score
+          ? scoreToCp(score, new Chess(fenAtStart).turn(), "w")
+          : null,
+      };
+    } catch {
+      // Engine sibuk (go lain sedang jalan): lewati, navigasi
+      // berikutnya akan memicu lagi.
+    }
   }
 
   function cancelPromotion() {
@@ -898,6 +1072,11 @@ export const useChessStore = defineStore("chess", () => {
     analysisError.value = null;
     analysis.value = null;
     reviewPly.value = null;
+    // Analisa baru: keluar dari eksplorasi (fork tidak berlaku lagi).
+    exploreGame = null;
+    exploreMoves.value = [];
+    exploreFen.value = null;
+    exploreBestMove.value = null;
     try {
       if (stockfish.status !== "ready") {
         analysisStatus.value = "loading";
@@ -954,9 +1133,12 @@ export const useChessStore = defineStore("chess", () => {
   // Pilih posisi review (indeks 0 = awal, N = akhir). null = live.
   // Review tidak butuh analisa: tanpa analisa, FEN dihitung dengan
   // replay riwayat (fenAtPly). Dengan analisa, batasnya jumlah eval.
+  // Pindah posisi review selalu keluar dari eksplorasi (fork terikat
+  // posisi lama); pasca-game, best move posisi baru dihitung.
   function setReview(ply: number | null) {
     if (ply === null) {
       reviewPly.value = null;
+      exitExplore();
       return;
     }
     const max = analysis.value
@@ -964,7 +1146,27 @@ export const useChessStore = defineStore("chess", () => {
       : historyVerbose.value.length;
     if (max <= 0) return;
     reviewPly.value = Math.max(0, Math.min(max, ply));
-    clearSelection();
+    exitExplore();
+    if (phase.value === "over") scheduleExploreBestMove();
+  }
+
+  // Navigasi review (C5): maju/mundur satu langkah, ke awal, ke akhir
+  // (live). Dipakai tombol panah + keyboard ArrowLeft/ArrowRight.
+  // Live dihitung sebagai posisi akhir (total langkah).
+  function reviewStep(delta: number) {
+    const total = historyVerbose.value.length;
+    if (total === 0) return;
+    const current = reviewPly.value ?? total;
+    setReview(Math.max(0, Math.min(total, current + delta)));
+  }
+
+  function reviewToStart() {
+    if (historyVerbose.value.length === 0) return;
+    setReview(0);
+  }
+
+  function reviewToEnd() {
+    setReview(null);
   }
 
   // Toggle review satu langkah (ply 0-based): klik langkah yang
@@ -1047,6 +1249,15 @@ export const useChessStore = defineStore("chess", () => {
     analysisError,
     analysisMode,
     reviewPly,
+    displayTurn,
+    exploreMoves,
+    exploreFen,
+    exploreBestMove,
+    exploreBestMoveLoading,
+    exitExplore,
+    reviewStep,
+    reviewToStart,
+    reviewToEnd,
     liveEvalScore,
     liveEvalCp,
     evalBarEnabled,
