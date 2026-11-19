@@ -4,8 +4,10 @@ HP pemain kiri atas, timer tengah atas, HP musuh kanan atas, kecepatan
 + minimap kiri bawah, reload + kemampuan kanan bawah. -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
-import { useNavalStore } from "../stores/naval";
-import { SHIP_LIST } from "../../../../../shared/naval/ships";
+import { useNavalStore, type NavalLevel } from "../stores/naval";
+import { BOT_LEVELS, type BotLevel } from "../../../../../shared/naval/bot";
+import { getMap } from "../../../../../shared/naval/maps";
+import { SHIP_LIST, getShipDef } from "../../../../../shared/naval/ships";
 import type { ShipId } from "../../../../../shared/naval/types";
 import NavalMinimap from "./NavalMinimap.vue";
 
@@ -98,6 +100,26 @@ const aimLabel = computed(() => {
 function selectShip(id: ShipId) {
   if (id === "frigate") store.selectedShip = id;
 }
+
+// Level solo vs bot: nomor -> BotLevel, info (label/map/kapal) dari BOT_LEVELS.
+const LEVELS: { num: NavalLevel; botLevel: BotLevel }[] = [
+  { num: 1, botLevel: "medium" },
+  { num: 2, botLevel: "hard" },
+  { num: 3, botLevel: "extreme" },
+];
+
+function levelInfo(botLevel: BotLevel) {
+  const info = BOT_LEVELS[botLevel];
+  return {
+    label: info.label,
+    mapName: getMap(info.mapId).name,
+    shipName: getShipDef(info.botShip).name,
+  };
+}
+
+function selectLevel(num: NavalLevel) {
+  if (num <= store.unlockedLevel) store.level = num;
+}
 </script>
 
 <template>
@@ -155,6 +177,61 @@ function selectShip(id: ShipId) {
           </span>
           <span class="mt-1 block text-xs text-white/60">
             HP {{ s.hp }} &middot; {{ s.abilityName }}: {{ s.abilityDesc }}
+          </span>
+        </button>
+      </div>
+
+      <h2 class="mt-5 text-xs font-bold tracking-widest text-white/60 uppercase">
+        Pilih level
+      </h2>
+      <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <button
+          v-for="lv in LEVELS"
+          :key="lv.num"
+          type="button"
+          :disabled="lv.num > store.unlockedLevel"
+          class="rounded-xl border p-3 text-left backdrop-blur transition"
+          :class="
+            lv.num > store.unlockedLevel
+              ? 'cursor-not-allowed border-white/10 bg-white/5 opacity-60'
+              : store.level === lv.num
+                ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+                : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
+          "
+          @click="selectLevel(lv.num)"
+        >
+          <span class="flex items-center gap-2">
+            <span class="font-display font-bold text-white">Level {{ lv.num }}</span>
+            <span
+              class="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold"
+              :class="
+                lv.botLevel === 'extreme' ? 'text-[#e8a33d]' : 'text-white/60'
+              "
+            >
+              {{ levelInfo(lv.botLevel).label.toUpperCase() }}
+            </span>
+          </span>
+          <span class="mt-1 block text-xs text-white/60">
+            {{ levelInfo(lv.botLevel).mapName }} &middot;
+            {{ levelInfo(lv.botLevel).shipName }}
+          </span>
+          <span
+            v-if="lv.num > store.unlockedLevel"
+            class="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-white/50"
+          >
+            <svg
+              class="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            Kalahkan level sebelumnya
           </span>
         </button>
       </div>
@@ -367,6 +444,12 @@ function selectShip(id: ShipId) {
       <div class="w-full max-w-sm rounded-3xl border border-[#e8a33d]/30 bg-[#10222d]/95 p-6 text-center text-white shadow-2xl">
         <h2 class="font-pirate text-4xl tracking-wide text-[#e8a33d]">{{ overTitle }}</h2>
         <p class="mt-2 text-sm text-white/75">{{ overSub }}</p>
+        <div
+          v-if="store.justUnlocked"
+          class="mt-3 rounded-xl border border-[#e8a33d] bg-[#e8a33d]/15 px-4 py-2 text-sm font-bold text-[#e8a33d]"
+        >
+          Level {{ store.justUnlocked }} terbuka!
+        </div>
         <div class="mt-4 font-timer text-sm text-white/80">
           Hull kamu {{ store.hud.hp }}/{{ store.hud.maxHp }} &middot;
           Hull musuh {{ store.hud.dummyHp }}/{{ store.hud.dummyMaxHp }}
