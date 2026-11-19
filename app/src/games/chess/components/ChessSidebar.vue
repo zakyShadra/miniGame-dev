@@ -129,7 +129,13 @@ watch(
       </p>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4">
+    <!-- min-h: panel Analisa yang tinggi tidak boleh menekan daftar
+    langkah sampai tidak bisa diklik (flex-1 + min-h-0 membuatnya
+    menciut ke 0 saat Analisa selesai). Sidebar ikut scroll bila
+    totalnya melebihi viewport. -->
+    <div
+      class="flex min-h-[240px] flex-1 flex-col rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4"
+    >
       <div class="flex items-center justify-between gap-2">
         <h2 class="text-xs font-bold tracking-wide text-muted uppercase">
           Langkah

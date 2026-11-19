@@ -170,7 +170,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
       <!-- Kolom papan: strip lawan, papan, strip pemain, aksi.
       Di desktop scroll internal supaya setinggi viewport. -->
       <main
-        class="flex w-full max-w-[640px] shrink-0 flex-col gap-2 self-center sm:gap-3 lg:min-h-0 lg:self-stretch lg:overflow-y-auto lg:pr-1"
+        class="flex w-full max-w-[640px] shrink-0 flex-col gap-2 self-center sm:gap-3 lg:min-h-0 lg:w-[min(640px,calc(100dvh-300px))] lg:self-stretch lg:overflow-y-auto lg:pr-1"
       >
         <PlayerStrip v-bind="stripProps(topColor)" />
         <div class="flex gap-2">
