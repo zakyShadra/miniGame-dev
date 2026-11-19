@@ -27,9 +27,10 @@ import {
   type AnalysisMode,
   type GameAnalysis,
 } from "../lib/analysis";
+import { parsePgn, type ImportedGameMeta } from "../lib/pgn";
 import { ensureAudio, playGameEnd } from "../../../lib/sound";
 
-export type ChessMode = "local" | "bot";
+export type ChessMode = "local" | "bot" | "import";
 export type ChessPhase = "setup" | "playing" | "over";
 export type BotLevel = "easy" | "medium" | "hard" | "extreme";
 export type HumanColorChoice = "w" | "b" | "random";
@@ -135,6 +136,11 @@ export const useChessStore = defineStore("chess", () => {
   // Akhir game terstruktur + visibilitas modal hasil (tugas 5).
   const gameEnd = ref<GameEnd | null>(null);
   const endModalVisible = ref(false);
+  // Metadata game import (PGN): nama pemain + hasil, ditampilkan di
+  // sidebar. importedNote = catatan sekali tampil (misal PGN berisi
+  // beberapa game, yang dipakai game pertama).
+  const importedMeta = ref<ImportedGameMeta | null>(null);
+  const importedNote = ref("");
   const lastMove = ref<{ from: Square; to: Square } | null>(null);
   // Dipakai computed boardMap sebagai pemicu re-render.
   const version = ref(0);
@@ -202,8 +208,10 @@ export const useChessStore = defineStore("chess", () => {
     const prevEnd = gameEnd.value;
     gameEnd.value = computeGameEnd();
     if (result.value) phase.value = "over";
-    // Game baru berakhir di sync ini: bunyi + modal.
-    if (!prevEnd && gameEnd.value) onGameEnd();
+    // Game baru berakhir di sync ini: bunyi + modal. Mode import
+    // dikecualikan: game import langsung dimuat ke posisi akhir
+    // tanpa bunyi/modal (bukan game yang baru saja dimainkan).
+    if (!prevEnd && gameEnd.value && mode.value !== "import") onGameEnd();
     version.value++;
     if (phase.value === "playing") scheduleLiveEval();
   }
@@ -387,6 +395,8 @@ export const useChessStore = defineStore("chess", () => {
   function newLocalGame() {
     chess = new Chess();
     mode.value = "local";
+    importedMeta.value = null;
+    importedNote.value = "";
     orientation.value = "w";
     phase.value = "playing";
     clearSelection();
@@ -408,6 +418,48 @@ export const useChessStore = defineStore("chess", () => {
         // Gagal prefetch: abaikan, load ulang saat dibutuhkan.
       });
     }
+  }
+
+  // Teks hasil game import (dari header Result PGN).
+  function importResultText(meta: ImportedGameMeta): string {
+    switch (meta.result) {
+      case "1-0":
+        return `${meta.white} menang (1-0).`;
+      case "0-1":
+        return `${meta.black} menang (0-1).`;
+      case "1/2-1/2":
+        return "Remis (1/2-1/2).";
+      default:
+        return "Game import (hasil tidak tercatat).";
+    }
+  }
+
+  // Muat game dari PGN (fitur import). Melempar Error dengan pesan
+  // Indonesia kalau PGN kosong/tidak valid/tanpa langkah; pemanggil
+  // menampilkan pesannya. Game langsung ke fase selesai (analisa
+  // siap jalan), papan read-only. gameEnd sengaja null: alasan
+  // berakhirnya tidak diketahui dari PGN (bisa menyerah/waktu),
+  // jadi tidak ada modal hasil + badge raja.
+  function loadImportedGame(pgnText: string) {
+    const parsed = parsePgn(pgnText);
+    chess = parsed.game;
+    mode.value = "import";
+    orientation.value = "w";
+    clearSelection();
+    promotionPending.value = null;
+    hintMove.value = null;
+    resetAnalysis();
+    evalBarEnabled.value = false;
+    liveEvalScore.value = null;
+    importedMeta.value = parsed.meta;
+    importedNote.value = parsed.multipleGames
+      ? "PGN berisi beberapa game, yang dipakai game pertama."
+      : "";
+    sync();
+    phase.value = "over";
+    gameEnd.value = null;
+    endModalVisible.value = false;
+    result.value = importResultText(parsed.meta);
   }
 
   // Parse langkah UCI (e2e4, e7e8q) jadi from/to/promotion.
@@ -479,6 +531,8 @@ export const useChessStore = defineStore("chess", () => {
     await stockfish.load();
     chess = new Chess();
     mode.value = "bot";
+    importedMeta.value = null;
+    importedNote.value = "";
     orientation.value = humanColor.value;
     phase.value = "playing";
     clearSelection();
@@ -767,6 +821,8 @@ export const useChessStore = defineStore("chess", () => {
     result,
     gameEnd,
     endModalVisible,
+    importedMeta,
+    importedNote,
     dismissEndModal,
     showEndModal,
     kingSquares,
@@ -795,6 +851,7 @@ export const useChessStore = defineStore("chess", () => {
     liveEvalScore,
     liveEvalCp,
     evalBarEnabled,
+    loadImportedGame,
     newLocalGame,
     newBotGame,
     toSetup,

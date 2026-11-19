@@ -20,6 +20,7 @@ const store = useChessStore();
       Hint
     </button>
     <button
+      v-if="store.mode !== 'import'"
       type="button"
       class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
       @click="store.undo()"
@@ -34,6 +35,7 @@ const store = useChessStore();
       Balik papan
     </button>
     <button
+      v-if="store.mode !== 'import'"
       type="button"
       class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
       @click="store.toggleEvalBar()"
@@ -49,7 +51,11 @@ const store = useChessStore();
       Menyerah
     </button>
     <button
-      v-if="store.phase === 'over' && !store.endModalVisible"
+      v-if="
+        store.phase === 'over' &&
+        !store.endModalVisible &&
+        store.mode !== 'import'
+      "
       type="button"
       class="min-h-11 rounded-full bg-surface-2 px-2 py-2 text-sm font-semibold whitespace-nowrap text-ink transition hover:bg-surface-3"
       @click="store.showEndModal()"

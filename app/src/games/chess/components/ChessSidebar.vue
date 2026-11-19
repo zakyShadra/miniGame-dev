@@ -52,6 +52,22 @@ watch(
         &middot; kamu
         {{ store.humanColor === "w" ? "Putih" : "Hitam" }}
       </p>
+      <p
+        v-if="store.mode === 'import' && store.importedMeta"
+        class="mt-0.5 text-xs text-muted"
+      >
+        Import: {{ store.importedMeta.white }} vs
+        {{ store.importedMeta.black }}
+        <template v-if="store.importedMeta.date">
+          &middot; {{ store.importedMeta.date }}
+        </template>
+      </p>
+      <p
+        v-if="store.mode === 'import' && store.importedNote"
+        class="mt-1 text-xs text-muted"
+      >
+        {{ store.importedNote }}
+      </p>
       <p v-if="store.botThinking" class="mt-1 text-xs font-medium text-primary">
         Bot berpikir...
       </p>

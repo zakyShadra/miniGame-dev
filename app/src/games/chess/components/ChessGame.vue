@@ -4,6 +4,7 @@ Tata letak menumpuk di HP, berdampingan di desktop. -->
 import { useChessStore } from "../stores/chess";
 import ChessActions from "./ChessActions.vue";
 import ChessBoard from "./ChessBoard.vue";
+import ChessImport from "./ChessImport.vue";
 import ChessSetup from "./ChessSetup.vue";
 import ChessSidebar from "./ChessSidebar.vue";
 import EvalBar from "./EvalBar.vue";
@@ -26,6 +27,7 @@ defineEmits<{ exit: [] }>();
       &larr; Semua game
     </button>
     <ChessSetup />
+    <ChessImport />
   </div>
   <div v-else class="flex min-h-screen flex-col">
     <header
@@ -45,7 +47,13 @@ defineEmits<{ exit: [] }>();
         <span class="truncate">Catur</span>
       </h1>
       <span class="ml-auto shrink-0 text-xs font-medium whitespace-nowrap text-muted sm:text-sm">
-        {{ store.mode === "bot" ? "Lawan bot" : "2 pemain" }}
+        {{
+          store.mode === "bot"
+            ? "Lawan bot"
+            : store.mode === "import"
+              ? "Import"
+              : "2 pemain"
+        }}
       </span>
     </header>
     <div
