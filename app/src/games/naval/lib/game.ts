@@ -16,21 +16,47 @@ import type { GameState, ShipId, ShipInput } from "./types";
 
 export interface NavalHud {
   speed: number;
+  maxSpeed: number;
   headingDeg: number;
   hp: number;
   maxHp: number;
   dummyHp: number;
   dummyMaxHp: number;
   dummyVisible: boolean;
+  /** Posisi buat minimap (meter, koordinat arena). */
+  px: number;
+  pz: number;
+  dx: number;
+  dz: number;
+  /** Jarak ke musuh (meter). */
+  distance: number;
+  /** Sisa waktu match (detik). */
+  timeLeft: number;
+  /** 0..1, 1 = meriam siap tembak. */
+  reloadFrac: number;
+  /** Sisa reload (detik), 0 bila siap. */
+  reloadLeft: number;
+  /** 0..1, 1 = kemampuan siap. */
+  abilityFrac: number;
+  /** Sisa cooldown kemampuan (detik), 0 bila siap. */
+  abilityLeft: number;
+  abilityName: string;
+  shipName: string;
+  dummyName: string;
 }
+
+export type NavalWinner = "player" | "dummy" | "draw";
 
 export interface NavalGameOptions {
   shipId: ShipId;
   onHud: (hud: NavalHud) => void;
+  onMatchEnd: (winner: NavalWinner) => void;
 }
 
 const PLAYER_ID = "player";
 const DUMMY_ID = "dummy";
+/** Durasi match (detik). Habis waktu = HP tertinggi menang. */
+export const MATCH_DURATION = 300;
 
 /** Dummy latihan: throttle + rudder konstan (melingkar pelan). Bukan AI. */
 const DUMMY_INPUT: ShipInput = { throttle: 0.45, rudder: 0.18 };
@@ -48,6 +74,7 @@ export class NavalGame {
   private orbiting = false;
   private lastOrbitX = 0;
   private disposed = false;
+  private over = false;
 
   constructor(container: HTMLElement, opts: NavalGameOptions) {
     this.container = container;
@@ -90,6 +117,7 @@ export class NavalGame {
         stepGame(this.state, this.collectInputs(), TICK_DT);
         this.acc -= TICK_DT;
       }
+      this.checkMatchEnd();
       const alpha = this.acc / TICK_DT;
       this.scene.render(this.state, alpha, this.state.time, dt);
       this.hudT += dt;
@@ -101,7 +129,30 @@ export class NavalGame {
     this.raf = requestAnimationFrame(loop);
   }
 
+  /** Match selesai: tenggelam (winnerId sim) atau waktu habis (HP tertinggi). */
+  private checkMatchEnd(): void {
+    if (this.over) return;
+    const p = getShip(this.state, PLAYER_ID)!;
+    const d = getShip(this.state, DUMMY_ID)!;
+    let winner: NavalWinner | null = null;
+    if (this.state.winnerId === PLAYER_ID) winner = "player";
+    else if (this.state.winnerId === DUMMY_ID) winner = "dummy";
+    else if (this.state.time >= MATCH_DURATION) {
+      winner = p.hp > d.hp ? "player" : d.hp > p.hp ? "dummy" : "draw";
+    }
+    if (winner) {
+      this.over = true;
+      this.opts.onMatchEnd(winner);
+    }
+  }
+
   private collectInputs(): Map<string, ShipInput> {
+    if (this.over) {
+      return new Map([
+        [PLAYER_ID, { throttle: 0, rudder: 0 }],
+        [DUMMY_ID, { throttle: 0, rudder: 0 }],
+      ]);
+    }
     let throttle = 0;
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) throttle += 1;
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) throttle -= 1;
@@ -120,14 +171,37 @@ export class NavalGame {
   private snapshotHud(): NavalHud {
     const p = getShip(this.state, PLAYER_ID)!;
     const d = getShip(this.state, DUMMY_ID)!;
+    const def = getShipDef(this.opts.shipId);
+    const t = this.state.time;
+    const reloadLeft = Math.max(0, def.reloadSeconds - (t - p.lastFireAt));
+    const abilityLeft = Math.max(0, p.abilityReadyAt - t);
     return {
       speed: p.speed,
+      maxSpeed: def.maxSpeed,
       headingDeg: ((p.heading * 180) / Math.PI + 360) % 360,
       hp: p.hp,
       maxHp: p.maxHp,
       dummyHp: d.hp,
       dummyMaxHp: d.maxHp,
       dummyVisible: hasLineOfSight(this.state.map.islands, p.x, p.z, d.x, d.z),
+      px: p.x,
+      pz: p.z,
+      dx: d.x,
+      dz: d.z,
+      distance: Math.hypot(d.x - p.x, d.z - p.z),
+      timeLeft: Math.max(0, MATCH_DURATION - t),
+      reloadFrac: 1 - reloadLeft / def.reloadSeconds,
+      reloadLeft,
+      abilityFrac:
+        def.abilityCooldown >= 9000
+          ? abilityLeft <= 0
+            ? 1
+            : 0
+          : 1 - abilityLeft / def.abilityCooldown,
+      abilityLeft,
+      abilityName: def.abilityName,
+      shipName: def.name,
+      dummyName: getShipDef("galleon").name,
     };
   }
 

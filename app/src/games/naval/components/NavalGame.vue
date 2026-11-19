@@ -1,10 +1,13 @@
 <!-- Layar game naval: setup (pilih kapal) lalu laut 3D + HUD.
-N1: latihan solo vs kapal dummy yang berlayar melingkar (tanpa tembak). -->
+HUD mengikuti layout preview yang di-approve Zaky: panel kaca gelap,
+HP pemain kiri atas, timer tengah atas, HP musuh kanan atas, kecepatan
++ minimap kiri bawah, reload + kemampuan kanan bawah. -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useNavalStore } from "../stores/naval";
 import { SHIP_LIST } from "../lib/ships";
 import type { ShipId } from "../lib/types";
+import NavalMinimap from "./NavalMinimap.vue";
 
 const store = useNavalStore();
 defineEmits<{ exit: [] }>();
@@ -43,6 +46,39 @@ const hpPct = computed(() => Math.round((store.hud.hp / store.hud.maxHp) * 100))
 const dummyPct = computed(() =>
   Math.round((store.hud.dummyHp / store.hud.dummyMaxHp) * 100),
 );
+const timerText = computed(() => {
+  const t = Math.ceil(store.hud.timeLeft);
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+});
+const timerUrgent = computed(() => store.hud.timeLeft < 30);
+const throttleSegs = computed(() => {
+  const frac = Math.min(1, Math.abs(store.hud.speed) / Math.max(1, store.hud.maxSpeed));
+  return Math.round(frac * 4);
+});
+const distanceText = computed(() => `${Math.round(store.hud.distance)} m`);
+const reloadText = computed(() =>
+  store.hud.reloadLeft <= 0 ? "SIAP" : `${store.hud.reloadLeft.toFixed(1)} d`,
+);
+const abilityText = computed(() =>
+  store.hud.abilityLeft <= 0 ? "SIAP" : `${store.hud.abilityLeft.toFixed(0)} d`,
+);
+// Lingkaran progres reload/kemampuan (r=26).
+const CIRC = 2 * Math.PI * 26;
+const reloadOffset = computed(() => CIRC * (1 - store.hud.reloadFrac));
+const abilityOffset = computed(() => CIRC * (1 - store.hud.abilityFrac));
+
+const overTitle = computed(() => {
+  if (store.winner === "player") return "KAPITEN MENANG!";
+  if (store.winner === "dummy") return "KAPALMU TENGGELAM";
+  return "SERI!";
+});
+const overSub = computed(() => {
+  if (store.hud.dummyHp <= 0) return "Kapal musuh tenggelam ke dasar laut.";
+  if (store.hud.hp <= 0) return "Kapalmu tenggelam. Coba lagi, Kapiten.";
+  return "Waktu habis. Pemenang ditentukan HP tertinggi.";
+});
 
 function selectShip(id: ShipId) {
   if (id === "frigate") store.selectedShip = id;
@@ -50,28 +86,28 @@ function selectShip(id: ShipId) {
 </script>
 
 <template>
+  <!-- SETUP: menu gelap ala preview (NAVAL DUEL, emas + kaca gelap). -->
   <div
     v-if="store.phase === 'setup'"
-    class="flex min-h-screen flex-col items-center justify-center gap-4 p-4"
+    class="flex min-h-screen flex-col items-center justify-center gap-4 bg-[linear-gradient(180deg,#0a3a4f_0%,#041824_60%,#020f18_100%)] p-4"
   >
     <button
       type="button"
-      class="self-start rounded-full bg-surface-1 px-4 py-2 text-sm font-semibold text-ink shadow-md transition hover:bg-surface-2"
+      class="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
       @click="$emit('exit')"
     >
       &larr; Semua game
     </button>
-    <div class="w-full max-w-xl rounded-2xl bg-surface-1 p-6 shadow-md">
-      <h1 class="flex items-center gap-2 font-display text-2xl font-bold text-ink">
-        <img src="/icons/ship.svg" alt="" class="h-8 w-8" />
-        Kapal Perang
+    <div class="w-full max-w-xl">
+      <h1 class="text-center font-pirate text-5xl tracking-wide text-[#e8a33d] sm:text-6xl">
+        NAVAL DUEL
       </h1>
-      <p class="mt-1 text-sm text-muted">
+      <p class="mt-2 text-center text-sm text-white/70">
         Duel kapal 3D ala World of Warships. Pilih kapalmu, berlayar, dan
         tenggelamkan lawan. Latihan solo dulu, PvP menyusul.
       </p>
 
-      <h2 class="mt-5 text-xs font-bold tracking-wide text-muted uppercase">
+      <h2 class="mt-6 text-xs font-bold tracking-widest text-white/60 uppercase">
         Pilih kapal
       </h2>
       <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -79,13 +115,13 @@ function selectShip(id: ShipId) {
           v-for="s in SHIP_LIST"
           :key="s.id"
           type="button"
-          class="rounded-xl border p-3 text-left transition"
+          class="rounded-xl border p-3 text-left backdrop-blur transition"
           :class="
             s.id === 'frigate'
               ? store.selectedShip === s.id
-                ? 'border-primary bg-white shadow-sm'
-                : 'border-hairline bg-white hover:border-primary'
-              : 'cursor-not-allowed border-hairline bg-surface-2 opacity-60'
+                ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+                : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
+              : 'cursor-not-allowed border-white/10 bg-white/5 opacity-60'
           "
           @click="selectShip(s.id)"
         >
@@ -94,32 +130,32 @@ function selectShip(id: ShipId) {
               class="h-3 w-3 rounded-full"
               :style="{ backgroundColor: s.sailColor }"
             />
-            <span class="font-display font-bold text-ink">{{ s.name }}</span>
+            <span class="font-display font-bold text-white">{{ s.name }}</span>
             <span
               v-if="s.id !== 'frigate'"
-              class="ml-auto rounded-full bg-surface-3 px-2 py-0.5 text-[10px] font-bold text-muted"
+              class="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/60"
             >
               SEGERA
             </span>
           </span>
-          <span class="mt-1 block text-xs text-muted">
+          <span class="mt-1 block text-xs text-white/60">
             HP {{ s.hp }} &middot; {{ s.abilityName }}: {{ s.abilityDesc }}
           </span>
         </button>
       </div>
 
-      <h2 class="mt-5 text-xs font-bold tracking-wide text-muted uppercase">
+      <h2 class="mt-5 text-xs font-bold tracking-widest text-white/60 uppercase">
         Kontrol
       </h2>
-      <ul class="mt-2 space-y-1 text-sm text-body">
-        <li><b>W/S</b> maju/mundur &middot; <b>A/D</b> belok kiri/kanan</li>
-        <li><b>Mouse</b> arahkan turet &middot; <b>Klik kanan + drag</b> orbit kamera</li>
-        <li><b>Scroll</b> zoom &middot; <b>Q/E</b> orbit kamera</li>
+      <ul class="mt-2 space-y-1 text-sm text-white/80">
+        <li><b class="text-white">W/S</b> maju/mundur &middot; <b class="text-white">A/D</b> belok kiri/kanan</li>
+        <li><b class="text-white">Mouse</b> arahkan turet &middot; <b class="text-white">Klik kanan + drag</b> orbit kamera</li>
+        <li><b class="text-white">Scroll</b> zoom &middot; <b class="text-white">Q/E</b> orbit kamera</li>
       </ul>
 
       <button
         type="button"
-        class="mt-6 w-full rounded-full bg-primary py-3 font-display text-base font-bold text-white shadow-md transition hover:bg-primary-hover"
+        class="mt-6 w-full rounded-full bg-[#e8a33d] py-3 font-display text-base font-bold text-[#10222d] shadow-md transition hover:bg-[#f2b45c]"
         @click="start"
       >
         Mulai Berlayar
@@ -127,60 +163,164 @@ function selectShip(id: ShipId) {
     </div>
   </div>
 
-  <div v-else class="relative h-screen w-full overflow-hidden bg-[#a8d8f0]">
+  <!-- PLAYING: laut 3D + HUD. -->
+  <div v-else class="relative h-screen w-full overflow-hidden bg-[#9fd4f0]">
     <div ref="canvasWrap" class="absolute inset-0"></div>
 
-    <!-- HUD atas -->
+    <!-- HUD atas: pemain (kiri), timer (tengah), musuh (kanan). -->
     <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-      <button
-        type="button"
-        class="pointer-events-auto rounded-full bg-surface-1/90 px-4 py-2 text-sm font-semibold text-ink shadow-md backdrop-blur transition hover:bg-surface-1"
-        @click="exit"
-      >
-        &larr; Lobby
-      </button>
-      <div
-        class="rounded-full bg-ink/55 px-4 py-2 text-center text-xs font-semibold text-white backdrop-blur"
-      >
-        <span v-if="store.hud.dummyVisible">
-          Kapal Latihan: {{ store.hud.dummyHp }}/{{ store.hud.dummyMaxHp }} HP
-        </span>
-        <span v-else>Kapal Latihan bersembunyi di balik pulau</span>
-        <span
-          class="mx-auto mt-1 block h-1.5 w-32 overflow-hidden rounded-full bg-white/30"
-        >
-          <span
-            class="block h-full rounded-full bg-red-400 transition-all"
-            :style="{ width: `${dummyPct}%` }"
-          />
-        </span>
-      </div>
-    </div>
-
-    <!-- HUD bawah: HP + kecepatan + kompas -->
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3">
-      <div class="rounded-2xl bg-surface-1/90 px-4 py-3 shadow-md backdrop-blur">
-        <div class="text-xs font-bold text-muted">HP KAPAL</div>
-        <div class="mt-1 h-2.5 w-44 overflow-hidden rounded-full bg-surface-3 sm:w-56">
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-white shadow-lg backdrop-blur-md">
+        <div class="text-[10px] font-bold tracking-widest text-white/60">KAMU</div>
+        <div class="font-display text-sm font-bold uppercase">{{ store.hud.shipName }}</div>
+        <div class="mt-1.5 h-2.5 w-40 overflow-hidden rounded-full bg-white/20 sm:w-52">
           <div
-            class="h-full rounded-full bg-emerald-500 transition-all"
+            class="h-full rounded-full bg-[#3ddc84] transition-all"
             :style="{ width: `${hpPct}%` }"
           />
         </div>
-        <div class="mt-1 text-xs font-semibold text-body">
-          {{ store.hud.hp }} / {{ store.hud.maxHp }}
+        <div class="mt-1 font-timer text-xs text-white/80">
+          Hull {{ store.hud.hp }} / {{ store.hud.maxHp }}
         </div>
       </div>
-      <div class="hidden rounded-2xl bg-ink/55 px-4 py-2 text-center text-xs font-medium text-white backdrop-blur sm:block">
-        WASD gerak &middot; Mouse aim &middot; Klik kanan orbit &middot; Scroll zoom
+
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-5 py-2 text-center text-white shadow-lg backdrop-blur-md">
+        <div class="text-[10px] font-bold tracking-widest text-white/60">SISA WAKTU</div>
+        <div
+          class="font-timer text-2xl font-bold tabular-nums"
+          :class="timerUrgent ? 'text-[#ff5a47]' : 'text-white'"
+        >
+          {{ timerText }}
+        </div>
       </div>
-      <div class="rounded-2xl bg-surface-1/90 px-4 py-3 text-right shadow-md backdrop-blur">
-        <div class="font-display text-lg leading-none font-bold text-ink">
-          {{ knots }} <span class="text-xs font-semibold text-muted">knot</span>
+
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-right text-white shadow-lg backdrop-blur-md">
+        <div class="text-[10px] font-bold tracking-widest text-white/60">MUSUH</div>
+        <div class="font-display text-sm font-bold uppercase">{{ store.hud.dummyName }}</div>
+        <template v-if="store.hud.dummyVisible">
+          <div class="mt-1.5 h-2.5 w-40 overflow-hidden rounded-full bg-white/20 sm:w-52">
+            <div
+              class="h-full rounded-full bg-[#ff5a47] transition-all"
+              :style="{ width: `${dummyPct}%` }"
+            />
+          </div>
+          <div class="mt-1 font-timer text-xs text-white/80">
+            Hull {{ store.hud.dummyHp }} / {{ store.hud.dummyMaxHp }} &middot; {{ distanceText }}
+          </div>
+        </template>
+        <div v-else class="mt-1.5 max-w-44 text-xs text-[#e8a33d]">
+          Bersembunyi di balik pulau
         </div>
-        <div class="mt-1 text-xs font-semibold text-body">
-          {{ compass }} {{ Math.round(store.hud.headingDeg) }}&deg;
+      </div>
+    </div>
+
+    <!-- HUD bawah: kecepatan + minimap (kiri), hint (tengah), reload (kanan). -->
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3">
+      <div class="flex items-end gap-2">
+        <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-white shadow-lg backdrop-blur-md">
+          <div class="font-timer text-2xl leading-none font-bold tabular-nums">
+            {{ knots }} <span class="text-xs font-medium text-white/60">knot</span>
+          </div>
+          <div class="mt-2 flex gap-1">
+            <span
+              v-for="i in 4"
+              :key="i"
+              class="h-1.5 w-6 rounded-full"
+              :class="i <= throttleSegs ? 'bg-[#12b5a8]' : 'bg-white/20'"
+            />
+          </div>
+          <div class="mt-1.5 text-xs font-semibold text-white/80">
+            {{ compass }} {{ Math.round(store.hud.headingDeg) }}&deg;
+          </div>
         </div>
+        <NavalMinimap
+          :px="store.hud.px"
+          :pz="store.hud.pz"
+          :heading-deg="store.hud.headingDeg"
+          :dx="store.hud.dx"
+          :dz="store.hud.dz"
+          :dummy-visible="store.hud.dummyVisible"
+        />
+      </div>
+
+      <div class="hidden items-center gap-2 sm:flex">
+        <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-center text-xs font-medium text-white/80 backdrop-blur-md">
+          WASD gerak &middot; Mouse aim &middot; Klik kanan orbit &middot; Scroll zoom
+        </div>
+        <button
+          type="button"
+          class="pointer-events-auto rounded-full border border-white/20 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-[rgba(4,24,32,0.9)]"
+          @click="exit"
+        >
+          &larr; Lobby
+        </button>
+      </div>
+
+      <div class="flex items-end gap-2">
+        <div class="flex flex-col items-center gap-1">
+          <div class="relative h-16 w-16">
+            <svg viewBox="0 0 64 64" class="h-16 w-16 -rotate-90">
+              <circle cx="32" cy="32" r="26" fill="rgba(4,24,32,0.75)" stroke="rgba(255,255,255,0.2)" stroke-width="5" />
+              <circle
+                cx="32" cy="32" r="26" fill="none"
+                :stroke="store.hud.reloadLeft <= 0 ? '#e8a33d' : '#12b5a8'"
+                stroke-width="5" stroke-linecap="round"
+                :stroke-dasharray="CIRC" :stroke-dashoffset="reloadOffset"
+              />
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center font-timer text-[11px] font-bold text-white">
+              {{ reloadText }}
+            </span>
+          </div>
+          <span class="text-[10px] font-bold tracking-widest text-white/80 drop-shadow">MERIAM</span>
+        </div>
+        <div class="flex flex-col items-center gap-1">
+          <div class="relative h-16 w-16">
+            <svg viewBox="0 0 64 64" class="h-16 w-16 -rotate-90">
+              <circle cx="32" cy="32" r="26" fill="rgba(4,24,32,0.75)" stroke="rgba(255,255,255,0.2)" stroke-width="5" />
+              <circle
+                cx="32" cy="32" r="26" fill="none"
+                :stroke="store.hud.abilityLeft <= 0 ? '#e8a33d' : '#12b5a8'"
+                stroke-width="5" stroke-linecap="round"
+                :stroke-dasharray="CIRC" :stroke-dashoffset="abilityOffset"
+              />
+            </svg>
+            <span class="absolute inset-0 flex items-center justify-center font-timer text-[11px] font-bold text-white">
+              {{ abilityText }}
+            </span>
+          </div>
+          <span class="text-[10px] font-bold tracking-widest text-white/80 uppercase drop-shadow">
+            {{ store.hud.abilityName }} &middot; SPASI
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal game over. -->
+    <div
+      v-if="store.phase === 'over'"
+      class="absolute inset-0 z-10 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+    >
+      <div class="w-full max-w-sm rounded-3xl border border-[#e8a33d]/30 bg-[#10222d]/95 p-6 text-center text-white shadow-2xl">
+        <h2 class="font-pirate text-4xl tracking-wide text-[#e8a33d]">{{ overTitle }}</h2>
+        <p class="mt-2 text-sm text-white/75">{{ overSub }}</p>
+        <div class="mt-4 font-timer text-sm text-white/80">
+          Hull kamu {{ store.hud.hp }}/{{ store.hud.maxHp }} &middot;
+          Hull musuh {{ store.hud.dummyHp }}/{{ store.hud.dummyMaxHp }}
+        </div>
+        <button
+          type="button"
+          class="mt-5 w-full rounded-full bg-[#e8a33d] py-3 font-display text-base font-bold text-[#10222d] transition hover:bg-[#f2b45c]"
+          @click="store.rematch()"
+        >
+          Main Lagi
+        </button>
+        <button
+          type="button"
+          class="mt-2 w-full rounded-full border border-white/20 bg-white/10 py-3 font-display text-base font-bold text-white transition hover:bg-white/20"
+          @click="exit"
+        >
+          Kembali ke Lobby
+        </button>
       </div>
     </div>
   </div>
