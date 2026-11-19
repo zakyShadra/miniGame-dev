@@ -52,7 +52,7 @@ export const MAP_LABYRINTH: MapDef = {
   name: "Labirin Karang",
   arenaRadius: 400,
   islands: [
-    { x: -280, z: -250, radius: 30, height: 20, seed: 201 },
+    { x: -270, z: -240, radius: 30, height: 20, seed: 201 },
     { x: -90, z: -260, radius: 34, height: 22, seed: 203 },
     { x: 90, z: -250, radius: 30, height: 20, seed: 207 },
     { x: 270, z: -250, radius: 32, height: 20, seed: 209 },
@@ -64,7 +64,7 @@ export const MAP_LABYRINTH: MapDef = {
     { x: -90, z: 70, radius: 28, height: 18, seed: 223 },
     { x: 90, z: 90, radius: 32, height: 20, seed: 227 },
     { x: 260, z: 70, radius: 28, height: 18, seed: 229 },
-    { x: -280, z: 250, radius: 32, height: 20, seed: 231 },
+    { x: -270, z: 240, radius: 32, height: 20, seed: 231 },
     { x: -90, z: 240, radius: 30, height: 20, seed: 233 },
     { x: 90, z: 260, radius: 34, height: 22, seed: 237 },
     { x: 270, z: 250, radius: 30, height: 20, seed: 239 },

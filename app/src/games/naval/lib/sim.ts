@@ -242,34 +242,39 @@ export function moveShip(
   }
 }
 
-/** Tabrakan antar kapal: semua pasangan (bukan hanya 2 kapal pertama). */
+/**
+ * Tabrakan antar kapal: semua pasangan (bukan hanya 2 kapal pertama).
+ * Iterasi 3x agar kluster 3+ kapal terurai; di 1v1 pass ke-2/3 no-op.
+ */
 function stepShipPair(state: GameState, events: SimEvent[]): void {
   const ships = state.ships;
-  for (let i = 0; i < ships.length; i++) {
-    for (let j = i + 1; j < ships.length; j++) {
-      const a = ships[i];
-      const b = ships[j];
-      if (!a || !b) continue;
-      if (!a.alive || !b.alive || a.sinking || b.sinking) continue;
-      const ra = getShipDef(a.defId).radius;
-      const rb = getShipDef(b.defId).radius;
-      const dx = b.x - a.x;
-      const dz = b.z - a.z;
-      const dist = Math.hypot(dx, dz);
-      const minDist = (ra + rb) * 0.8;
-      if (dist < minDist && dist > 0.001) {
-        const nx = dx / dist;
-        const nz = dz / dist;
-        const overlap = (minDist - dist) / 2;
-        a.x -= nx * overlap;
-        a.z -= nz * overlap;
-        b.x += nx * overlap;
-        b.z += nz * overlap;
-        a.speed *= 0.5;
-        b.speed *= 0.5;
-        if (Math.abs(a.speed) > 3 || Math.abs(b.speed) > 3) {
-          events.push({ type: "bump", shipId: a.id });
-          events.push({ type: "bump", shipId: b.id });
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < ships.length; i++) {
+      for (let j = i + 1; j < ships.length; j++) {
+        const a = ships[i];
+        const b = ships[j];
+        if (!a || !b) continue;
+        if (!a.alive || !b.alive || a.sinking || b.sinking) continue;
+        const ra = getShipDef(a.defId).radius;
+        const rb = getShipDef(b.defId).radius;
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const dist = Math.hypot(dx, dz);
+        const minDist = (ra + rb) * 0.8;
+        if (dist < minDist && dist > 0.001) {
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const overlap = (minDist - dist) / 2;
+          a.x -= nx * overlap;
+          a.z -= nz * overlap;
+          b.x += nx * overlap;
+          b.z += nz * overlap;
+          a.speed *= 0.5;
+          b.speed *= 0.5;
+          if (pass === 0 && (Math.abs(a.speed) > 3 || Math.abs(b.speed) > 3)) {
+            events.push({ type: "bump", shipId: a.id });
+            events.push({ type: "bump", shipId: b.id });
+          }
         }
       }
     }
