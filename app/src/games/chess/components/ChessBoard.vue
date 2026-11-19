@@ -235,8 +235,10 @@ watch(
 // Hover lift: bidak sendiri yang bisa dipilih terangkat sedikit.
 const hoveredSquare = ref<Square | null>(null);
 function isHoveredPiece(p: DisplayedPiece): boolean {
+  if (hoveredSquare.value !== p.square) return false;
+  // Eksplorasi pasca-game: bidak giliran posisi tampil terangkat.
+  if (store.phase === "over") return p.color === store.displayTurn;
   return (
-    hoveredSquare.value === p.square &&
     store.phase === "playing" &&
     store.reviewPly === null &&
     !store.isBotTurn &&
@@ -245,11 +247,34 @@ function isHoveredPiece(p: DisplayedPiece): boolean {
   );
 }
 
+// Panah best move (review/eksplorasi pasca-game): garis + kepala panah
+// SVG di atas papan, warna sky (DESIGN.md). Ujung dipendekkan 0.32
+// petak supaya kepala panah tidak menutupi bidak tujuan.
+const bestArrow = computed(() => {
+  const bm = store.exploreBestMove;
+  if (!bm) return null;
+  const x1 = displayCol(bm.from) + 0.5;
+  const y1 = displayRow(bm.from) + 0.5;
+  const x2 = displayCol(bm.to) + 0.5;
+  const y2 = displayRow(bm.to) + 0.5;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  return {
+    x1,
+    y1,
+    x2: x2 - (dx / len) * 0.32,
+    y2: y2 - (dy / len) * 0.32,
+  };
+});
+
 // ---- Efek review analisa ----
 
-// Langkah yang sedang di-review (null kalau tidak review).
+// Langkah yang sedang di-review (null kalau tidak review, atau sedang
+// eksplorasi: efek klasifikasi game tidak berlaku di posisi fork).
 const reviewMove = computed(() => {
   if (store.reviewPly === null || !store.analysis) return null;
+  if (store.exploreFen !== null) return null;
   const ply = store.reviewPly - 1;
   return ply >= 0 ? store.analysis.moves[ply] ?? null : null;
 });
@@ -271,9 +296,8 @@ function reviewEffectStyle(sq: Square): Record<string, string> | null {
 }
 
 // Badge glyph di atas bidak yang jalan saat review analisa: simbol
-// klasifikasi (??, !!, bintang Best, dll) tampil kecil di kanan atas
-// bidak, selain warna petak highlight. Berlaku untuk semua bidak.
-// Excellent tidak punya simbol, jadi badgenya titik warna saja.
+// klasifikasi standar (!!, ★, !, ✓, ?!, ?, ??) tampil kecil di kanan
+// atas bidak, selain warna petak highlight.
 function isReviewBadgePiece(p: DisplayedPiece): boolean {
   const lm = store.displayLastMove;
   return (
@@ -389,14 +413,20 @@ function squareFromPoint(clientX: number, clientY: number): Square | null {
 
 function onPointerDown(e: PointerEvent, sq: Square) {
   if (!e.isPrimary || e.button !== 0) return;
-  // Hanya bidak sendiri yang bisa di-drag. Guard sama seperti
-  // selectSquare (fase main, bukan review, bukan giliran bot).
   const piece = store.boardMap.get(sq);
-  if (!piece || piece.color !== store.turn) return;
-  if (store.phase !== "playing" || store.result) return;
-  if (store.reviewPly !== null) return;
+  if (!piece) return;
   if (store.promotionPending) return;
-  if (store.isBotTurn || store.botThinking) return;
+  if (store.phase === "over") {
+    // Eksplorasi pasca-game: bidak giliran posisi tampil bisa di-drag.
+    if (piece.color !== store.displayTurn) return;
+  } else {
+    // Game live: hanya bidak sendiri yang bisa di-drag. Guard sama
+    // seperti selectSquare (fase main, bukan review, bukan giliran bot).
+    if (piece.color !== store.turn) return;
+    if (store.phase !== "playing" || store.result) return;
+    if (store.reviewPly !== null) return;
+    if (store.isBotTurn || store.botThinking) return;
+  }
   store.selectSquare(sq);
   dragStart = { x: e.clientX, y: e.clientY, square: sq };
   boardEl.value?.setPointerCapture(e.pointerId);
@@ -452,7 +482,7 @@ function onPointerCancel() {
 
 <template>
   <div
-    class="relative w-full rounded-2xl bg-gradient-to-b from-[#2a5a70] to-board-frame p-2 shadow-[0_12px_32px_rgba(26,61,74,0.35)]"
+    class="relative w-full rounded-2xl bg-board-frame p-2 shadow-[0_12px_32px_rgba(26,61,74,0.35)]"
   >
     <div class="relative w-full">
       <div
@@ -474,7 +504,7 @@ function onPointerCancel() {
               class="relative flex items-center justify-center p-0 focus:outline-none"
               :class="[
                 isLightSquare(FILES.indexOf(file), rank)
-                  ? 'bg-surface-2'
+                  ? 'bg-board-light'
                   : 'bg-board-felt',
               ]"
               :aria-label="`${file}${rank}`"
@@ -570,7 +600,7 @@ function onPointerCancel() {
                 :class="
                   isLightSquare(FILES.indexOf(file), rank)
                     ? 'text-board-felt'
-                    : 'text-surface-2'
+                    : 'text-board-light'
                 "
               >
                 {{ file }}
@@ -581,7 +611,7 @@ function onPointerCancel() {
                 :class="
                   isLightSquare(FILES.indexOf(file), rank)
                     ? 'text-board-felt'
-                    : 'text-surface-2'
+                    : 'text-board-light'
                 "
               >
                 {{ rank }}
@@ -641,13 +671,13 @@ function onPointerCancel() {
                 ? 'king-badge-mated'
                 : 'king-badge-loser'
             "
-            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-red-500 text-[13px] leading-none text-black shadow-md ring-2 ring-white/90"
+            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-danger text-[13px] leading-none text-black shadow-md ring-2 ring-white/90"
             >♚</span
           >
           <span
             v-else-if="endBadgeKind(p) === 'winner'"
             data-testid="king-badge-winner"
-            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-green-500 text-[13px] leading-none text-white shadow-md ring-2 ring-white/90"
+            class="badge-pop absolute top-0 right-0 flex h-[36%] min-h-[18px] w-[36%] min-w-[18px] items-center justify-center rounded-full bg-success text-[13px] leading-none text-white shadow-md ring-2 ring-white/90"
             >♔</span
           >
           <span
@@ -674,6 +704,43 @@ function onPointerCancel() {
           />
         </div>
       </div>
+
+      <!-- Panah best move saat review/eksplorasi pasca-game. -->
+      <svg
+        v-if="bestArrow"
+        data-testid="best-move-arrow"
+        class="pointer-events-none absolute inset-0 z-10 h-full w-full"
+        viewBox="0 0 8 8"
+        aria-hidden="true"
+      >
+        <defs>
+          <marker
+            id="best-move-arrowhead"
+            markerWidth="3.2"
+            markerHeight="3.2"
+            refX="2.4"
+            refY="1.6"
+            orient="auto"
+          >
+            <path
+              d="M0,0 L3.2,1.6 L0,3.2 z"
+              fill="#0099e1"
+              fill-opacity="0.9"
+            />
+          </marker>
+        </defs>
+        <line
+          :x1="bestArrow.x1"
+          :y1="bestArrow.y1"
+          :x2="bestArrow.x2"
+          :y2="bestArrow.y2"
+          stroke="#0099e1"
+          stroke-width="0.22"
+          stroke-opacity="0.9"
+          stroke-linecap="round"
+          marker-end="url(#best-move-arrowhead)"
+        />
+      </svg>
 
       <!-- Pilih promosi saat pion sampai baris terakhir -->
       <div
@@ -754,10 +821,10 @@ function onPointerCancel() {
   position: absolute;
   width: 7px;
   height: 7px;
-  background: #06b6d4;
+  background: #0099e1;
   transform: rotate(45deg);
   border-radius: 1px;
-  box-shadow: 0 0 6px #06b6d4;
+  box-shadow: 0 0 6px #0099e1;
   animation: sparkle-twinkle 1.1s ease-in-out infinite;
 }
 @keyframes sparkle-twinkle {
