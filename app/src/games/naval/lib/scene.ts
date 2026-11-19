@@ -9,8 +9,8 @@ import { SINK_DURATION, waveHeight } from "./sim";
 import { buildShipModel, type ShipModel } from "./shipModel";
 import type { GameState, IslandDef, MapDef, ShipDef, ShipState } from "./types";
 
-const SKY_COLOR = 0xa8d8f0;
-const WATER_COLOR = 0x1e7fa8;
+const SKY_COLOR = 0x9fd4f0;
+const WATER_COLOR = 0x12b5a8;
 
 function lerpAngle(a: number, b: number, t: number): number {
   let d = (b - a) % (Math.PI * 2);
@@ -32,8 +32,8 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
   sand.position.y = 0.15;
   g.add(sand);
 
-  const rockMat = std(0x8a7a68);
-  const rockMat2 = std(0x6e6154);
+  const rockMat = std(0x8a8a84);
+  const rockMat2 = std(0x6f6f68);
   // Batu utama: kerucut lebar + pendek (bukan piramida runcing) + topi rumput.
   const main = new THREE.Mesh(new THREE.ConeGeometry(isl.radius * 0.62, isl.height * 0.62, 9), rockMat);
   main.position.y = isl.height * 0.3;
@@ -113,8 +113,10 @@ export class NavalScene {
   private camInit = false;
 
   followId: string | null = null;
-  orbitYaw = 0;
-  distance = 48;
+  // Default: seperempat kanan (starboard quarter) ala preview, bukan
+  // tepat di belakang buritan.
+  orbitYaw = 0.35;
+  distance = 32;
   aimX: number | null = null;
   aimZ: number | null = null;
 
@@ -225,7 +227,7 @@ export class NavalScene {
   }
 
   addZoom(d: number): void {
-    this.distance = Math.max(26, Math.min(85, this.distance + d));
+    this.distance = Math.max(20, Math.min(70, this.distance + d));
   }
 
   resize(): void {
@@ -289,7 +291,7 @@ export class NavalScene {
     const target = new THREE.Vector3(g.position.x, 3, g.position.z);
     const desired = new THREE.Vector3(
       target.x - fx * this.distance,
-      target.y + this.distance * 0.42,
+      target.y + this.distance * 0.35,
       target.z - fz * this.distance,
     );
     desired.y = Math.max(5, desired.y);
