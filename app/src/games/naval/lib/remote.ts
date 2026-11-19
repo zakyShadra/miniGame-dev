@@ -107,10 +107,10 @@ export class NavalRemoteGame {
   private botVisible = false;
 
   private raf = 0;
+  private inputTimer = 0;
   private lastT = 0;
   private renderTime = 0;
   private hudT = 0;
-  private inputT = 0;
   private keys = new Set<string>();
   private orbiting = false;
   private lastOrbitX = 0;
@@ -133,6 +133,11 @@ export class NavalRemoteGame {
 
     this.lastT = performance.now();
     this.raf = requestAnimationFrame(this.frame);
+    // Input dikirim via interval sendiri (50 ms), TIDAK terikat rAF:
+    // di perangkat lambat frame rate turun tapi input harus tetap 20 Hz.
+    this.inputTimer = window.setInterval(() => {
+      if (!this.over) this.opts.onInput(this.currentInput());
+    }, 50);
   }
 
   /** Pasang scene + kapal untuk satu match. Bot tidak ditambahkan di
@@ -355,13 +360,6 @@ export class NavalRemoteGame {
     if (this.keys.has("KeyQ")) scene.addOrbit(0.02);
     if (this.keys.has("KeyE")) scene.addOrbit(-0.02);
 
-    // Kirim input tiap 50 ms (20 Hz, sama dengan tick server).
-    this.inputT += dt;
-    if (this.inputT >= 0.05) {
-      this.inputT = 0;
-      if (!this.over) this.opts.onInput(this.currentInput());
-    }
-
     // Prediksi kapal sendiri: jalankan fisika lokal dengan input sendiri.
     if (this.pred && !this.over && this.pred.alive && !this.pred.sinking) {
       this.pred.prevX = this.pred.x;
@@ -534,6 +532,7 @@ export class NavalRemoteGame {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    window.clearInterval(this.inputTimer);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     this.container.removeEventListener("mousemove", this.onMouseMove);
