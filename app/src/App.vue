@@ -174,7 +174,7 @@ async function playAgainSame() {
     </div>
     <div
       v-if="railOpen"
-      class="fixed inset-0 z-30 bg-ink/30 lg:hidden"
+      class="fixed inset-0 z-30 bg-black/30 lg:hidden"
       @click="railOpen = false"
     />
     <div
@@ -210,7 +210,7 @@ async function playAgainSame() {
     class="fixed inset-0 z-50 flex items-center justify-center p-4"
   >
     <div
-      class="absolute inset-0 bg-ink/40"
+      class="absolute inset-0 bg-black/40"
       @click="changeImageOpen = false"
     />
     <div
@@ -222,7 +222,7 @@ async function playAgainSame() {
         {{ store.pieceCount }}.
       </p>
       <ImagePicker />
-      <p v-if="changeImageError" class="mt-3 text-xs text-red-500">
+      <p v-if="changeImageError" class="mt-3 text-xs text-danger">
         {{ changeImageError }}
       </p>
       <div class="mt-5 flex gap-2">
@@ -249,7 +249,7 @@ async function playAgainSame() {
     v-if="store.status === 'won'"
     class="fixed inset-0 z-50 flex items-center justify-center p-4"
   >
-    <div class="absolute inset-0 bg-ink/40" />
+    <div class="absolute inset-0 bg-black/40" />
     <div class="pointer-events-none absolute inset-0 overflow-hidden">
       <span
         v-for="(c, i) in confetti"

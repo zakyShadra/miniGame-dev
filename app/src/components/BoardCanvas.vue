@@ -553,7 +553,7 @@ onUnmounted(() => {
     </div>
     <div
       v-if="showFullImage"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       @click="showFullImage = false"
     >
       <figure class="max-w-3xl" @click.stop>

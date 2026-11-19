@@ -5,6 +5,7 @@ import { solvedPosition } from "../../../shared/game/engine";
 import { roundPieceCount } from "../../../shared/game/cutter";
 import { loadImageSize } from "../lib/images";
 import ImagePicker from "./ImagePicker.vue";
+import ThemeToggle from "./ThemeToggle.vue";
 
 const store = useGameStore();
 const starting = ref(false);
@@ -128,13 +129,16 @@ async function start() {
 
 <template>
   <div class="w-full max-w-md rounded-2xl bg-surface-1 p-6 shadow-md">
-    <button
-      type="button"
-      class="mb-4 rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink"
-      @click="$emit('exit')"
-    >
-      &larr; Semua game
-    </button>
+    <div class="mb-4 flex items-start justify-between">
+      <button
+        type="button"
+        class="rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink"
+        @click="$emit('exit')"
+      >
+        &larr; Semua game
+      </button>
+      <ThemeToggle />
+    </div>
     <h1
       class="flex items-center gap-2 font-display text-3xl font-bold tracking-tight text-ink"
     >

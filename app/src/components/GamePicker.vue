@@ -1,10 +1,15 @@
 <!-- Pemilih game di lobby utama: kartu Puzzle dan Catur. -->
 <script setup lang="ts">
+import ThemeToggle from "./ThemeToggle.vue";
+
 defineEmits<{ pick: ["puzzle" | "chess" | "naval"] }>();
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+  <div
+    class="relative flex min-h-screen flex-col items-center justify-center gap-6 p-4"
+  >
+    <ThemeToggle class="absolute top-4 right-4" />
     <div class="text-center">
       <h1
         class="flex items-center justify-center gap-2 font-display text-4xl font-bold tracking-tight text-ink"

@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useGameStore } from "../stores/game";
 import { useRoomStore } from "../stores/room";
+import ThemeToggle from "./ThemeToggle.vue";
 
 const store = useGameStore();
 const room = useRoomStore();
@@ -58,6 +59,7 @@ function copyLink() {
     <span class="ml-auto text-base font-bold text-ink tabular-nums sm:ml-0">
       {{ timer }}
     </span>
+    <ThemeToggle />
     <div
       v-if="inRoom"
       class="flex w-full flex-wrap items-center gap-2 border-t border-hairline pt-2"
