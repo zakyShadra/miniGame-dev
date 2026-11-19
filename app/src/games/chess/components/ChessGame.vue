@@ -1,23 +1,87 @@
 <!-- Layar game catur: setup dulu, lalu papan + panel samping.
-Tata letak menumpuk di HP, berdampingan di desktop. -->
+Layout compact ala chess.com: papan di kiri (dengan strip pemain
+di atas/bawah), sidebar di kanan (status + langkah + analisa).
+Di desktop, kedua kolom setinggi viewport dan scroll internal
+supaya tidak ada ruang kosong besar; di HP menumpuk normal. -->
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted } from "vue";
+import type { Color } from "chess.js";
 import { useChessStore } from "../stores/chess";
+import { useTheme } from "../../../lib/theme";
+import { BOT_LEVELS } from "../lib/levels";
 import ChessActions from "./ChessActions.vue";
 import ChessBoard from "./ChessBoard.vue";
 import ChessImport from "./ChessImport.vue";
 import ChessSetup from "./ChessSetup.vue";
 import ChessSidebar from "./ChessSidebar.vue";
 import EvalBar from "./EvalBar.vue";
+import PlayerStrip from "./PlayerStrip.vue";
 
 const store = useChessStore();
+const { darkMode, toggleDarkMode } = useTheme();
 
 defineEmits<{ exit: [] }>();
+
+// Strip pemain: bawah = warna orientasi (pemain), atas = lawan.
+const bottomColor = computed<Color>(() => store.orientation);
+const topColor = computed<Color>(() =>
+  store.orientation === "w" ? "b" : "w",
+);
+
+function playerName(color: Color): string {
+  if (store.mode === "bot") {
+    if (color === store.humanColor) return "Kamu";
+    const level = BOT_LEVELS.find((l) => l.id === store.botLevel);
+    return level ? `Bot ${level.name}` : "Bot";
+  }
+  if (store.mode === "online") {
+    if (color === store.onlineColor) return "Kamu";
+    return store.opponentName || "Lawan";
+  }
+  if (store.mode === "import" && store.importedMeta) {
+    return color === "w" ? store.importedMeta.white : store.importedMeta.black;
+  }
+  return color === "w" ? "Putih" : "Hitam";
+}
+
+// Bidak yang ditangkap + selisih materi dari sudut satu warna.
+function stripProps(color: Color) {
+  const captured =
+    color === "w" ? store.captured.byWhite : store.captured.byBlack;
+  return {
+    name: playerName(color),
+    captured,
+    capturedColor: (color === "w" ? "b" : "w") as Color,
+    materialDiff:
+      color === "w"
+        ? store.captured.materialDiff
+        : -store.captured.materialDiff,
+  };
+}
+
+// Navigasi review via keyboard (ala chess.com): panah kiri/kanan.
+// Diabaikan saat mengetik di input/textarea.
+function onKeydown(e: KeyboardEvent) {
+  if (store.phase === "setup") return;
+  const target = e.target as HTMLElement | null;
+  if (
+    target &&
+    (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+  ) {
+    return;
+  }
+  if (e.key === "ArrowLeft") store.reviewStep(-1);
+  else if (e.key === "ArrowRight") store.reviewStep(1);
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
   <div
     v-if="store.phase === 'setup'"
-    class="flex min-h-screen flex-col items-center justify-center gap-4 p-4"
+    class="chess-bg flex min-h-screen flex-col items-center justify-center gap-4 p-4"
   >
     <button
       type="button"
@@ -29,7 +93,7 @@ defineEmits<{ exit: [] }>();
     <ChessSetup />
     <ChessImport />
   </div>
-  <div v-else class="flex min-h-screen flex-col">
+  <div v-else class="chess-bg flex min-h-screen flex-col lg:h-dvh lg:overflow-hidden">
     <header
       class="flex items-center gap-2 border-b border-hairline bg-surface-1 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3"
     >
@@ -57,15 +121,58 @@ defineEmits<{ exit: [] }>();
                 : "2 pemain"
         }}
       </span>
+      <button
+        type="button"
+        data-testid="theme-toggle"
+        class="shrink-0 rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-ink"
+        :aria-label="darkMode ? 'Mode terang' : 'Mode gelap'"
+        @click="toggleDarkMode()"
+      >
+        <svg
+          v-if="!darkMode"
+          viewBox="0 0 24 24"
+          class="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+        <svg
+          v-else
+          viewBox="0 0 24 24"
+          class="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="5" />
+          <line x1="12" y1="1" x2="12" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="23" />
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+          <line x1="1" y1="12" x2="3" y2="12" />
+          <line x1="21" y1="12" x2="23" y2="12" />
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+        </svg>
+      </button>
     </header>
     <div
-      class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:flex-row"
+      class="mx-auto flex w-full max-w-[1060px] flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:min-h-0 lg:flex-row"
     >
-      <!-- Bar aksi langsung di bawah papan: di HP tombol selalu
-      dalam jangkauan tanpa scroll melewati daftar langkah. -->
+      <!-- Kolom papan: strip lawan, papan, strip pemain, aksi.
+      Di desktop scroll internal supaya setinggi viewport. -->
       <main
-        class="flex w-full max-w-[560px] shrink-0 flex-col gap-2 self-center sm:gap-3 lg:self-start"
+        class="flex w-full max-w-[640px] shrink-0 flex-col gap-2 self-center sm:gap-3 lg:min-h-0 lg:self-stretch lg:overflow-y-auto lg:pr-1"
       >
+        <PlayerStrip v-bind="stripProps(topColor)" />
         <div class="flex gap-2">
           <EvalBar
             v-if="store.evalBarEnabled"
@@ -77,9 +184,12 @@ defineEmits<{ exit: [] }>();
             <ChessBoard />
           </div>
         </div>
+        <PlayerStrip v-bind="stripProps(bottomColor)" />
         <ChessActions />
       </main>
-      <aside class="flex min-h-0 flex-1 flex-col lg:max-w-sm">
+      <aside
+        class="flex min-h-0 flex-1 flex-col lg:w-[360px] lg:shrink-0 lg:overflow-y-auto lg:pr-1"
+      >
         <ChessSidebar class="flex-1" />
       </aside>
     </div>

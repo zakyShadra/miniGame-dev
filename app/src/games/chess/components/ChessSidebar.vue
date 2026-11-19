@@ -5,7 +5,6 @@ import { nextTick, ref, watch } from "vue";
 import { useChessStore } from "../stores/chess";
 import { useRoomStore } from "../../../stores/room";
 import { BOT_LEVELS } from "../lib/levels";
-import { pieceUrl } from "../lib/pieces";
 import {
   CLASSIFICATION_META,
   type Classification,
@@ -125,39 +124,9 @@ watch(
       <p v-if="store.botThinking" class="mt-1 text-xs font-medium text-primary">
         Bot berpikir...
       </p>
-      <p v-if="store.engineError" class="mt-1 text-xs text-red-500">
+      <p v-if="store.engineError" class="mt-1 text-xs text-danger">
         {{ store.engineError }}
       </p>
-      <div class="mt-3 space-y-1.5 text-xs text-muted">
-        <p class="flex flex-wrap items-center gap-1">
-          <span class="font-semibold text-ink">Putih tangkap:</span>
-          <img
-            v-for="(p, i) in store.captured.byWhite"
-            :key="`w${i}`"
-            :src="pieceUrl('b', p)"
-            alt=""
-            class="h-5 w-5"
-          />
-          <span v-if="store.captured.materialDiff > 0" class="font-bold text-ink">
-            +{{ store.captured.materialDiff }}
-          </span>
-          <span v-if="store.captured.byWhite.length === 0">-</span>
-        </p>
-        <p class="flex flex-wrap items-center gap-1">
-          <span class="font-semibold text-ink">Hitam tangkap:</span>
-          <img
-            v-for="(p, i) in store.captured.byBlack"
-            :key="`b${i}`"
-            :src="pieceUrl('w', p)"
-            alt=""
-            class="h-5 w-5"
-          />
-          <span v-if="store.captured.materialDiff < 0" class="font-bold text-ink">
-            +{{ -store.captured.materialDiff }}
-          </span>
-          <span v-if="store.captured.byBlack.length === 0">-</span>
-        </p>
-      </div>
     </div>
 
     <div class="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface-1 p-3 shadow-md sm:p-4">
