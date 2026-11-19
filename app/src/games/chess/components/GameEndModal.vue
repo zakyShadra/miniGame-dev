@@ -17,13 +17,18 @@ const store = useChessStore();
 const rematching = ref(false);
 
 // Judul ikut mode: mode bot bicara soal "kamu", mode lokal menyebut
-// warna pemenang.
+// warna pemenang, mode online menyebut kamu/lawan.
 const title = computed(() => {
   const end = store.gameEnd;
   if (!end) return "";
   if (end.winner === null) return "Remis";
   if (store.mode === "bot") {
     return end.winner === store.humanColor ? "Kamu Menang!" : "Bot Menang";
+  }
+  if (store.mode === "online") {
+    return end.winner === store.onlineColor
+      ? "Kamu Menang!"
+      : `${store.opponentName || "Lawan"} Menang`;
   }
   return end.winner === "w" ? "Putih Menang!" : "Hitam Menang!";
 });
@@ -55,13 +60,16 @@ const trophyState = computed<"gold" | "gray" | "half">(() => {
   if (!end || end.winner === null) return "half";
   if (store.mode === "bot" && end.winner !== store.humanColor)
     return "gray";
+  if (store.mode === "online" && end.winner !== store.onlineColor)
+    return "gray";
   return "gold";
 });
 
 // Stats klasifikasi milik siapa: mode bot = manusia, mode lokal =
-// pemenang (remis = Putih). Miss = Mistake + Blunder.
+// pemenang (remis = Putih), mode online = warna sendiri.
 const statsColor = computed<Color>(() => {
   if (store.mode === "bot") return store.humanColor;
+  if (store.mode === "online") return store.onlineColor ?? "w";
   return store.gameEnd?.winner ?? "w";
 });
 const stats = computed(() => {
@@ -81,8 +89,32 @@ const analysisBusy = computed(
     store.analysisStatus === "loading",
 );
 
+// Label tombol rematch di mode online: permintaan pertama menunggu
+// lawan, permintaan lawan bisa diterima. Di luar online selalu
+// "Main Lagi".
+const rematchLabel = computed(() => {
+  if (store.mode !== "online") return rematching.value ? "Memulai..." : "Main Lagi";
+  const pending = store.rematchPendingBy;
+  if (pending === null) return "Rematch";
+  if (pending === store.onlineColor) return "Menunggu lawan...";
+  return "Terima rematch";
+});
+const rematchDisabled = computed(
+  () =>
+    rematching.value ||
+    (store.mode === "online" &&
+      store.rematchPendingBy === store.onlineColor),
+);
+
 async function rematch() {
-  if (rematching.value) return;
+  if (rematchDisabled.value) return;
+  // Online: rematch = permintaan ke server, game baru dimulai saat
+  // lawan menerima (warna ditukar). Modal tetap terbuka sampai
+  // game baru jalan (applyOnlineState menutupnya).
+  if (store.mode === "online") {
+    store.requestRematch();
+    return;
+  }
   rematching.value = true;
   try {
     if (store.mode === "bot") {
@@ -198,11 +230,11 @@ function analyze(mode: AnalysisMode) {
         <button
           type="button"
           data-testid="game-end-rematch"
-          :disabled="rematching"
+          :disabled="rematchDisabled"
           class="rounded-full bg-primary py-2.5 text-sm font-bold text-white transition hover:bg-primary-hover disabled:opacity-50"
           @click="rematch()"
         >
-          {{ rematching ? "Memulai..." : "Main Lagi" }}
+          {{ rematchLabel }}
         </button>
         <!-- Pilih mode dari modal (idle maupun selesai = analisa
         ulang). Saat analisa jalan, tombol diganti indikator. -->

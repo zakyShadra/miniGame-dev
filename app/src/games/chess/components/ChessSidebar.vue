@@ -3,6 +3,7 @@ tombol kontrol. Dipakai mode lokal dan bot. -->
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import { useChessStore } from "../stores/chess";
+import { useRoomStore } from "../../../stores/room";
 import { BOT_LEVELS } from "../lib/levels";
 import { pieceUrl } from "../lib/pieces";
 import {
@@ -12,7 +13,23 @@ import {
 import AnalysisPanel from "./AnalysisPanel.vue";
 
 const store = useChessStore();
+const room = useRoomStore();
 const listRef = ref<HTMLElement | null>(null);
+const codeCopied = ref(false);
+
+// Salin kode room online (buat dibagikan ke lawan). Clipboard API
+// bisa gagal di konteks non-aman; gagal = diam saja.
+async function copyRoomCode() {
+  try {
+    await navigator.clipboard.writeText(room.code);
+    codeCopied.value = true;
+    setTimeout(() => {
+      codeCopied.value = false;
+    }, 2000);
+  } catch {
+    // Abaikan.
+  }
+}
 
 // Klasifikasi langkah ke-ply (0-based) dari hasil analisa, null kalau
 // belum ada analisa. Dipakai buat glyph + warna di daftar langkah.
@@ -67,6 +84,43 @@ watch(
         class="mt-1 text-xs text-muted"
       >
         {{ store.importedNote }}
+      </p>
+      <p v-if="store.mode === 'online'" class="mt-0.5 text-xs text-muted">
+        Online &middot; kamu
+        {{ store.onlineColor === "w" ? "Putih" : "Hitam" }}
+        <template v-if="store.opponentName">
+          &middot; lawan {{ store.opponentName }}
+        </template>
+      </p>
+      <div
+        v-if="store.mode === 'online' && store.onlineStatus === 'waiting'"
+        class="mt-2 flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2"
+      >
+        <p class="text-xs text-muted">
+          Kode room:
+          <span
+            data-testid="online-room-code"
+            class="text-sm font-bold tracking-[0.2em] text-ink tabular-nums"
+            >{{ room.code }}</span
+          >
+        </p>
+        <button
+          type="button"
+          class="ml-auto shrink-0 rounded-full bg-surface-1 px-3 py-1 text-xs font-semibold text-ink transition hover:bg-surface-3"
+          @click="copyRoomCode()"
+        >
+          {{ codeCopied ? "Disalin!" : "Salin" }}
+        </button>
+      </div>
+      <p
+        v-if="store.mode === 'online' && store.rematchPendingBy"
+        class="mt-1 text-xs font-medium text-primary"
+      >
+        {{
+          store.rematchPendingBy === store.onlineColor
+            ? "Menunggu lawan menerima rematch..."
+            : `${store.opponentName} minta rematch, terima di modal hasil.`
+        }}
       </p>
       <p v-if="store.botThinking" class="mt-1 text-xs font-medium text-primary">
         Bot berpikir...

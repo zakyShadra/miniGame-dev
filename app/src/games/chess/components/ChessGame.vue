@@ -52,7 +52,9 @@ defineEmits<{ exit: [] }>();
             ? "Lawan bot"
             : store.mode === "import"
               ? "Import"
-              : "2 pemain"
+              : store.mode === "online"
+                ? "Online"
+                : "2 pemain"
         }}
       </span>
     </header>

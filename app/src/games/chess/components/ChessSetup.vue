@@ -1,17 +1,73 @@
-<!-- Setup game catur: lawan bot (4 level, pilih warna) atau 2 pemain
-lokal. Engine Stockfish di-load saat pertama kali lawan bot dipilih
-(download .wasm ~99 MB sekali, lalu dari cache browser). -->
+<!-- Setup game catur: lawan bot (4 level, pilih warna), 2 pemain
+lokal, atau online lewat room. Engine Stockfish di-load saat
+pertama kali lawan bot dipilih (download .wasm ~99 MB sekali,
+lalu dari cache browser). -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useChessStore, type BotLevel, type HumanColorChoice } from "../stores/chess";
+import { useRoomStore } from "../../../stores/room";
+import { CURSOR_COLORS, generateRoomCode } from "../../../lib/party";
 import { BOT_LEVELS } from "../lib/levels";
 
 const store = useChessStore();
+const room = useRoomStore();
 
 const level = ref<BotLevel>("medium");
 const color = ref<HumanColorChoice>("w");
 const starting = ref(false);
 const error = ref("");
+
+// Main online: nama + buat/join room catur (kode 6 huruf, sama
+// seperti puzzle). Host jadi Putih, yang join jadi Hitam.
+const onlineName = ref(room.lastRoom?.name ?? "");
+const joinCode = ref("");
+const onlineError = ref("");
+
+// Prefill kode join dari link share (?room=ABC123).
+onMounted(() => {
+  const params = new URLSearchParams(location.search);
+  const r = params.get("room");
+  if (r) {
+    joinCode.value = r
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 6);
+  }
+});
+
+function createChessRoom() {
+  const name = onlineName.value.trim().slice(0, 20);
+  if (!name) {
+    onlineError.value = "Isi nama kamu dulu.";
+    return;
+  }
+  onlineError.value = "";
+  const code = generateRoomCode();
+  room.connect(code, {
+    mode: "create-chess",
+    name,
+    color: CURSOR_COLORS[0]!,
+  });
+}
+
+function joinChessRoom() {
+  const name = onlineName.value.trim().slice(0, 20);
+  if (!name) {
+    onlineError.value = "Isi nama kamu dulu.";
+    return;
+  }
+  const c = joinCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (c.length !== 6) {
+    onlineError.value = "Kode room harus 6 karakter.";
+    return;
+  }
+  onlineError.value = "";
+  room.connect(c, {
+    mode: "join-chess",
+    name,
+    color: CURSOR_COLORS[0]!,
+  });
+}
 
 const progressPct = computed(() =>
   store.engineProgress ? Math.floor(store.engineProgress.percent * 100) : 0,
@@ -140,5 +196,64 @@ const COLOR_OPTIONS: { id: HumanColorChoice; label: string }[] = [
     >
       Main berdua (satu HP)
     </button>
+
+    <div class="my-5 flex items-center gap-3 text-xs text-subtle">
+      <span class="h-px flex-1 bg-hairline" />
+      atau online
+      <span class="h-px flex-1 bg-hairline" />
+    </div>
+
+    <h2 class="text-sm font-semibold text-ink">Main online</h2>
+    <p class="mt-1 text-xs text-muted">
+      Main lawan teman lewat room, real-time. Yang buat room jadi
+      Putih, yang join jadi Hitam.
+    </p>
+    <label
+      class="mt-3 block text-sm font-semibold text-ink"
+      for="chess-online-name"
+    >
+      Nama kamu
+    </label>
+    <input
+      id="chess-online-name"
+      v-model="onlineName"
+      type="text"
+      maxlength="20"
+      placeholder="mis. Zaky"
+      class="mt-1 w-full rounded-xl border border-hairline bg-canvas px-3 py-2.5 text-sm text-ink outline-none focus:border-primary"
+    />
+    <button
+      type="button"
+      :disabled="room.status === 'connecting'"
+      class="mt-3 w-full rounded-full bg-primary py-3 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-40"
+      @click="createChessRoom"
+    >
+      {{
+        room.status === "connecting" ? "Menghubungkan..." : "Buat room catur"
+      }}
+    </button>
+    <div class="mt-3 flex gap-2">
+      <input
+        v-model="joinCode"
+        type="text"
+        maxlength="6"
+        placeholder="Kode 6 huruf"
+        class="w-full min-w-0 flex-1 rounded-xl border border-hairline bg-canvas px-3 py-2.5 text-center text-sm font-bold tracking-[0.2em] text-ink uppercase outline-none focus:border-primary tabular-nums"
+      />
+      <button
+        type="button"
+        :disabled="room.status === 'connecting'"
+        class="shrink-0 rounded-full bg-surface-2 px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-surface-3 disabled:opacity-40"
+        @click="joinChessRoom"
+      >
+        Join
+      </button>
+    </div>
+    <p
+      v-if="onlineError || room.error"
+      class="mt-3 text-center text-xs text-red-500"
+    >
+      {{ onlineError || room.error }}
+    </p>
   </div>
 </template>
