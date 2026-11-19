@@ -104,31 +104,154 @@ export const CLASSIFICATION_META: Record<
   blunder: { symbol: "??", label: "Blunder", color: "#ef4444" },
 };
 
-// Penjelasan klasifikasi langkah (Zaky 19 Nov 20:08): alasan kenapa
-// langkah ini dapat simbol itu. cpLoss = kerugian centipawn dari
-// sudut penggerak (0 untuk Best/Brilliant).
-export function classificationExplanation(
-  c: Classification,
-  cpLoss: number,
-): string {
-  // Desimal Indonesia pakai koma (1,5 pion).
-  const pawns = (cpLoss / 100).toFixed(1).replace(".", ",");
-  switch (c) {
-    case "brilliant":
-      return "Pengorbanan/taktik sulit yang menemukan satu-satunya langkah terbaik, mempertahankan/memenangkan posisi.";
-    case "best":
-      return "Langkah terbaik di posisi ini menurut engine.";
-    case "excellent":
-      return "Langkah kuat, hampir sebaik langkah terbaik.";
-    case "good":
-      return "Langkah solid, mempertahankan posisi.";
-    case "inaccuracy":
-      return `Sedikit melemahkan posisi (kehilangan ~${pawns} pion).`;
-    case "mistake":
-      return `Melemahkan posisi secara signifikan (kehilangan ~${pawns} pion).`;
-    case "blunder":
-      return `Kesalahan besar, kehilangan material/posisi (kehilangan ~${pawns} pion).`;
+// Nama bidak (Indonesia) untuk penjelasan material.
+const PIECE_NAMES_ID: Record<PieceSymbol, string> = {
+  p: "pion",
+  n: "kuda",
+  b: "gajah",
+  r: "benteng",
+  q: "menteri",
+  k: "raja",
+};
+
+// Format centipawn jadi +1.2 / -0.5 (desimal Indonesia pakai koma).
+function formatCp(cp: number): string {
+  const v = (cp / 100).toFixed(1).replace(".", ",");
+  return cp >= 0 ? `+${v}` : v;
+}
+
+// Ayunan material bersih si penggerak sepanjang balasan terbaik lawan
+// (maks 4 langkah dari PV): tangkap korban, fork, dan taktik yang
+// menang material. netLoss = nilai bidak penggerak yang hilang
+// dikurangi yang ia ambil (pada langkahnya sendiri + di line).
+function materialSwing(
+  beforeFen: string,
+  playedSan: string,
+  afterFen: string,
+  replyLine: string[],
+  mover: Color,
+): {
+  netLoss: number;
+  lostPiece: PieceSymbol | null;
+  lostOnReply: string;
+} {
+  let gained = 0;
+  const before = new Chess(beforeFen);
+  const played = before
+    .moves({ verbose: true })
+    .find((m) => m.san === playedSan);
+  if (played?.captured) gained += PIECE_VALUES[played.captured];
+  const game = new Chess(afterFen);
+  let lost = 0;
+  let lostPiece: PieceSymbol | null = null;
+  let lostOnReply = "";
+  for (const san of replyLine.slice(0, 4)) {
+    const m = game.moves({ verbose: true }).find((x) => x.san === san);
+    if (!m) break;
+    if (m.captured) {
+      if (m.color === mover) gained += PIECE_VALUES[m.captured];
+      else {
+        lost += PIECE_VALUES[m.captured];
+        if (!lostPiece) {
+          lostPiece = m.captured;
+          lostOnReply = san;
+        }
+      }
+    }
+    try {
+      game.move(san);
+    } catch {
+      break;
+    }
   }
+  return { netLoss: lost - gained, lostPiece, lostOnReply };
+}
+
+// Penjelasan satu langkah dari DATA nyata (Zaky 19 Nov 20:13):
+// selisih eval, best move, perubahan material dari balasan terbaik
+// lawan, dan mate. Tanpa narasi karangan: kalau data tidak cukup
+// untuk alasan spesifik, reason null dan UI hanya menampilkan angka
+// eval + best move (itu sudah nyata).
+export interface MoveExplanation {
+  evalBeforeText: string; // "+1,2" / "-#3" / "#2" (sudut penggerak)
+  evalAfterText: string;
+  // "kehilangan 2,3 pion" / "naik 1,3 pion" / "tetap" (null bila mate).
+  deltaText: string | null;
+  shouldPlay: string | null; // best move (null kalau langkah ini terbaik)
+  reason: string | null; // mate / material / korban, null kalau tidak ada
+}
+
+export function explainMove(
+  analysis: GameAnalysis,
+  ply: number,
+): MoveExplanation | null {
+  const move = analysis.moves[ply];
+  const before = analysis.evals[ply];
+  const after = analysis.evals[ply + 1];
+  if (!move || !before || !after) return null;
+  const sign = move.color === "w" ? 1 : -1;
+  const evalBefore = move.evalBeforeCpWhite * sign;
+  const evalAfter = move.evalAfterCpWhite * sign;
+  const shouldPlay = move.bestMoveSan !== move.san ? move.bestMoveSan : null;
+  // Format eval dari skor mentah: mate tampil sebagai #N (bukan angka
+  // cp besar). before: giliran penggerak; after: giliran lawan.
+  const fmt = (s: EngineScore, moverToMove: boolean): string => {
+    if (s.type === "mate") {
+      const moverMates = moverToMove ? s.value > 0 : s.value < 0;
+      return moverMates ? `#${Math.abs(s.value)}` : `-#${Math.abs(s.value)}`;
+    }
+    return formatCp(moverToMove ? s.value : -s.value);
+  };
+  const hasMate =
+    before.score.type === "mate" || after.score.type === "mate";
+  const delta = evalAfter - evalBefore;
+  const deltaText = hasMate
+    ? null
+    : delta <= -10
+      ? `kehilangan ${(Math.abs(delta) / 100).toFixed(1).replace(".", ",")} pion`
+      : delta >= 10
+        ? `naik ${(delta / 100).toFixed(1).replace(".", ",")} pion`
+        : "tetap";
+  // Mate dari skor mentah (tipe "mate" + N langkah), bukan dari cp
+  // yang dikodekan (mate > 10 langkah lolos dari ambang 9000).
+  let reason: string | null = null;
+  if (after.score.type === "mate" && after.score.value < 0) {
+    reason = `Memberi skakmat dalam ${Math.abs(after.score.value)} langkah.`;
+  } else if (after.score.type === "mate" && after.score.value > 0) {
+    reason = `Memungkinkan lawan skakmat dalam ${Math.abs(after.score.value)} langkah.`;
+  } else if (before.score.type === "mate" && before.score.value < 0) {
+    reason = `Menghindari skakmat dalam ${Math.abs(before.score.value)} langkah.`;
+  } else if (before.score.type === "mate" && before.score.value > 0) {
+    reason = `Melepas skakmat dalam ${Math.abs(before.score.value)} langkah.`;
+  }
+  // Material: ayunan bersih sepanjang balasan terbaik lawan.
+  if (!reason) {
+    const swing = materialSwing(
+      before.fen,
+      move.san,
+      after.fen,
+      after.bestLineSan,
+      move.color,
+    );
+    if (swing.netLoss >= 300 && swing.lostPiece) {
+      const name = PIECE_NAMES_ID[swing.lostPiece];
+      if (move.cpLoss >= 150) {
+        reason =
+          move.cpLoss >= swing.netLoss - 100
+            ? `Kehilangan ${name} tanpa kompensasi (balasan terbaik lawan ${swing.lostOnReply}).`
+            : `Balasan terbaik lawan ${swing.lostOnReply} mengambil ${name}.`;
+      } else if (move.cpLoss < 100) {
+        reason = `Mengorbankan ${name}, posisi tetap terjaga (balasan ${swing.lostOnReply}).`;
+      }
+    }
+  }
+  return {
+    evalBeforeText: fmt(before.score, true),
+    evalAfterText: fmt(after.score, false),
+    deltaText,
+    shouldPlay,
+    reason,
+  };
 }
 
 export interface PositionEval {
@@ -184,17 +307,6 @@ export function scoreToCp(
 // Peluang menang Putih (0-100) dari cp, rumus logistik lichess.
 export function cpToWinPercent(cpWhite: number): number {
   return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cpWhite)) - 1);
-}
-
-function materialOf(fen: string, color: Color): number {
-  const board = new Chess(fen).board();
-  let total = 0;
-  for (const row of board) {
-    for (const cell of row) {
-      if (cell && cell.color === color) total += PIECE_VALUES[cell.type];
-    }
-  }
-  return total;
 }
 
 function legalMoveCount(fen: string): number {
@@ -314,11 +426,20 @@ function classifyMove(
   const winAfter = cpToWinPercent(cpAfterMover);
   const winPercentLoss = isBest ? 0 : Math.max(0, winBefore - winAfter);
   const acc = moveAccuracy(winPercentLoss);
-  // Korban materi: materi bersih si penggerak berkurang >= 200 cp
-  // akibat langkahnya sendiri (misal korban kuda ambil pion).
+  // Korban materi: balasan terbaik lawan mengambil bidak si penggerak
+  // dengan kerugian bersih >= 200 cp (yang hilang dikurangi yang ia
+  // ambil). Material penggerak tidak bisa berkurang akibat langkahnya
+  // sendiri; yang berkurang adalah setelah balasan lawan. (Bug lama:
+  // bandingkan materi sebelum/sesudah langkah sendiri, selisihnya
+  // selalu 0, jadi Brilliant tidak pernah muncul.)
   const sacrificed =
-    materialOf(after.fen, move.color) - materialOf(before.fen, move.color) <=
-    -200;
+    materialSwing(
+      before.fen,
+      move.san,
+      after.fen,
+      after.bestLineSan,
+      move.color,
+    ).netLoss >= 200;
   const onlyMove = legalMoveCount(before.fen) === 1;
   return {
     ply,

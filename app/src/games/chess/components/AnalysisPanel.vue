@@ -9,7 +9,7 @@ import { useChessStore } from "../stores/chess";
 import {
   ANALYSIS_MODES,
   CLASSIFICATION_META,
-  classificationExplanation,
+  explainMove,
   type Classification,
 } from "../lib/analysis";
 
@@ -72,16 +72,13 @@ function formatEval(cp: number): string {
   return v >= 0 ? `+${v.toFixed(1)}` : v.toFixed(1);
 }
 
-// Eval sebelum/sesudah langkah yang di-review, dari sudut penggerak
-// (bukan Putih, supaya angkanya masuk akal buat langkah Hitam).
-const reviewEvals = computed(() => {
+// Penjelasan langkah yang di-review, dari DATA nyata (eval, best
+// move, material, mate). Null bila belum ada langkah yang dipilih.
+const reviewExplanation = computed(() => {
   const m = reviewMove.value;
-  if (!m) return null;
-  const sign = m.color === "w" ? 1 : -1;
-  return {
-    before: m.evalBeforeCpWhite * sign,
-    after: m.evalAfterCpWhite * sign,
-  };
+  const a = store.analysis;
+  if (!m || !a) return null;
+  return explainMove(a, m.ply);
 });
 </script>
 
@@ -350,10 +347,26 @@ const reviewEvals = computed(() => {
             {{ CLASSIFICATION_META[reviewMove.classification].label }}
           </span>
         </p>
-        <p class="mt-1 text-xs text-muted">
-          Langkah terbaik:
+        <!-- Penjelasan klasifikasi (C5 poin 7): dari DATA nyata, bukan
+        template. Eval sebelum/sesudah + selisih, best move, dan alasan
+        spesifik (mate/material) bila terdeteksi dari data. -->
+        <p
+          v-if="reviewExplanation"
+          class="mt-2 text-xs text-body tabular-nums"
+        >
+          Eval: {{ reviewExplanation.evalBeforeText }} &rarr;
+          {{ reviewExplanation.evalAfterText }}
+          <span v-if="reviewExplanation.deltaText"
+            >({{ reviewExplanation.deltaText }})</span
+          >
+        </p>
+        <p
+          v-if="reviewExplanation?.shouldPlay"
+          class="mt-0.5 text-xs text-muted"
+        >
+          Seharusnya:
           <span class="font-semibold text-ink">{{
-            reviewMove.bestMoveSan || "-"
+            reviewExplanation.shouldPlay
           }}</span>
         </p>
         <p
@@ -362,19 +375,11 @@ const reviewEvals = computed(() => {
         >
           Lanjutan: {{ reviewMove.bestLineSan.slice(1, 6).join(" ") }}
         </p>
-        <!-- Penjelasan klasifikasi (C5 poin 7): kenapa langkah ini
-        dapat simbol itu + angka eval sebelum/sesudah. -->
-        <p class="mt-2 text-xs text-body">
-          {{
-            classificationExplanation(
-              reviewMove.classification,
-              reviewMove.cpLoss,
-            )
-          }}
-        </p>
-        <p v-if="reviewEvals" class="mt-0.5 text-xs text-muted tabular-nums">
-          Eval: {{ formatEval(reviewEvals.before) }} &rarr;
-          {{ formatEval(reviewEvals.after) }}
+        <p
+          v-if="reviewExplanation?.reason"
+          class="mt-0.5 text-xs text-body"
+        >
+          {{ reviewExplanation.reason }}
         </p>
         <button
           type="button"
