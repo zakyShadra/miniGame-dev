@@ -19,6 +19,12 @@
     }
   ],
   "name": "minigames-party",
+  "routes": [
+    {
+      "pattern": "party.ices.my.id",
+      "custom_domain": true
+    }
+  ],
   "kv_namespaces": [
     {
       "binding": "IMAGES",
