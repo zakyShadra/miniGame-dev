@@ -105,6 +105,20 @@ export class Room extends Server<Env> {
             this.state.chess ??= null;
             // Normalisasi room naval: state lama belum punya naval.
             this.state.naval ??= null;
+            // Match naval yang sedang jalan tidak selamat dari restart
+            // DO (sim hanya di memori): tandai seri supaya room tidak
+            // macet di status playing tanpa game loop.
+            if (
+              this.state.kind === "naval" &&
+              this.state.naval &&
+              (this.state.naval.status === "playing" ||
+                this.state.naval.status === "paused")
+            ) {
+              this.state.naval.status = "over";
+              this.state.naval.winner = "draw";
+              this.state.naval.rematchPendingBy = null;
+              this.persist();
+            }
             this.deriveGame();
           } catch {
             this.state = null;
@@ -233,6 +247,9 @@ export class Room extends Server<Env> {
         break;
       case "naval-ability":
         this.handleNavalAbility(conn);
+        break;
+      case "naval-rematch":
+        this.handleNavalRematch(conn);
         break;
       default:
         break;
@@ -984,9 +1001,9 @@ export class Room extends Server<Env> {
           naval.status = "playing";
           this.startNavalTick();
           this.sendSystem(`${name} kembali, match dilanjutkan!`);
+        } else {
+          this.scheduleNavalForfeit();
         }
-        // Kalau belum semua kembali, match tetap dijeda (timer forfeit
-        // menyusul di commit berikutnya).
       }
       this.persist();
       this.send(conn, this.navalRoomMessage());
@@ -1277,6 +1294,56 @@ export class Room extends Server<Env> {
     useAbility(game, seat.shipKey);
   }
 
+  private handleNavalRematch(conn: Connection) {
+    const naval = this.state?.naval;
+    if (!naval || naval.status !== "over") return;
+    const seat = this.navalSeatOf(conn);
+    if (!seat) return;
+    // Sudah minta: tunggu pemain lain, jangan duplikat.
+    if (naval.rematchPendingBy === seat.key) return;
+    // Pemain lain sudah minta duluan: rematch jalan, kursi tetap.
+    if (naval.rematchPendingBy !== null) {
+      naval.gameNumber += 1;
+      this.startNavalMatch();
+      this.sendAll(this.navalRoomMessage());
+      this.sendSystem("Rematch! Match baru dimulai.");
+      return;
+    }
+    naval.rematchPendingBy = seat.key;
+    this.persist();
+    this.sendAll(this.navalRoomMessage());
+    this.sendSystem(`${seat.name} minta rematch.`);
+  }
+
+  // Timer forfeit: bila ada kursi yang masih putus setelah tenggang,
+  // match yang dijeda berakhir (bot menang). Dibatalkan saat semua
+  // pemain kembali (lihat rejoin).
+  private scheduleNavalForfeit(): void {
+    if (this.navalDisconnectTimer) return;
+    if (this.state?.naval?.status !== "paused") return;
+    this.navalDisconnectTimer = setTimeout(() => {
+      this.navalDisconnectTimer = null;
+      const naval = this.state?.naval;
+      if (!naval) return;
+      const goneSeat = naval.seats.find((s) => {
+        const p = this.state!.players.find((pl) => pl.key === s.key);
+        return !p || !p.connected;
+      });
+      if (goneSeat && naval.status === "paused") {
+        this.sendSystem(
+          `${goneSeat.name} tidak kembali dalam 60 detik, bot menang (forfeit).`,
+        );
+        this.endNavalMatch("bot", []);
+      }
+      // Room kosong total: bersihkan game dari memori.
+      if (this.state!.players.every((p) => !p.connected)) {
+        this.stopNavalTick();
+        this.navalGame = null;
+        this.navalBot = null;
+      }
+    }, NAVAL_DISCONNECT_GRACE_MS);
+  }
+
   async onClose(conn: Connection) {
     await this.ensureLoaded();
     if (!this.state) return;
@@ -1294,6 +1361,28 @@ export class Room extends Server<Env> {
       this.persist();
       this.sendAll(this.stateMessage());
       this.sendSystem(`${name} terputus`);
+      this.lastChatAt.delete(conn.id);
+      return;
+    }
+    // Room naval: kursi diikat ke playerKey, pemain yang putus hanya
+    // ditandai terputus. Match yang sedang jalan DIJEDA (tick berhenti)
+    // dan dilanjutkan saat pemain reconnect; bila tidak kembali dalam
+    // 60 detik, match berakhir forfeit (bot menang).
+    if (this.state.kind === "naval" && this.state.naval) {
+      const naval = this.state.naval;
+      this.state.players[idx]!.connected = false;
+      this.state.players[idx]!.cursor = null;
+      if (naval.status === "playing") {
+        naval.status = "paused";
+        this.stopNavalTick();
+        this.sendSystem(`${name} terputus, match dijeda (60 detik).`);
+      } else {
+        this.sendSystem(`${name} terputus`);
+      }
+      this.persist();
+      this.sendAll(this.navalRoomMessage());
+      // Timer forfeit (satu saja, meski dua pemain putus berurutan).
+      if (naval.status === "paused") this.scheduleNavalForfeit();
       this.lastChatAt.delete(conn.id);
       return;
     }
