@@ -5,8 +5,14 @@
 
 import { routePartykitRequest, Server } from "partyserver";
 import type { Connection } from "partyserver";
+import { Chess, type Color, type Square } from "chess.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol";
-import type { PieceState, PlayerState, RoomState } from "../../shared/types";
+import type {
+  ChessRoomState,
+  PieceState,
+  PlayerState,
+  RoomState,
+} from "../../shared/types";
 import { cutPuzzle, type CutResult } from "../../shared/game/cutter";
 import {
   computeLayout,
@@ -50,6 +56,9 @@ export class Room extends Server<Env> {
             this.state = JSON.parse(data) as RoomState;
             // Normalisasi groupId: state lama belum punya field ini.
             for (const p of this.state.pieces) p.groupId ??= null;
+            // Normalisasi room catur: state lama belum punya kind/chess.
+            this.state.kind ??= "puzzle";
+            this.state.chess ??= null;
             this.deriveGame();
           } catch {
             this.state = null;
@@ -61,8 +70,9 @@ export class Room extends Server<Env> {
   }
 
   // Turunkan cut + layout dari state (deterministik, tidak disimpan).
+  // Room catur tidak punya puzzle: lewati (imageW 0 akan merusak cut).
   private deriveGame() {
-    if (!this.state) {
+    if (!this.state || this.state.kind !== "puzzle") {
       this.cut = null;
       this.layout = null;
       return;
@@ -148,6 +158,21 @@ export class Room extends Server<Env> {
       case "change-image":
         this.handleChangeImage(conn, msg);
         break;
+      case "create-chess":
+        this.handleCreateChess(conn, msg);
+        break;
+      case "join-chess":
+        this.handleJoinChess(conn, msg);
+        break;
+      case "chess-move":
+        this.handleChessMove(conn, msg);
+        break;
+      case "chess-resign":
+        this.handleChessResign(conn);
+        break;
+      case "chess-rematch":
+        this.handleChessRematch(conn);
+        break;
       default:
         break;
     }
@@ -193,9 +218,12 @@ export class Room extends Server<Env> {
       cursor: null,
       connected: true,
       lastSeen: Date.now(),
+      key: msg.playerKey || undefined,
     };
     this.state = {
       code: this.name,
+      kind: "puzzle",
+      chess: null,
       imageUrl: msg.imageUrl,
       imageName: msg.imageName,
       imageW: msg.imageW,
@@ -225,12 +253,27 @@ export class Room extends Server<Env> {
       });
       return;
     }
-    const existing = this.state.players.find((p) => p.id === conn.id);
+    if (this.state.kind !== "puzzle") {
+      this.send(conn, {
+        type: "error",
+        message: "Room ini untuk catur, bukan puzzle.",
+      });
+      return;
+    }
+    // Rejoin: cari dulu berdasarkan playerKey (stabil antar reconnect),
+    // lalu berdasarkan conn.id (koneksi yang sama). Rejoin menautkan
+    // ulang entri pemain ke conn.id baru supaya tidak ada duplikat.
+    const existing =
+      (msg.playerKey
+        ? this.state.players.find((p) => p.key === msg.playerKey)
+        : undefined) ?? this.state.players.find((p) => p.id === conn.id);
     if (existing) {
+      existing.id = conn.id;
       existing.name = msg.name.trim().slice(0, 20) || existing.name;
       existing.color = msg.color;
       existing.connected = true;
       existing.lastSeen = Date.now();
+      if (msg.playerKey) existing.key = msg.playerKey;
     } else {
       const player: PlayerState = {
         id: conn.id,
@@ -239,6 +282,7 @@ export class Room extends Server<Env> {
         cursor: null,
         connected: true,
         lastSeen: Date.now(),
+        key: msg.playerKey || undefined,
       };
       this.state.players.push(player);
       this.sendAll({ type: "player-joined", player }, [conn.id]);
@@ -463,12 +507,296 @@ export class Room extends Server<Env> {
     this.sendSystem("Host mengganti gambar, puzzle di-reset");
   }
 
+  // ---------- Catur online ----------
+  //
+  // Server memegang daftar langkah (UCI) secara authoritative dan
+  // memvalidasi tiap langkah dengan chess.js (giliran + legal).
+  // Semua update catur sampai ke client lewat pesan "state" penuh,
+  // jadi client yang terputus lalu rejoin langsung sinkron lagi.
+  // Kursi Putih/Hitam diikat ke playerKey (stabil antar reconnect),
+  // bukan conn.id yang berubah tiap koneksi baru.
+
+  // Bangun posisi dari daftar langkah tersimpan. Langkah tersimpan
+  // selalu hasil validasi server, jadi replay tidak mungkin gagal;
+  // kalau toh gagal, kembalikan posisi awal supaya satu state rusak
+  // tidak mematikan room.
+  private chessGameFromMoves(moves: string[]): Chess {
+    const game = new Chess();
+    for (const uci of moves) {
+      try {
+        game.move({
+          from: uci.slice(0, 2) as Square,
+          to: uci.slice(2, 4) as Square,
+          promotion:
+            (uci[4] as "q" | "r" | "b" | "n" | undefined) ?? undefined,
+        });
+      } catch {
+        return new Chess();
+      }
+    }
+    return game;
+  }
+
+  // Kunci pemain dari koneksi ini (disimpan di entri pemain saat join).
+  private playerKeyOf(conn: Connection): string | null {
+    return this.state?.players.find((p) => p.id === conn.id)?.key ?? null;
+  }
+
+  // Warna kursi yang dipegang koneksi ini di room catur.
+  private chessColorOf(conn: Connection): Color | null {
+    const cs = this.state?.chess;
+    if (!cs) return null;
+    const key = this.playerKeyOf(conn);
+    if (!key) return null;
+    if (key === cs.whiteKey) return "w";
+    if (key === cs.blackKey) return "b";
+    return null;
+  }
+
+  private handleCreateChess(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "create-chess" }>,
+  ) {
+    if (this.state) {
+      this.send(conn, {
+        type: "error",
+        message: "Room sudah ada, coba kode lain.",
+      });
+      return;
+    }
+    if (!msg.playerKey) {
+      this.send(conn, { type: "error", message: "Data room tidak valid." });
+      return;
+    }
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    const player: PlayerState = {
+      id: conn.id,
+      name,
+      color: msg.color,
+      cursor: null,
+      connected: true,
+      lastSeen: Date.now(),
+      key: msg.playerKey,
+    };
+    this.state = {
+      code: this.name,
+      kind: "chess",
+      chess: {
+        whiteKey: msg.playerKey,
+        blackKey: null,
+        whiteName: name,
+        blackName: "",
+        moves: [],
+        status: "waiting",
+        endKind: null,
+        winner: null,
+        rematchPendingBy: null,
+        gameNumber: 1,
+      },
+      // Field puzzle tidak dipakai di room catur.
+      imageUrl: "",
+      imageName: "",
+      imageW: 0,
+      imageH: 0,
+      pieceCount: 0,
+      seed: 0,
+      pieces: [],
+      players: [player],
+      hostId: conn.id,
+      startedAt: Date.now(),
+      solvedAt: null,
+    };
+    this.persist();
+    this.send(conn, this.stateMessage());
+  }
+
+  private handleJoinChess(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "join-chess" }>,
+  ) {
+    if (!this.state || !this.state.chess) {
+      this.send(conn, {
+        type: "error",
+        message: "Room tidak ditemukan, cek kodenya.",
+      });
+      return;
+    }
+    if (this.state.kind !== "chess") {
+      this.send(conn, {
+        type: "error",
+        message: "Room ini untuk puzzle, bukan catur.",
+      });
+      return;
+    }
+    const cs = this.state.chess;
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    // Rejoin kursi sendiri (refresh/reconnect): key cocok dengan kursi.
+    if (msg.playerKey === cs.whiteKey || msg.playerKey === cs.blackKey) {
+      const existing = this.state.players.find(
+        (p) => p.key === msg.playerKey,
+      );
+      if (existing) {
+        existing.id = conn.id;
+        existing.name = name;
+        existing.color = msg.color;
+        existing.connected = true;
+        existing.lastSeen = Date.now();
+      }
+      this.persist();
+      this.send(conn, this.stateMessage());
+      return;
+    }
+    // Kursi Hitam masih kosong: pemain kedua masuk, game dimulai.
+    if (cs.blackKey === null) {
+      cs.blackKey = msg.playerKey;
+      cs.blackName = name;
+      cs.status = "playing";
+      const player: PlayerState = {
+        id: conn.id,
+        name,
+        color: msg.color,
+        cursor: null,
+        connected: true,
+        lastSeen: Date.now(),
+        key: msg.playerKey,
+      };
+      this.state.players.push(player);
+      this.persist();
+      this.sendAll({ type: "player-joined", player }, [conn.id]);
+      this.sendSystem(`${name} bergabung (Hitam), game dimulai!`);
+      this.sendAll(this.stateMessage());
+      return;
+    }
+    this.send(conn, {
+      type: "error",
+      message: "Room catur sudah penuh (2 pemain).",
+    });
+  }
+
+  private handleChessMove(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "chess-move" }>,
+  ) {
+    const cs = this.state?.chess;
+    if (!cs || this.state!.kind !== "chess" || cs.status !== "playing") return;
+    const color = this.chessColorOf(conn);
+    if (!color) return;
+    const game = this.chessGameFromMoves(cs.moves);
+    if (game.turn() !== color) return;
+    const uci = msg.uci.trim().toLowerCase();
+    if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) return;
+    try {
+      game.move({
+        from: uci.slice(0, 2) as Square,
+        to: uci.slice(2, 4) as Square,
+        promotion:
+          (uci[4] as "q" | "r" | "b" | "n" | undefined) ?? undefined,
+      });
+    } catch {
+      // Langkah ilegal: abaikan, jangan siarkan apa pun.
+      return;
+    }
+    cs.moves.push(uci);
+    // Deteksi akhir game (server authoritative, kedua client ikut).
+    if (game.isCheckmate()) {
+      cs.status = "over";
+      cs.endKind = "checkmate";
+      cs.winner = color;
+    } else if (game.isStalemate()) {
+      cs.status = "over";
+      cs.endKind = "stalemate";
+    } else if (game.isThreefoldRepetition()) {
+      cs.status = "over";
+      cs.endKind = "repetition";
+    } else if (game.isInsufficientMaterial()) {
+      cs.status = "over";
+      cs.endKind = "insufficient";
+    } else if (game.isDrawByFiftyMoves()) {
+      cs.status = "over";
+      cs.endKind = "fifty";
+    }
+    this.persist();
+    this.sendAll(this.stateMessage());
+    if (cs.status === "over") {
+      this.sendSystem(
+        cs.winner
+          ? `${cs.winner === "w" ? cs.whiteName : cs.blackName} menang (skakmat)!`
+          : "Game remis.",
+      );
+    }
+  }
+
+  private handleChessResign(conn: Connection) {
+    const cs = this.state?.chess;
+    if (!cs || this.state!.kind !== "chess" || cs.status !== "playing") return;
+    const color = this.chessColorOf(conn);
+    if (!color) return;
+    const winner: Color = color === "w" ? "b" : "w";
+    cs.status = "over";
+    cs.endKind = "resign";
+    cs.winner = winner;
+    this.persist();
+    this.sendAll(this.stateMessage());
+    this.sendSystem(
+      `${winner === "w" ? cs.whiteName : cs.blackName} menang (${color === "w" ? cs.whiteName : cs.blackName} menyerah).`,
+    );
+  }
+
+  private handleChessRematch(conn: Connection) {
+    const cs = this.state?.chess;
+    if (!cs || this.state!.kind !== "chess" || cs.status !== "over") return;
+    const color = this.chessColorOf(conn);
+    if (!color) return;
+    const other: Color = color === "w" ? "b" : "w";
+    // Sudah minta: tunggu lawan, jangan duplikat.
+    if (cs.rematchPendingBy === color) return;
+    // Lawan sudah minta duluan: rematch jalan, warna ditukar.
+    if (cs.rematchPendingBy === other) {
+      const oldWhiteKey = cs.whiteKey;
+      const oldWhiteName = cs.whiteName;
+      cs.whiteKey = cs.blackKey;
+      cs.whiteName = cs.blackName;
+      cs.blackKey = oldWhiteKey;
+      cs.blackName = oldWhiteName;
+      cs.moves = [];
+      cs.status = "playing";
+      cs.endKind = null;
+      cs.winner = null;
+      cs.rematchPendingBy = null;
+      cs.gameNumber += 1;
+      this.persist();
+      this.sendAll(this.stateMessage());
+      this.sendSystem("Rematch! Warna ditukar, game baru dimulai.");
+      return;
+    }
+    cs.rematchPendingBy = color;
+    this.persist();
+    this.sendAll(this.stateMessage());
+    this.sendSystem(
+      `${color === "w" ? cs.whiteName : cs.blackName} minta rematch.`,
+    );
+  }
+
   async onClose(conn: Connection) {
     await this.ensureLoaded();
     if (!this.state) return;
     const idx = this.state.players.findIndex((p) => p.id === conn.id);
     if (idx === -1) return;
     const name = this.state.players[idx]!.name;
+    // Room catur: kursi diikat ke playerKey, jadi pemain yang putus
+    // (refresh/jaringan) tidak dihapus, hanya ditandai terputus.
+    // Rejoin dengan key yang sama menghidupkan lagi entrinya, dan
+    // game-nya tetap menunggu di state. Siarkan state penuh supaya
+    // lawan melihat status terputus.
+    if (this.state.kind === "chess") {
+      this.state.players[idx]!.connected = false;
+      this.state.players[idx]!.cursor = null;
+      this.persist();
+      this.sendAll(this.stateMessage());
+      this.sendSystem(`${name} terputus`);
+      this.lastChatAt.delete(conn.id);
+      return;
+    }
     this.state.players.splice(idx, 1);
     // Lepas semua lock yang dipegang pemain ini.
     for (const piece of this.state.pieces) {

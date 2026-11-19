@@ -13,8 +13,9 @@ export type ClientMessage =
       pieceCount: number
       name: string
       color: string
+      playerKey?: string
     }
-  | { type: "join"; name: string; color: string }
+  | { type: "join"; name: string; color: string; playerKey?: string }
   | { type: "cursor"; x: number; y: number }
   | { type: "grab"; pieceId: number }
   | { type: "move"; pieceId: number; x: number; y: number }
@@ -28,7 +29,31 @@ export type ClientMessage =
       imageW: number
       imageH: number
       pieceCount: number
-    };
+    }
+  // Catur online: room catur dibuat/join terpisah dari room puzzle.
+  // playerKey = kunci stabil client (bukan conn.id yang berubah tiap
+  // reconnect); kursi Putih/Hitam diikat ke key ini.
+  | {
+      type: "create-chess"
+      name: string
+      color: string
+      playerKey: string
+    }
+  | {
+      type: "join-chess"
+      name: string
+      color: string
+      playerKey: string
+    }
+  // Langkah catur notasi UCI (e2e4, e7e8q). Server memvalidasi
+  // (giliran + legal) lalu menyiarkan state penuh.
+  | { type: "chess-move"; uci: string }
+  | { type: "chess-resign" }
+  // Rematch: permintaan pertama dicatat (menunggu lawan), permintaan
+  // dari warna lawan mengonfirmasi dan memulai game baru (warna
+  // ditukar). Tidak ada pesan server khusus: semua update catur
+  // sampai lewat pesan "state" penuh.
+  | { type: "chess-rematch" };
 
 export type ServerMessage =
   | { type: "hello"; id: string }
