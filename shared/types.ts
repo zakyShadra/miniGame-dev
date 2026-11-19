@@ -80,10 +80,14 @@ export interface RoomState {
   solvedAt: number | null
 }
 
-// State room naval co-op (2 pemain vs bot). Kursi diikat ke playerKey
-// (stabil antar reconnect), sama seperti kursi catur. Level = difficulty
-// bot + map (1 = Medium/Teluk, 2 = Hard/Kepulauan, 3 = Extreme/Labirin).
+// State room naval (co-op 2 pemain vs bot, atau PvP 1v1). Kursi
+// diikat ke playerKey (stabil antar reconnect), sama seperti kursi
+// catur. Co-op: level = difficulty bot + map (1 = Medium/Teluk,
+// 2 = Hard/Kepulauan, 3 = Extreme/Labirin). PvP: level selalu 1
+// (tidak dipakai), mapId dipilih host. Pemenang PvP = shipKey
+// ("p1"/"p2") kapal yang selamat / HP tertinggi saat waktu habis.
 export interface NavalRoomState {
+  mode: "coop" | "pvp"
   level: 1 | 2 | 3
   mapId: string
   status: "waiting" | "playing" | "paused" | "over"
@@ -93,7 +97,7 @@ export interface NavalRoomState {
     shipId: ShipId
     shipKey: "p1" | "p2"
   }>
-  winner: "players" | "bot" | "draw" | null
+  winner: "players" | "bot" | "draw" | "p1" | "p2" | null
   // playerKey yang sudah minta rematch (menunggu pemain lain).
   rematchPendingBy: string | null
   // Naik tiap rematch; client pakai ini buat deteksi game baru.
@@ -121,8 +125,10 @@ export interface NavalShipSnap {
 
 // Snapshot sim per tick (20 Hz). winnerId = id kapal pemenang dari sim
 // selama match jalan; begitu match selesai server menggantinya dengan
-// hasil tim ("players" | "bot" | "draw"). Kapal bot dihilangkan dari
-// ships bila tidak ada garis pandang dari kapal pemain penerima.
+// hasil tim ("players" | "bot" | "draw") atau shipKey pemenang PvP
+// ("p1" | "p2"). Kapal lawan (bot di co-op, pemain lain di PvP)
+// dihilangkan dari ships bila tidak ada garis pandang dari kapal
+// pemain penerima (kecuali sedang tenggelam/mati).
 export interface NavalSnapshot {
   /** Waktu game (detik) sejak match mulai. */
   t: number
@@ -131,5 +137,6 @@ export interface NavalSnapshot {
   ships: NavalShipSnap[]
   shells: Array<{ x: number; y: number; z: number }>
   events: SimEvent[]
-  botVisible: boolean
+  /** Kapal lawan terlihat dari kapal penerima (LoS jelas). */
+  foeVisible: boolean
 }

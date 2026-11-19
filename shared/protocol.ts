@@ -61,15 +61,19 @@ export type ClientMessage =
   // ditukar). Tidak ada pesan server khusus: semua update catur
   // sampai lewat pesan "state" penuh.
   | { type: "chess-rematch" }
-  // Naval co-op: 2 pemain vs bot. Server authoritative (tick 20 Hz);
-  // client hanya mengirim input + aksi, menerima snapshot per tick.
-  // level: 1 = Medium, 2 = Hard, 3 = Extreme (bot + map ikut level).
+  // Naval co-op (2 pemain vs bot) atau PvP (1v1). Server authoritative
+  // (tick 20 Hz); client hanya mengirim input + aksi, menerima snapshot
+  // per tick. Co-op: level 1 = Medium, 2 = Hard, 3 = Extreme (bot + map
+  // ikut level, mapId diabaikan server). PvP: level tidak dipakai
+  // (kirim 1), mapId dipilih host dan divalidasi ke daftar map.
   | {
       type: "create-naval"
       name: string
       color: string
       playerKey: string
+      mode: "coop" | "pvp"
       level: 1 | 2 | 3
+      mapId: string
       shipId: ShipId
     }
   | {
