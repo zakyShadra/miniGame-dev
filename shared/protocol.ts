@@ -1,7 +1,14 @@
 // Protokol WebSocket client <-> PartyServer Room.
 // Pesan selalu JSON: { type, ...payload }.
 
-import type { PieceState, PlayerState, RoomState } from "./types";
+import type { ShipId } from "./naval/types";
+import type {
+  NavalRoomState,
+  NavalSnapshot,
+  PieceState,
+  PlayerState,
+  RoomState,
+} from "./types";
 
 export type ClientMessage =
   | {
@@ -53,7 +60,32 @@ export type ClientMessage =
   // dari warna lawan mengonfirmasi dan memulai game baru (warna
   // ditukar). Tidak ada pesan server khusus: semua update catur
   // sampai lewat pesan "state" penuh.
-  | { type: "chess-rematch" };
+  | { type: "chess-rematch" }
+  // Naval co-op: 2 pemain vs bot. Server authoritative (tick 20 Hz);
+  // client hanya mengirim input + aksi, menerima snapshot per tick.
+  // level: 1 = Medium, 2 = Hard, 3 = Extreme (bot + map ikut level).
+  | {
+      type: "create-naval"
+      name: string
+      color: string
+      playerKey: string
+      level: 1 | 2 | 3
+      shipId: ShipId
+    }
+  | {
+      type: "join-naval"
+      name: string
+      color: string
+      playerKey: string
+      shipId: ShipId
+    }
+  // Input kendali kapal (10-20 Hz). seq = nomor urut client, buat
+  // debugging (server pakai input terakhir yang diterima).
+  | { type: "naval-input"; throttle: number; rudder: number; seq: number }
+  | { type: "naval-fire"; aimX: number; aimZ: number }
+  | { type: "naval-ability" }
+  // Rematch: dua pemain setuju -> match baru, kursi tetap, level sama.
+  | { type: "naval-rematch" };
 
 export type ServerMessage =
   | { type: "hello"; id: string }
@@ -69,4 +101,7 @@ export type ServerMessage =
   | { type: "piece-locked"; pieceId: number; playerId: string | null }
   | { type: "chat"; playerId: string; name: string; text: string; at: number }
   | { type: "system"; text: string }
-  | { type: "solved"; at: number };
+  | { type: "solved"; at: number }
+  // Naval co-op: state room (kursi, status, pemenang) + snapshot sim.
+  | { type: "naval-room"; room: NavalRoomState; players: PlayerState[] }
+  | { type: "naval-snapshot"; snap: NavalSnapshot };

@@ -59,6 +59,8 @@ export class Room extends Server<Env> {
             // Normalisasi room catur: state lama belum punya kind/chess.
             this.state.kind ??= "puzzle";
             this.state.chess ??= null;
+            // Normalisasi room naval: state lama belum punya naval.
+            this.state.naval ??= null;
             this.deriveGame();
           } catch {
             this.state = null;
@@ -224,6 +226,7 @@ export class Room extends Server<Env> {
       code: this.name,
       kind: "puzzle",
       chess: null,
+      naval: null,
       imageUrl: msg.imageUrl,
       imageName: msg.imageName,
       imageW: msg.imageW,
@@ -593,6 +596,7 @@ export class Room extends Server<Env> {
         rematchPendingBy: null,
         gameNumber: 1,
       },
+      naval: null,
       // Field puzzle tidak dipakai di room catur.
       imageUrl: "",
       imageName: "",
