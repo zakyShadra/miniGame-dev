@@ -12,7 +12,7 @@
 
 import { GRAVITY, getShip, hasLineOfSight, shipForward } from "./sim";
 import { getShipDef } from "./ships";
-import type { GameState, ShipDef, ShipId, ShipInput, ShipState } from "./types";
+import type { GameState, IslandDef, ShipDef, ShipId, ShipInput, ShipState } from "./types";
 
 export type BotLevel = "medium" | "hard" | "extreme";
 
@@ -116,6 +116,9 @@ export class BotController {
   private reverseUntil = 0;
   private reverseRudder = 0;
   private slowTime = 0;
+  /** Posisi + waktu buat deteksi stuck berbasis posisi. */
+  private stuckPos: { x: number; z: number } | null = null;
+  private stuckSince = 0;
   private lastFireAtSeen: number = Number.NaN;
   private nextFireAt = 0;
   private nextAbilityAt = 0;
@@ -140,6 +143,8 @@ export class BotController {
       this.tuning.maneuverMin + this.rng() * (this.tuning.maneuverMax - this.tuning.maneuverMin);
     this.reverseUntil = 0;
     this.slowTime = 0;
+    this.stuckPos = null;
+    this.stuckSince = 0;
     this.lastFireAtSeen = Number.NaN;
     this.nextFireAt = 0;
     this.nextAbilityAt = 0;
@@ -185,7 +190,10 @@ export class BotController {
 
   // ----- gerak -----
 
-  /** Anti-stuck: lambat padahal throttle jalan -> waypoint baru + mundur. */
+  /**
+   * Anti-stuck: lambat (speed < 1) ATAU posisi nyaris tidak berubah
+   * padahal throttle jalan -> waypoint baru + mundur sebentar.
+   */
   private updateStuck(bot: ShipState, dt: number, t: number): void {
     if (t < this.reverseUntil) return;
     if (bot.throttle > 0.3 && Math.abs(bot.speed) < 1) {
@@ -193,8 +201,19 @@ export class BotController {
     } else {
       this.slowTime = 0;
     }
-    if (this.slowTime > 3) {
+    // Deteksi posisi: belum pindah 5 m dalam 4 detik padahal throttle jalan.
+    if (!this.stuckPos) {
+      this.stuckPos = { x: bot.x, z: bot.z };
+      this.stuckSince = t;
+    } else if (Math.hypot(bot.x - this.stuckPos.x, bot.z - this.stuckPos.z) > 8) {
+      this.stuckPos = { x: bot.x, z: bot.z };
+      this.stuckSince = t;
+    }
+    const posStuck = bot.throttle > 0.3 && t - this.stuckSince > 4;
+    if (this.slowTime > 3 || posStuck) {
       this.slowTime = 0;
+      this.stuckPos = { x: bot.x, z: bot.z };
+      this.stuckSince = t;
       this.waypoint = null;
       this.waypointUntil = 0;
       this.reverseUntil = t + 1.5;
@@ -266,7 +285,11 @@ export class BotController {
     if (this.waypoint) {
       const dWp = Math.hypot(this.waypoint.x - bot.x, this.waypoint.z - bot.z);
       if (dWp < 30) repick = true;
-      if (!repick && t - this.lastRepickAt > 1 && this.pathBlocked(state, bot, this.waypoint, def.radius)) {
+      if (
+        !repick &&
+        t - this.lastRepickAt > 1 &&
+        this.pathBlocked(state, bot.x, bot.z, this.waypoint.x, this.waypoint.z, def.radius)
+      ) {
         repick = true;
       }
     }
@@ -278,39 +301,135 @@ export class BotController {
     if (target && hpFrac < 0.4 && this.tuning.useCover) {
       const cover = this.coverPoint(state, bot, target);
       if (cover) {
-        this.waypoint = cover;
+        // Jalur langsung ke balik pulau menembus pulau: itari lewat samping
+        // dulu (titik rounding), baru ke titik cover.
+        if (this.pathBlocked(state, bot.x, bot.z, cover.point.x, cover.point.z, def.radius)) {
+          const round = this.roundingPoint(state, bot, target, cover.island);
+          this.waypoint = round ?? cover.point;
+        } else {
+          this.waypoint = cover.point;
+        }
         return;
       }
     }
+    let desired: { x: number; z: number };
     if (!target) {
-      this.waypoint = this.randomPoint(state);
-      return;
-    }
-    const dist = Math.hypot(target.x - bot.x, target.z - bot.z);
-    const los = hasLineOfSight(state.map.islands, bot.x, bot.z, target.x, target.z);
-    if (!los && this.tuning.useCover) {
-      const p = this.randomPointWithLos(state, target);
-      if (p) {
-        this.waypoint = p;
-        return;
+      desired = this.randomPoint(state, bot);
+    } else {
+      const dist = Math.hypot(target.x - bot.x, target.z - bot.z);
+      const los = hasLineOfSight(state.map.islands, bot.x, bot.z, target.x, target.z);
+      if (!los && this.tuning.useCover) {
+        const p = this.randomPointWithLos(state, bot, target);
+        if (p) {
+          this.waypoint = this.resolveWaypoint(state, bot, p);
+          return;
+        }
+      }
+      const ideal = this.tuning.idealRange;
+      if (ideal) {
+        if (dist > ideal[1] || dist < ideal[0]) {
+          const mid = (ideal[0] + ideal[1]) / 2;
+          const dx = bot.x - target.x;
+          const dz = bot.z - target.z;
+          const d = Math.hypot(dx, dz) || 1;
+          desired = { x: target.x + (dx / d) * mid, z: target.z + (dz / d) * mid };
+        } else {
+          desired = this.randomRingPoint(state, bot, target, ideal[0], ideal[1]);
+        }
+      } else {
+        const ang = this.rng() * Math.PI * 2;
+        const off = 30 + this.rng() * 30;
+        desired = { x: target.x + Math.cos(ang) * off, z: target.z + Math.sin(ang) * off };
       }
     }
-    const ideal = this.tuning.idealRange;
-    if (ideal) {
-      if (dist > ideal[1] || dist < ideal[0]) {
-        const mid = (ideal[0] + ideal[1]) / 2;
-        const dx = bot.x - target.x;
-        const dz = bot.z - target.z;
-        const d = Math.hypot(dx, dz) || 1;
-        this.waypoint = { x: target.x + (dx / d) * mid, z: target.z + (dz / d) * mid };
-        return;
+    // Jalur ke waypoint terhalang pulau: ganti dengan titik detour di
+    // samping pulau pertama yang menghalangi (bot mengitarinya).
+    this.waypoint = this.resolveWaypoint(state, bot, desired);
+  }
+
+  /**
+   * Kembalikan waypoint yang jalurnya bersih: bila jalur bot -> target
+   * memotong pulau, kembalikan titik detour di samping pulau pertama yang
+   * menghalangi (utamakan sisi yang jalur lanjutannya juga bersih).
+   */
+  private resolveWaypoint(
+    state: GameState,
+    bot: ShipState,
+    target: { x: number; z: number },
+  ): { x: number; z: number } {
+    const defR = getShipDef(bot.defId).radius;
+    if (!this.pathBlocked(state, bot.x, bot.z, target.x, target.z, defR)) return target;
+    const isl = this.firstBlockingIsland(state, bot.x, bot.z, target.x, target.z, defR);
+    if (!isl) return target;
+    const dx = target.x - bot.x;
+    const dz = target.z - bot.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const px = -dz / d;
+    const pz = dx / d;
+    const r = isl.radius + 45;
+    let best: { x: number; z: number } | null = null;
+    let bestScore = Infinity;
+    for (const side of [1, -1]) {
+      const x = isl.x + px * r * side;
+      const z = isl.z + pz * r * side;
+      if (Math.hypot(x, z) > state.map.arenaRadius - 40) continue;
+      if (this.pointBlocked(state, x, z, 20)) continue;
+      const fromBlocked = this.pathBlocked(state, bot.x, bot.z, x, z, defR);
+      const onwardBlocked = this.pathBlocked(state, x, z, target.x, target.z, defR);
+      const score =
+        Math.hypot(x - bot.x, z - bot.z) + (fromBlocked ? 5000 : 0) + (onwardBlocked ? 10000 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { x, z };
       }
-      this.waypoint = this.randomRingPoint(state, target, ideal[0], ideal[1]);
-      return;
     }
-    const ang = this.rng() * Math.PI * 2;
-    const off = 30 + this.rng() * 30;
-    this.waypoint = { x: target.x + Math.cos(ang) * off, z: target.z + Math.sin(ang) * off };
+    return best ?? target;
+  }
+
+  /** Pulau pertama yang memotong segmen (ax,az) -> (bx,bz) (+margin). */
+  private firstBlockingIsland(
+    state: GameState,
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number,
+    shipRadius: number,
+  ): IslandDef | null {
+    let best: IslandDef | null = null;
+    let bestT = Infinity;
+    for (const isl of state.map.islands) {
+      const t = this.segCircleT(ax, az, bx, bz, isl.x, isl.z, isl.radius + shipRadius);
+      if (t !== null && t < bestT) {
+        bestT = t;
+        best = isl;
+      }
+    }
+    return best;
+  }
+
+  /** Parameter t pertama segmen memotong lingkaran, atau null. */
+  private segCircleT(
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number,
+    cx: number,
+    cz: number,
+    r: number,
+  ): number | null {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const fx = ax - cx;
+    const fz = az - cz;
+    const a = dx * dx + dz * dz;
+    if (a === 0) return null;
+    const b = 2 * (fx * dx + fz * dz);
+    const c = fx * fx + fz * fz - r * r;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    const t = (-b - Math.sqrt(disc)) / (2 * a);
+    if (t < 0 || t > 1) return null;
+    return t;
   }
 
   /** Titik di balik pulau terdekat (pulau di antara bot dan target). */
@@ -318,8 +437,8 @@ export class BotController {
     state: GameState,
     bot: ShipState,
     target: ShipState,
-  ): { x: number; z: number } | null {
-    let best: { x: number; z: number } | null = null;
+  ): { point: { x: number; z: number }; island: IslandDef } | null {
+    let best: { point: { x: number; z: number }; island: IslandDef } | null = null;
     let bestD = Infinity;
     for (const isl of state.map.islands) {
       const dBot = Math.hypot(isl.x - bot.x, isl.z - bot.z);
@@ -334,51 +453,109 @@ export class BotController {
       if (hasLineOfSight(state.map.islands, px, pz, target.x, target.z)) continue;
       if (dBot < bestD) {
         bestD = dBot;
-        best = { x: px, z: pz };
+        best = { point: { x: px, z: pz }, island: isl };
       }
     }
     return best;
   }
 
-  private randomPoint(state: GameState): { x: number; z: number } {
+  /**
+   * Titik di samping pulau buat mengitarinya menuju cover. Sisi dipilih
+   * dari posisi bot terhadap sumbu target -> pulau (stabil selama bot
+   * mendekat dari sisinya, tidak flip-flop).
+   */
+  private roundingPoint(
+    state: GameState,
+    bot: ShipState,
+    target: ShipState,
+    island: IslandDef,
+  ): { x: number; z: number } | null {
+    const dx = island.x - target.x;
+    const dz = island.z - target.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const px = -dz / d;
+    const pz = dx / d;
+    const r = island.radius + 40;
+    const cross = dx * (bot.z - target.z) - dz * (bot.x - target.x);
+    const sides = cross >= 0 ? [1, -1] : [-1, 1];
+    for (const side of sides) {
+      const x = island.x + px * r * side;
+      const z = island.z + pz * r * side;
+      if (Math.hypot(x, z) > state.map.arenaRadius - 40) continue;
+      if (this.pointBlocked(state, x, z, 20)) continue;
+      return { x, z };
+    }
+    return null;
+  }
+
+  /**
+   * Titik acak di arena. Bila `from` diisi, utamakan titik yang jalurnya
+   * dari kapal tidak memotong pulau (waypoint yang tak terjangkau membuat
+   * bot kandas menabrak pulau berulang-ulang).
+   */
+  private randomPoint(state: GameState, from?: ShipState): { x: number; z: number } {
     const maxR = state.map.arenaRadius - 50;
-    for (let i = 0; i < 10; i++) {
-      const r = Math.sqrt(this.rng()) * maxR;
-      const a = this.rng() * Math.PI * 2;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      if (!this.pointBlocked(state, x, z, 25)) return { x, z };
+    const defR = from ? getShipDef(from.defId).radius : 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 10; i++) {
+        const r = Math.sqrt(this.rng()) * maxR;
+        const a = this.rng() * Math.PI * 2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        if (this.pointBlocked(state, x, z, 25)) continue;
+        if (pass === 0 && from && this.pathBlocked(state, from.x, from.z, x, z, defR)) continue;
+        return { x, z };
+      }
     }
     return { x: 0, z: 0 };
   }
 
   private randomPointWithLos(
     state: GameState,
+    bot: ShipState,
     target: ShipState,
   ): { x: number; z: number } | null {
-    for (let i = 0; i < 8; i++) {
-      const p = this.randomPoint(state);
-      if (hasLineOfSight(state.map.islands, p.x, p.z, target.x, target.z)) return p;
+    // Utamakan titik di cincin jarak ideal (tetap bisa menembak dari sana).
+    const ideal = this.tuning.idealRange;
+    if (ideal) {
+      for (let i = 0; i < 8; i++) {
+        const p = this.randomRingPoint(state, bot, target, ideal[0], ideal[1]);
+        if (hasLineOfSight(state.map.islands, p.x, p.z, target.x, target.z)) return p;
+      }
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 8; i++) {
+        const p = this.randomPoint(state, pass === 0 ? bot : undefined);
+        if (hasLineOfSight(state.map.islands, p.x, p.z, target.x, target.z)) return p;
+      }
     }
     return null;
   }
 
   private randomRingPoint(
     state: GameState,
+    bot: ShipState,
     target: ShipState,
     rMin: number,
     rMax: number,
   ): { x: number; z: number } {
-    for (let i = 0; i < 8; i++) {
-      const a = this.rng() * Math.PI * 2;
-      const r = rMin + this.rng() * (rMax - rMin);
-      const x = target.x + Math.cos(a) * r;
-      const z = target.z + Math.sin(a) * r;
-      if (Math.hypot(x, z) > state.map.arenaRadius - 40) continue;
-      if (this.pointBlocked(state, x, z, 25)) continue;
-      return { x, z };
+    // Sudut di-bias ke arah tengah arena (+-120 derajat): target sering di
+    // tepi arena, cincin penuh 360 derajat banyak jatuh di luar arena.
+    const base = Math.atan2(-target.z, -target.x);
+    const defR = getShipDef(bot.defId).radius;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 8; i++) {
+        const a = base + (this.rng() - 0.5) * 2 * 2.1;
+        const r = rMin + this.rng() * (rMax - rMin);
+        const x = target.x + Math.cos(a) * r;
+        const z = target.z + Math.sin(a) * r;
+        if (Math.hypot(x, z) > state.map.arenaRadius - 40) continue;
+        if (this.pointBlocked(state, x, z, 25)) continue;
+        if (pass === 0 && this.pathBlocked(state, bot.x, bot.z, x, z, defR)) continue;
+        return { x, z };
+      }
     }
-    return this.randomPoint(state);
+    return this.randomPoint(state, bot);
   }
 
   /** Titik (x, z) masuk pulau (+margin)? */
@@ -389,18 +566,17 @@ export class BotController {
     return false;
   }
 
-  /** Segmen bot -> waypoint memotong pulau (+jari-jari kapal)? */
+  /** Segmen (ax,az) -> (bx,bz) memotong pulau (+jari-jari kapal)? */
   private pathBlocked(
     state: GameState,
-    bot: ShipState,
-    wp: { x: number; z: number },
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number,
     shipRadius: number,
   ): boolean {
     for (const isl of state.map.islands) {
-      if (
-        this.segPointDist(isl.x, isl.z, bot.x, bot.z, wp.x, wp.z) <
-        isl.radius + shipRadius
-      ) {
+      if (this.segPointDist(isl.x, isl.z, ax, az, bx, bz) < isl.radius + shipRadius) {
         return true;
       }
     }
@@ -425,28 +601,33 @@ export class BotController {
     return Math.hypot(px - (ax + abx * t), pz - (az + abz * t));
   }
 
-  /** Steering: prioritas mundur anti-stuck > menghindar > manuver > waypoint. */
+  /**
+   * Steering: prioritas mundur anti-stuck > menghindar > manuver >
+   * waypoint. Semua cabang (kecuali mundur) difilter avoidance pulau,
+   * supaya manuver acak pun tidak menabrakkan bot ke pulau.
+   */
   private steer(state: GameState, bot: ShipState, t: number): ShipInput {
     if (t < this.reverseUntil) return { throttle: -0.7, rudder: this.reverseRudder };
-    if (t < this.evadeUntil) return { throttle: this.evadeThrottle, rudder: this.evadeRudder };
-    if (t < this.maneuverUntil) {
-      return { throttle: this.maneuverThrottle, rudder: this.maneuverRudder };
+    let input: ShipInput;
+    if (t < this.evadeUntil) {
+      input = { throttle: this.evadeThrottle, rudder: this.evadeRudder };
+    } else if (t < this.maneuverUntil) {
+      input = { throttle: this.maneuverThrottle, rudder: this.maneuverRudder };
+    } else if (t < this.maneuverPhase2Until) {
+      input = { throttle: this.maneuverPhase2Throttle, rudder: this.maneuverPhase2Rudder };
+    } else {
+      const wp = this.waypoint;
+      if (!wp) return { throttle: 0, rudder: 0 };
+      input = this.steerTo(state, bot, wp.x, wp.z);
     }
-    if (t < this.maneuverPhase2Until) {
-      return { throttle: this.maneuverPhase2Throttle, rudder: this.maneuverPhase2Rudder };
-    }
-    const wp = this.waypoint;
-    if (!wp) return { throttle: 0, rudder: 0 };
-    return this.steerTo(state, bot, wp.x, wp.z);
+    return this.avoidIslands(state, bot, input);
   }
 
   /**
    * Rudder proporsional terhadap error heading; throttle mengecil saat
-   * belok tajam. Probe depan menghindar dari pulau, tepi arena membalik
-   * haluan ke tengah.
+   * belok tajam. Tepi arena membalik haluan ke tengah.
    */
   private steerTo(state: GameState, bot: ShipState, tx: number, tz: number): ShipInput {
-    const def = getShipDef(bot.defId);
     let dx = tx - bot.x;
     let dz = tz - bot.z;
     const dist = Math.hypot(dx, dz);
@@ -457,40 +638,67 @@ export class BotController {
     }
     const desired = Math.atan2(dx, dz);
     const err = wrapAngle(desired - bot.heading);
-    let rudder = clamp(err * 2.5, -1, 1);
+    const rudder = clamp(err * 2.5, -1, 1);
     let throttle = 1;
     if (Math.abs(err) > 1.0) throttle = 0.35;
     else if (Math.abs(err) > 0.5) throttle = 0.6;
-    if (dist < 40) throttle = Math.min(throttle, 0.5);
-
-    const fwd = shipForward(bot.heading);
-    const margin = def.radius + 12;
-    if (this.pointBlocked(state, bot.x + fwd.x * 55, bot.z + fwd.z * 55, margin)) {
-      const leftH = bot.heading - 0.6;
-      const rightH = bot.heading + 0.6;
-      const leftClear = !this.pointBlocked(
-        state,
-        bot.x + Math.sin(leftH) * 55,
-        bot.z + Math.cos(leftH) * 55,
-        margin,
-      );
-      const rightClear = !this.pointBlocked(
-        state,
-        bot.x + Math.sin(rightH) * 55,
-        bot.z + Math.cos(rightH) * 55,
-        margin,
-      );
-      if (leftClear && !rightClear) rudder = -1;
-      else if (rightClear && !leftClear) rudder = 1;
-      else if (!leftClear && !rightClear) {
-        rudder = this.rng() < 0.5 ? -1 : 1;
-        throttle = 0.3;
-      } else {
-        rudder = err >= 0 ? 1 : -1;
-      }
-      throttle = Math.min(throttle, 0.6);
-    }
+    // Pelan saat mendekat, berhenti di waypoint (penting di cover: jangan
+    // overshoot keluar bayangan pulau).
+    if (dist < 25) throttle = 0;
+    else if (dist < 60) throttle = Math.min(throttle, 0.5);
     return { throttle, rudder };
+  }
+
+  /**
+   * Filter avoidance: bila probe 55 m di depan masuk pulau, belok ke sisi
+   * yang lapang. Pilihan sisi deterministik (berbasis clearance), bukan
+   * acak tiap tick, supaya tidak berosilasi.
+   */
+  private avoidIslands(state: GameState, bot: ShipState, input: ShipInput): ShipInput {
+    if (input.throttle <= 0) return input;
+    const def = getShipDef(bot.defId);
+    const margin = def.radius + 12;
+    const fwd = shipForward(bot.heading);
+    if (!this.pointBlocked(state, bot.x + fwd.x * 55, bot.z + fwd.z * 55, margin)) {
+      return input;
+    }
+    const leftH = bot.heading - 0.6;
+    const rightH = bot.heading + 0.6;
+    const leftClear = !this.pointBlocked(
+      state,
+      bot.x + Math.sin(leftH) * 55,
+      bot.z + Math.cos(leftH) * 55,
+      margin,
+    );
+    const rightClear = !this.pointBlocked(
+      state,
+      bot.x + Math.sin(rightH) * 55,
+      bot.z + Math.cos(rightH) * 55,
+      margin,
+    );
+    let rudder: number;
+    if (leftClear && !rightClear) rudder = -1;
+    else if (rightClear && !leftClear) rudder = 1;
+    else if (!leftClear && !rightClear) {
+      // Kedua sisi terhalang: pilih sisi dengan jarak bebas lebih besar.
+      rudder =
+        this.sideClearance(state, bot, leftH) >= this.sideClearance(state, bot, rightH) ? -1 : 1;
+    } else {
+      // Kedua sisi lapang: belok tajam searah rudder semula.
+      rudder = input.rudder >= 0 ? 1 : -1;
+    }
+    return { throttle: Math.min(input.throttle, 0.6), rudder };
+  }
+
+  /** Jarak bebas (m) dari titik probe 55 m ke tepi pulau terdekat. */
+  private sideClearance(state: GameState, bot: ShipState, heading: number): number {
+    const px = bot.x + Math.sin(heading) * 55;
+    const pz = bot.z + Math.cos(heading) * 55;
+    let best = Infinity;
+    for (const isl of state.map.islands) {
+      best = Math.min(best, Math.hypot(px - isl.x, pz - isl.z) - isl.radius);
+    }
+    return best;
   }
 
   // ----- tembak -----
@@ -499,7 +707,8 @@ export class BotController {
    * Titik bidik (null = jangan tembak). Syarat: reload siap + LoS +
    * dalam jangkauan (v^2/g * 0.95) + jeda acak pasca-reload terlewati.
    * Bidik = posisi target + kecepatan target * waktu terbang (lead,
-   * iterasi 2x) + error acak per level.
+   * iterasi 2x; busur bila target belok) + kompensasi tinggi luncur
+   * meriam + error acak per level.
    */
   private aim(
     state: GameState,
@@ -526,14 +735,42 @@ export class BotController {
     const tf = shipForward(target.heading);
     const tvx = tf.x * target.speed;
     const tvz = tf.z * target.speed;
+    const omega = target.turn; // laju belok target (rad/s)
     let aimX = target.x;
     let aimZ = target.z;
     for (let i = 0; i < 2; i++) {
       const d = Math.hypot(aimX - bot.x, aimZ - bot.z);
       const theta = 0.5 * Math.asin(Math.min(1, (GRAVITY * d) / (v * v)));
-      const tof = d / (v * Math.cos(theta));
-      aimX = target.x + tvx * tof;
-      aimZ = target.z + tvz * tof;
+      // Waktu terbang ke permukaan air dari tinggi luncur ~4 m.
+      const vy0 = v * Math.sin(theta);
+      const tof = (vy0 + Math.sqrt(vy0 * vy0 + 2 * GRAVITY * 4)) / GRAVITY;
+      if (Math.abs(omega) > 0.02 && Math.abs(target.speed) > 0.5) {
+        // Target sedang belok: prediksi sepanjang busur, bukan garis lurus.
+        // Posisi(t) = pos + (v/w) * (cos h0 - cos h1, sin h1 - sin h0).
+        const h1 = target.heading + omega * tof;
+        const r = target.speed / omega;
+        aimX = target.x + r * (Math.cos(target.heading) - Math.cos(h1));
+        aimZ = target.z + r * (Math.sin(h1) - Math.sin(target.heading));
+      } else {
+        aimX = target.x + tvx * tof;
+        aimZ = target.z + tvz * tof;
+      }
+    }
+    // Kompensasi tinggi luncur: peluru dari y~4 m mendarat lebih jauh dari
+    // titik bidik (7-43 m tergantung jarak). Bidik lebih dekat agar peluru
+    // jatuh di target, bukan terbang melewatinya.
+    const aimDist = Math.hypot(aimX - bot.x, aimZ - bot.z);
+    if (aimDist > 10) {
+      let shootDist = aimDist;
+      for (let k = 0; k < 3; k++) {
+        const theta = 0.5 * Math.asin(Math.min(1, (GRAVITY * shootDist) / (v * v)));
+        const vy0 = v * Math.sin(theta);
+        const range =
+          ((v * Math.cos(theta)) / GRAVITY) * (vy0 + Math.sqrt(vy0 * vy0 + 2 * GRAVITY * 4));
+        shootDist = Math.max(10, shootDist + (aimDist - range));
+      }
+      aimX = bot.x + ((aimX - bot.x) / aimDist) * shootDist;
+      aimZ = bot.z + ((aimZ - bot.z) / aimDist) * shootDist;
     }
     const err = this.tuning.aimErrMin + this.rng() * (this.tuning.aimErrMax - this.tuning.aimErrMin);
     const ang = this.rng() * Math.PI * 2;
