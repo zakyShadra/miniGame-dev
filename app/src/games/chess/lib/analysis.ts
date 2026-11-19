@@ -21,8 +21,8 @@
 //   >= 2 pion (200 cp) + posisi tidak memburuk (loss < 25). Bukan
 //   Brilliant kalau hanya ada 1 langkah legal (langkah paksa).
 // - Best (bintang): langkah yang sama dengan top move engine.
-// - Excellent: loss < 25 cp (tanpa simbol, warna saja).
-// - Good (tanda centang): loss < 50 cp.
+// - Excellent (!): loss < 25 cp.
+// - Good (centang halus): loss < 50 cp.
 // - Inaccuracy (?!): loss 50-100 cp.
 // - Mistake (?): loss 100-300 cp.
 // - Blunder (??): loss >= 300 cp, ATAU dari menang jadi kalah
@@ -87,16 +87,20 @@ export type Classification =
   | "mistake"
   | "blunder";
 
+// Simbol anotasi standar catur (Zaky 19 Nov 20:00). Warna WAJIB dari
+// DESIGN.md, jangan invent warna: brilliant = sky (istimewa),
+// best = success, excellent = lavender, good = mint (halus),
+// inaccuracy = ochre, mistake = warning, blunder = danger.
 export const CLASSIFICATION_META: Record<
   Classification,
   { symbol: string; label: string; color: string }
 > = {
-  brilliant: { symbol: "!!", label: "Brilliant", color: "#06b6d4" },
+  brilliant: { symbol: "!!", label: "Brilliant", color: "#0099e1" },
   best: { symbol: "★", label: "Best", color: "#22c55e" },
-  excellent: { symbol: "", label: "Excellent", color: "#14b8a6" },
-  good: { symbol: "✓", label: "Good", color: "#84cc16" },
-  inaccuracy: { symbol: "?!", label: "Inaccuracy", color: "#eab308" },
-  mistake: { symbol: "?", label: "Mistake", color: "#f97316" },
+  excellent: { symbol: "!", label: "Excellent", color: "#b8a4ed" },
+  good: { symbol: "✓", label: "Good", color: "#a4d4c5" },
+  inaccuracy: { symbol: "?!", label: "Inaccuracy", color: "#e8b94a" },
+  mistake: { symbol: "?", label: "Mistake", color: "#f59e0b" },
   blunder: { symbol: "??", label: "Blunder", color: "#ef4444" },
 };
 

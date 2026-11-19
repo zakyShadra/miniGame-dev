@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Varian dark: aktif saat <html> punya class .dark (diatur lib/theme.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Token dari DESIGN.md (sumber: clay, mintlify, formo-club, airbnb, cal). */
 @theme {
   --color-canvas: #fffaf0;
@@ -17,18 +20,53 @@
   --color-primary-pressed: #e04a38;
   --color-board-felt: #87a8c8;
   --color-board-frame: #1a3d4a;
+  /* Petak terang papan: krem hangat, TETAP di dark mode (papan catur
+  tidak berubah warna saat tema gelap, hanya UI sekitarnya). */
+  --color-board-light: #f5f0e0;
   --color-ochre: #e8b94a;
   --color-peach: #ffb084;
   --color-mint: #a4d4c5;
   --color-lavender: #b8a4ed;
   --color-pink: #ff4d8b;
   --color-sky: #0099e1;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
   --font-display: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-pirate: "Pirata One", "Plus Jakarta Sans", serif;
   --font-timer: "JetBrains Mono", ui-monospace, monospace;
 }
 
+/* Dark mode: palet gelap HANGAT yang diturunkan dari token yang sama
+(canvas gelap hangat, bukan hitam pekat; ink jadi terang hangat;
+primary coral + aksen tetap). Override variabel tema di bawah .dark
+mengubah semua utility yang memakai token (bg-canvas, text-ink, dll). */
+.dark {
+  --color-canvas: #211d17;
+  --color-surface-1: #2a251e;
+  --color-surface-2: #332d24;
+  --color-surface-3: #3e372c;
+  --color-ink: #f2ecdf;
+  --color-body: #d6cfbf;
+  --color-muted: #a39a86;
+  --color-subtle: #7d7462;
+  --color-hairline: #3a332a;
+  --color-hairline-strong: #4d4536;
+}
+
 body {
   @apply bg-canvas font-sans text-body antialiased;
+}
+
+/* Background bertexture halus buat layar catur: titik-titik halus
+warna hairline di atas canvas. Bukan putih polos, bukan gambar.
+Di dark mode titiknya ikut gelap (pakai variabel hairline). */
+.chess-bg {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(
+    var(--color-hairline) 1px,
+    transparent 1.5px
+  );
+  background-size: 22px 22px;
 }
