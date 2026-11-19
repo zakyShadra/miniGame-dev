@@ -1,11 +1,12 @@
-// Model kapal bajak laut kartun dari primitif Three.js (loft lambung,
-// layar melengkung, meriam, menara turet, bendera tengkorak).
+// Model kapal bajak laut kartun dari primitif Three.js (lambung papan
+// kayu, layar melengkung, meriam, menara turet, bendera tengkorak).
 // Kapal menghadap +z, titik asal di permukaan air tengah kapal.
 // Skala referensi: Galleon (panjang 27 m); kapal lain diskala seragam.
 // Tiap jenis kapal dibedakan jumlah tiang, warna lambung/layar, dan
 // jumlah meriam (sesuai preview yang di-approve Zaky).
 
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { ShipDef } from "../../../../../shared/naval/types";
 
 export interface ShipModel {
@@ -20,29 +21,59 @@ function std(color: string, roughness = 0.85): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Lambung dari loft penampang U (10 stasiun, 9 titik per penampang). */
-function buildHull(length: number, beam: number, color: string): THREE.Mesh {
+/** Material vertex-color bersama (papan + bagian merged lain). */
+const plankMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true });
+
+/** Material vertex-color logam (meriam, sangkar lentera, as kemudi). */
+const metalMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: true });
+
+/** Tambah warna vertex solid ke geometri (syarat mergeGeometries). */
+function paint(geo: THREE.BufferGeometry, color: string): THREE.BufferGeometry {
+  const c = new THREE.Color(color);
+  const n = (geo.attributes.position as THREE.BufferAttribute).count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    arr[i * 3] = c.r;
+    arr[i * 3 + 1] = c.g;
+    arr[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+/** Pindah + putar geometri di tempat (Euler XYZ, radian). */
+function place(geo: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0): THREE.BufferGeometry {
+  const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz));
+  m.setPosition(x, y, z);
+  geo.applyMatrix4(m);
+  return geo;
+}
+
+/** Penyempitan lambung di haluan/buritan: 1 di tengah, 0 di ujung. */
+function taperAt(t: number): number {
+  return Math.pow(1 - Math.pow(2 * t - 1, 2), 0.65);
+}
+
+/** Satu titik di permukaan lambung: t = 0 buritan, 1 haluan;
+ *  s = 0 tepi dek kanan, 0.5 lunas, 1 tepi dek kiri. */
+function hullPoint(t: number, s: number, length: number, beam: number): [number, number, number] {
+  const z = (t - 0.5) * length;
+  const halfBeam = Math.max(0.05, (beam / 2) * taperAt(t));
+  const deckY = 2.4 + 1.1 * Math.pow(Math.abs(2 * t - 1), 2.2);
+  const ky = -1.6 + 1.2 * Math.pow(Math.abs(2 * t - 1), 6);
+  const ang = s * Math.PI;
+  return [halfBeam * Math.cos(ang), deckY - (deckY - ky) * Math.pow(Math.sin(ang), 0.8), z];
+}
+
+/** Loft lambung utuh (dipakai backing gelap di balik papan). */
+function loftGeometry(length: number, beam: number): THREE.BufferGeometry {
   const stations = 12;
   const sectionPts = 9;
-  const deckY0 = 2.4;
-  const keelY = -1.6;
   const positions: number[] = [];
   const indices: number[] = [];
   for (let i = 0; i <= stations; i++) {
-    const t = i / stations; // 0 = buritan, 1 = haluan
-    const z = (t - 0.5) * length;
-    const taper = Math.pow(1 - Math.pow(2 * t - 1, 2), 0.65);
-    const halfBeam = Math.max(0.05, (beam / 2) * taper);
-    const sheer = 1.1 * Math.pow(Math.abs(2 * t - 1), 2.2);
-    const deckY = deckY0 + sheer;
-    const keelRise = 1.2 * Math.pow(Math.abs(2 * t - 1), 6);
-    const ky = keelY + keelRise;
     for (let j = 0; j <= sectionPts; j++) {
-      const s = j / sectionPts;
-      const ang = s * Math.PI;
-      const x = halfBeam * Math.cos(ang);
-      const y = deckY - (deckY - ky) * Math.pow(Math.sin(ang), 0.8);
-      positions.push(x, y, z);
+      positions.push(...hullPoint(i / stations, j / sectionPts, length, beam));
     }
   }
   for (let i = 0; i < stations; i++) {
@@ -56,31 +87,127 @@ function buildHull(length: number, beam: number, color: string): THREE.Mesh {
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, std(color));
+  return geo;
 }
 
-/** Geladak datar mengikuti taper lambung. */
-function buildDeck(length: number, beam: number, color: string): THREE.Mesh {
-  const stations = 12;
-  const y = 2.42;
+/** Acak deterministik 0..1 dari dua indeks (variasi warna papan stabil). */
+function hash2(a: number, b: number): number {
+  const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+interface PlankDef {
+  u0: number;
+  u1: number;
+  v0: number;
+  v1: number;
+  /** Offset lightness (variasi antar papan). */
+  shade: number;
+}
+
+/** Satu merged geometry dari strip papan: tiap papan punya vertex sendiri
+ *  (celah antar papan) dan warna sendiri (variasi vertex color). */
+function buildPlanks(
+  point: (u: number, v: number) => [number, number, number],
+  planks: PlankDef[],
+  base: string,
+  steps = 4,
+): THREE.BufferGeometry {
   const positions: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
-  for (let i = 0; i <= stations; i++) {
-    const t = i / stations;
-    const z = (t - 0.5) * length;
-    const taper = Math.pow(1 - Math.pow(2 * t - 1, 2), 0.65);
-    const hw = Math.max(0.05, (beam / 2) * taper * 0.96);
-    positions.push(-hw, y, z, hw, y, z);
-  }
-  for (let i = 0; i < stations; i++) {
-    const a = i * 2;
-    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  const c = new THREE.Color(base);
+  for (const p of planks) {
+    const pc = c.clone().offsetHSL(0, 0, p.shade);
+    const start = positions.length / 3;
+    for (let i = 0; i <= steps; i++) {
+      const u = p.u0 + ((p.u1 - p.u0) * i) / steps;
+      for (const v of [p.v0, p.v1]) {
+        positions.push(...point(u, v));
+        colors.push(pc.r, pc.g, pc.b);
+      }
+    }
+    for (let i = 0; i < steps; i++) {
+      const a = start + i * 2;
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, std(color, 0.9));
+  return geo;
+}
+
+/** Sambungan papan sepanjang kapal, staggered per baris (joint tidak sejajar).
+ *  Mengembalikan daftar [t0, t1] yang sudah dipotong ke [0, 1]. */
+function plankJoints(row: number, segs: number, gap: number): [number, number][] {
+  const segLen = 1 / segs;
+  const shift = (row % 3) * (segLen / 3);
+  const out: [number, number][] = [];
+  for (let i = 0; i <= segs; i++) {
+    const t0 = Math.max(0, i * segLen - shift) + gap;
+    const t1 = Math.min(1, (i + 1) * segLen - shift) - gap;
+    if (t1 - t0 >= 0.01) out.push([t0, t1]);
+  }
+  return out;
+}
+
+/** Lambung papan-per-papan: 6 strake per sisi, sambungan staggered;
+ *  backing gelap di dalam supaya celah terbaca gelap, bukan tembus. */
+function buildHull(length: number, beam: number, color: string): THREE.Group {
+  const strakes = 12;
+  const gapS = 0.0022;
+  const planks: PlankDef[] = [];
+  for (let k = 0; k < strakes; k++) {
+    const sMid = (k + 0.5) / strakes;
+    for (const [t0, t1] of plankJoints(k, 5, 0.0009)) {
+      planks.push({
+        u0: t0,
+        u1: t1,
+        v0: k / strakes + gapS,
+        v1: (k + 1) / strakes - gapS,
+        // Variasi kuat supaya papan terbaca juga di lambung gelap.
+        shade: (hash2(k, Math.round(t0 * 100)) - 0.5) * 0.2 - Math.sin(sMid * Math.PI) * 0.03,
+      });
+    }
+  }
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(buildPlanks((u, v) => hullPoint(u, v, length, beam), planks, color), plankMat));
+  // DoubleSide: celah dek melihat sisi dalam backing (gelap), bukan tembus.
+  const backing = new THREE.Mesh(
+    loftGeometry(length, beam * 0.97),
+    new THREE.MeshStandardMaterial({ color: "#17100b", roughness: 1, side: THREE.DoubleSide }),
+  );
+  group.add(backing);
+  return group;
+}
+
+/** Geladak papan fore-aft: strip memanjang dengan sambungan staggered. */
+function buildDeck(length: number, beam: number, color: string): THREE.Mesh {
+  const strips = Math.max(6, Math.round(beam / 0.55));
+  const segs = Math.max(2, Math.round(length / 4.5));
+  const gapV = 0.004;
+  const planks: PlankDef[] = [];
+  for (let k = 0; k < strips; k++) {
+    for (const [t0, t1] of plankJoints(k, segs, 0.0006)) {
+      planks.push({
+        u0: t0,
+        u1: t1,
+        v0: -1 + (2 * k) / strips + gapV,
+        v1: -1 + (2 * (k + 1)) / strips - gapV,
+        shade: (hash2(k + 40, Math.round(t0 * 100)) - 0.5) * 0.1,
+      });
+    }
+  }
+  return new THREE.Mesh(
+    buildPlanks((u, v) => {
+      const hw = Math.max(0.05, (beam / 2) * taperAt(u) * 0.96);
+      return [v * hw, 2.42, (u - 0.5) * length];
+    }, planks, color),
+    plankMat,
+  );
 }
 
 /** Tekstur layar digambar di canvas: warna dasar + jahitan kain panel,
@@ -231,6 +358,9 @@ export function buildShipModel(
   const wood = std(def.hullColor);
   const woodDark = std("#4a3220");
   const metal = std("#2a2a2e", 0.6);
+  // Bagian kecil dikumpul lalu di-merge jadi 2 mesh di akhir (kayu + logam).
+  const woodParts: THREE.BufferGeometry[] = [];
+  const metalParts: THREE.BufferGeometry[] = [];
   // Musuh (dummy): layar merah + tengkorak besar, ala Galleon musuh di preview.
   const sailColor = opts.enemy ? "#c0392b" : def.sailColor;
   const sailTex = sailTexture(sailColor, opts.enemy ?? false);
@@ -257,10 +387,15 @@ export function buildShipModel(
   sprit.position.set(0, 3.6, length * 0.58);
   sprit.rotation.x = Math.PI / 2 - 0.5;
   group.add(sprit);
-  const figure = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6, 6), std(def.trimColor, 0.7));
-  figure.position.set(0, 2.6, length * 0.52);
-  figure.rotation.x = Math.PI / 2;
-  group.add(figure);
+  // Figurehead burung stilasi: badan + kepala + paruh emas + sayap.
+  const fy = 2.6;
+  const fz = length * 0.52;
+  woodParts.push(paint(place(new THREE.ConeGeometry(0.34, 1.5, 6), 0, fy, fz, Math.PI / 2), def.trimColor));
+  woodParts.push(paint(place(new THREE.SphereGeometry(0.26, 8, 8), 0, fy + 0.25, fz + 0.55), def.trimColor));
+  woodParts.push(paint(place(new THREE.ConeGeometry(0.1, 0.45, 6), 0, fy + 0.22, fz + 0.95, Math.PI / 2), "#e8b94a"));
+  for (const side of [-1, 1]) {
+    woodParts.push(paint(place(new THREE.BoxGeometry(0.1, 0.55, 0.9), side * 0.32, fy + 0.12, fz - 0.05, 0, -side * 0.4, side * 0.3), def.trimColor));
+  }
 
   // Ornamen emas di lambung Galleon (stud emas di kedua sisi).
   if (def.id === "galleon") {
@@ -296,8 +431,12 @@ export function buildShipModel(
     const topY = 2.4 + m.h;
     rigPts.push(0, topY, m.z, 0, 3.4, length * 0.52);
     rigPts.push(0, topY, m.z, 0, 4.9, -length * 0.42);
-    rigPts.push(0, topY, m.z, beam * 0.5, 2.6, m.z + 3);
-    rigPts.push(0, topY, m.z, -beam * 0.5, 2.6, m.z + 3);
+    // Shroud: puncak tiang ke pagar (3 titik per sisi).
+    for (const side of [-1, 1]) {
+      for (const dz of [-2, 0, 2]) {
+        rigPts.push(0, topY, m.z, side * beam * 0.47, 3.2, m.z + dz);
+      }
+    }
   }
   if (rigPts.length > 0) {
     const rigGeo = new THREE.BufferGeometry();
@@ -361,7 +500,8 @@ export function buildShipModel(
     group.add(jib);
   }
 
-  // Meriam broadside (jumlah sesuai jenis kapal; Galleon 2 baris).
+  // Meriam broadside: laras (ujung tipis di luar) + ring moncong + kereta
+  // + roda; baris bawah tanpa kereta (di bawah air, tak terlihat).
   const rows = def.cannonsPerSide >= 6 ? 2 : 1;
   for (let r = 0; r < rows; r++) {
     const count = r === 0 ? def.cannonsPerSide : def.cannonsPerSide - 2;
@@ -370,12 +510,15 @@ export function buildShipModel(
     for (const side of [-1, 1]) {
       for (let i = 0; i < count; i++) {
         const cz = count === 1 ? 0 : -length * 0.18 + (i / (count - 1)) * length * 0.36;
-        const taper = Math.pow(1 - Math.pow((2 * cz) / length, 2), 0.65);
-        const cannon = new THREE.Mesh(new THREE.CylinderGeometry(cr, cr + 0.04, 1.8, 8), metal);
-        cannon.rotation.z = (Math.PI / 2) * side;
-        cannon.rotation.y = side * 0.12;
-        cannon.position.set(side * ((beam / 2) * taper * 0.98), y, cz);
-        group.add(cannon);
+        const hx = side * ((beam / 2) * taperAt(cz / length + 0.5) * 0.98);
+        metalParts.push(paint(place(new THREE.CylinderGeometry(cr + 0.04, cr, 1.8, 8), hx, y, cz, 0, side * 0.12, (Math.PI / 2) * side), "#2a2a2e"));
+        metalParts.push(paint(place(new THREE.TorusGeometry(cr + 0.02, 0.05, 5, 12), hx + side * 0.85, y, cz - side * 0.11, 0, Math.PI / 2, 0), "#2a2a2e"));
+        if (r === 0) {
+          woodParts.push(paint(place(new THREE.BoxGeometry(0.6, 0.45, 0.8), hx - side * 0.25, y - 0.35, cz), "#4a3220"));
+          for (const wz of [-0.35, 0.35]) {
+            woodParts.push(paint(place(new THREE.CylinderGeometry(0.26, 0.26, 0.1, 10), hx - side * 0.15, y - 0.55, cz + wz, Math.PI / 2, 0, 0), "#4a3220"));
+          }
+        }
       }
     }
   }
@@ -399,8 +542,16 @@ export function buildShipModel(
   group.add(turret);
 
   // Bendera tengkorak di puncak tiang utama (kapal berlayar saja).
+  // Bendera bergelombang statis (ujung bebas melambai, pangkal diam di tiang).
+  const flagGeo = new THREE.PlaneGeometry(1.7, 1.05, 8, 3);
+  const fp = flagGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < fp.count; i++) {
+    const fly = fp.getX(i) / 1.7 + 0.5;
+    fp.setZ(i, Math.sin(fly * Math.PI * 1.5) * 0.14 * fly);
+  }
+  flagGeo.computeVertexNormals();
   const flag = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.7, 1.05),
+    flagGeo,
     new THREE.MeshStandardMaterial({ map: skullTexture(), side: THREE.DoubleSide, roughness: 0.9 }),
   );
   if (masts.length > 0) {
@@ -413,17 +564,56 @@ export function buildShipModel(
   // Lentera buritan (emissive, tanpa cahaya beneran).
   const lampMat = new THREE.MeshStandardMaterial({ color: "#ffb347", emissive: "#ff9a2e", emissiveIntensity: 1.4 });
   for (const lx of [-1.6, 1.6]) {
+    const cx = lx * s;
+    const cz = -length * 0.43;
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), lampMat);
-    lamp.position.set(lx * s, 4.4, -length * 0.43);
+    lamp.position.set(cx, 4.4, cz);
     group.add(lamp);
+    // Sangkar lentera: 2 ring + 4 jeruji + tutup kerucut.
+    for (const ry of [4.12, 4.68]) {
+      metalParts.push(paint(place(new THREE.TorusGeometry(0.32, 0.035, 5, 16), cx, ry, cz, Math.PI / 2, 0, 0), "#2a2a2e"));
+    }
+    for (const [ox, oz] of [[-0.3, 0], [0.3, 0], [0, -0.3], [0, 0.3]] as const) {
+      metalParts.push(paint(place(new THREE.BoxGeometry(0.05, 0.56, 0.05), cx + ox, 4.4, cz + oz), "#2a2a2e"));
+    }
+    metalParts.push(paint(place(new THREE.ConeGeometry(0.36, 0.25, 8), cx, 4.8, cz), "#2a2a2e"));
   }
 
-  // Pagar geladak (rail tipis di kedua sisi).
+  // Pagar geladak: tiang + rel atas mengikuti taper lambung.
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.7, length * 0.62), woodDark);
-    rail.position.set(side * beam * 0.47, 2.9, length * 0.02);
-    group.add(rail);
+    let prev: [number, number] | undefined;
+    for (let i = 0; i <= 8; i++) {
+      const t = 0.28 + (i / 8) * 0.58;
+      const x = side * ((beam / 2) * taperAt(t) * 0.96 * 0.98);
+      const z = (t - 0.5) * length;
+      woodParts.push(paint(place(new THREE.BoxGeometry(0.09, 0.75, 0.09), x, 2.8, z), "#4a3220"));
+      if (prev) {
+        const [px, pz] = prev;
+        const dx = x - px;
+        const dz = z - pz;
+        woodParts.push(paint(place(new THREE.BoxGeometry(0.1, 0.12, Math.hypot(dx, dz) + 0.12), (px + x) / 2, 3.2, (pz + z) / 2, 0, Math.atan2(dx, dz), 0), "#4a3220"));
+      }
+      prev = [x, z];
+    }
   }
+
+  // Kemudi: roda + 4 jari-jari + dudukan di depan kastil buritan.
+  const wz = -length * 0.18;
+  woodParts.push(paint(place(new THREE.TorusGeometry(0.85, 0.08, 6, 24), 0, 3.5, wz), "#4a3220"));
+  for (let i = 0; i < 4; i++) {
+    woodParts.push(paint(place(new THREE.CylinderGeometry(0.05, 0.05, 2.0, 5), 0, 3.5, wz, 0, 0, (i * Math.PI) / 4), "#4a3220"));
+  }
+  woodParts.push(paint(place(new THREE.SphereGeometry(0.16, 8, 8), 0, 3.5, wz), def.trimColor));
+  for (const side of [-1, 1]) {
+    woodParts.push(paint(place(new THREE.BoxGeometry(0.12, 1.15, 0.12), side * 0.4, 2.98, wz - 0.12), "#4a3220"));
+  }
+  metalParts.push(paint(place(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 6), 0, 3.5, wz - 0.15, Math.PI / 2, 0, 0), "#2a2a2e"));
+
+  // Gabung semua bagian kecil jadi 2 draw call (kayu + logam).
+  const woodGeo = mergeGeometries(woodParts, false);
+  if (woodGeo) group.add(new THREE.Mesh(woodGeo, plankMat));
+  const metalGeo = mergeGeometries(metalParts, false);
+  if (metalGeo) group.add(new THREE.Mesh(metalGeo, metalMat));
 
   return { group, turret, flag };
 }
