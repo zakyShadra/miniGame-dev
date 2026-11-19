@@ -138,8 +138,9 @@ function sailTexture(base: string, skull: boolean): THREE.CanvasTexture {
   return tex;
 }
 
-/** Layar persegi yang mengembung (vertex dibengkokkan). */
-function buildSail(width: number, height: number, tex: THREE.Texture): THREE.Mesh {
+/** Layar persegi yang mengembung (vertex dibengkokkan). Emissive ringan
+ *  supaya layar krem tetap terbaca krem dari sisi bayangan. */
+function buildSail(width: number, height: number, tex: THREE.Texture, base: string): THREE.Mesh {
   const geo = new THREE.PlaneGeometry(width, height, 6, 4);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
@@ -153,6 +154,8 @@ function buildSail(width: number, height: number, tex: THREE.Texture): THREE.Mes
     roughness: 0.9,
     flatShading: true,
     side: THREE.DoubleSide,
+    emissive: base,
+    emissiveIntensity: 0.2,
   });
   return new THREE.Mesh(geo, mat);
 }
@@ -286,7 +289,7 @@ export function buildShipModel(
     yard.rotation.z = Math.PI / 2;
     yard.position.set(0, 2.4 + m.h * 0.82, m.z);
     group.add(yard);
-    const sail = buildSail(m.sailW, m.sailH, sailTex);
+    const sail = buildSail(m.sailW, m.sailH, sailTex, sailColor);
     sail.position.set(0, 2.4 + m.h * 0.82 - m.sailH / 2 - 0.2, m.z);
     group.add(sail);
     // Tali-temali: puncak tiang ke haluan/buritan.
@@ -326,7 +329,13 @@ export function buildShipModel(
     jibShape.closePath();
     const jib = new THREE.Mesh(
       new THREE.ShapeGeometry(jibShape),
-      new THREE.MeshStandardMaterial({ map: sailTex, roughness: 0.9, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({
+        map: sailTex,
+        roughness: 0.9,
+        side: THREE.DoubleSide,
+        emissive: sailColor,
+        emissiveIntensity: 0.2,
+      }),
     );
     jib.rotation.y = -Math.PI / 2;
     jib.scale.setScalar(s);

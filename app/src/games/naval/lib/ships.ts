@@ -80,7 +80,7 @@ export const SHIPS: Record<ShipId, ShipDef> = {
     abilityDesc: "Volley berikutnya meledak di area kecil.",
     abilityCooldown: 10,
     sailColor: "#f5edd8",
-    hullColor: "#0f766e",
+    hullColor: "#0d9488",
     trimColor: "#e8b94a",
     masts: 2,
     cannonsPerSide: 5,
