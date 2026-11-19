@@ -107,7 +107,7 @@ watch(
     ref="canvas"
     :width="SIZE"
     :height="SIZE"
-    class="h-28 w-28 shrink-0 rounded-full shadow-lg"
+    class="h-20 w-20 shrink-0 rounded-full shadow-lg sm:h-28 sm:w-28"
     aria-label="Minimap"
   />
 </template>

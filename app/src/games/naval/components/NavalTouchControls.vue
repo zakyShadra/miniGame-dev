@@ -62,7 +62,12 @@ function joyStart(e: PointerEvent): void {
   if (joyId.value !== null) return;
   ensureAudio();
   joyId.value = e.pointerId;
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  try {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  } catch {
+    // Capture gagal (pointer sintetik dsb): gerakan tetap ditangani
+    // selama jari di atas zona joystick.
+  }
   joyUpdate(e.clientX, e.clientY);
 }
 

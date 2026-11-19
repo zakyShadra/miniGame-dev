@@ -435,16 +435,16 @@ const aimLabel = computed(() => {
 
     <!-- HUD atas: pemain (kiri), timer (tengah), musuh (kanan). -->
     <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-white shadow-lg backdrop-blur-md">
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-white shadow-lg backdrop-blur-md sm:px-4 sm:py-3">
         <div class="text-[10px] font-bold tracking-widest text-white/60">KAMU</div>
         <div class="font-display text-sm font-bold uppercase">{{ store.hud.shipName }}</div>
-        <div class="mt-1.5 h-2.5 w-40 overflow-hidden rounded-full bg-white/20 sm:w-52">
+        <div class="mt-1.5 h-2.5 w-24 overflow-hidden rounded-full bg-white/20 sm:w-40 lg:w-52">
           <div
             class="h-full rounded-full bg-[#3ddc84] transition-all"
             :style="{ width: `${hpPct}%` }"
           />
         </div>
-        <div class="mt-1 font-timer text-xs text-white/80">
+        <div class="mt-1 font-timer text-xs whitespace-nowrap text-white/80">
           Hull {{ store.hud.hp }} / {{ store.hud.maxHp }}
         </div>
         <div v-if="teammate" class="mt-1 text-xs text-white/60">
@@ -453,7 +453,7 @@ const aimLabel = computed(() => {
         </div>
       </div>
 
-      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-5 py-2 text-center text-white shadow-lg backdrop-blur-md">
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-center text-white shadow-lg backdrop-blur-md sm:px-5">
         <div class="text-[10px] font-bold tracking-widest text-white/60">SISA WAKTU</div>
         <div
           class="font-timer text-2xl font-bold tabular-nums"
@@ -463,17 +463,17 @@ const aimLabel = computed(() => {
         </div>
       </div>
 
-      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-right text-white shadow-lg backdrop-blur-md">
+      <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-right text-white shadow-lg backdrop-blur-md sm:px-4 sm:py-3">
         <div class="text-[10px] font-bold tracking-widest text-white/60">MUSUH (BOT)</div>
         <div class="font-display text-sm font-bold uppercase">{{ store.hud.dummyName }}</div>
         <template v-if="store.hud.dummyVisible">
-          <div class="mt-1.5 h-2.5 w-40 overflow-hidden rounded-full bg-white/20 sm:w-52">
+          <div class="mt-1.5 h-2.5 w-24 overflow-hidden rounded-full bg-white/20 sm:w-40 lg:w-52">
             <div
               class="h-full rounded-full bg-[#ff5a47] transition-all"
               :style="{ width: `${dummyPct}%` }"
             />
           </div>
-          <div class="mt-1 font-timer text-xs text-white/80">
+          <div class="mt-1 font-timer text-xs whitespace-nowrap text-white/80">
             Hull {{ store.hud.dummyHp }} / {{ store.hud.dummyMaxHp }} &middot; {{ distanceText }}
           </div>
         </template>
@@ -486,7 +486,7 @@ const aimLabel = computed(() => {
     <!-- HUD bawah: kecepatan + minimap (kiri), hint (tengah), reload (kanan). -->
     <div class="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3">
       <div class="flex items-end gap-2">
-        <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-3 text-white shadow-lg backdrop-blur-md">
+        <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-3 py-2 text-white shadow-lg backdrop-blur-md sm:px-4 sm:py-3">
           <div class="font-timer text-2xl leading-none font-bold tabular-nums">
             {{ knots }} <span class="text-xs font-medium text-white/60">knot</span>
           </div>
