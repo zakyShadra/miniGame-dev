@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { getDeckTexture, getFabricTexture, getMetalTexture, getWoodTexture } from "./textures";
 import type { ShipDef } from "../../../../../shared/naval/types";
 
 export interface ShipModel {
@@ -21,11 +22,17 @@ function std(color: string, roughness = 0.85): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Material vertex-color bersama (papan + bagian merged lain). */
-const plankMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true });
+/** Lambung + bagian kayu merged: warna cat (vertex) + relief serat kayu. */
+const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true, bumpMap: getWoodTexture(), bumpScale: 0.03 });
+
+/** Dek: warna kayu dari texture + variasi terang per papan (vertex). */
+const deckMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true, map: getDeckTexture() });
 
 /** Material vertex-color logam (meriam, sangkar lentera, as kemudi). */
-const metalMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: true });
+const metalMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: true, bumpMap: getMetalTexture(), bumpScale: 0.02 });
+
+// Anyaman kain diulang 4x di setiap layar (serat halus).
+getFabricTexture().repeat.set(4, 4);
 
 /** Tambah warna vertex solid ke geometri (syarat mergeGeometries). */
 function paint(geo: THREE.BufferGeometry, color: string): THREE.BufferGeometry {
@@ -115,16 +122,23 @@ function buildPlanks(
 ): THREE.BufferGeometry {
   const positions: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
   const c = new THREE.Color(base);
-  for (const p of planks) {
+  for (let pi = 0; pi < planks.length; pi++) {
+    const p = planks[pi]!;
     const pc = c.clone().offsetHSL(0, 0, p.shade);
     const start = positions.length / 3;
+    // UV: tiap papan mengambil irisan vertikal berbeda dari texture kayu
+    // (serat berbeda per papan), diulang 2x sepanjang papan.
+    const vBase = hash2(pi, 7) * 0.85;
     for (let i = 0; i <= steps; i++) {
       const u = p.u0 + ((p.u1 - p.u0) * i) / steps;
+      const uu = (i / steps) * 2;
       for (const v of [p.v0, p.v1]) {
         positions.push(...point(u, v));
         colors.push(pc.r, pc.g, pc.b);
+        uvs.push(uu, vBase + ((v - p.v0) / (p.v1 - p.v0)) * 0.13);
       }
     }
     for (let i = 0; i < steps; i++) {
@@ -135,6 +149,7 @@ function buildPlanks(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
@@ -174,7 +189,7 @@ function buildHull(length: number, beam: number, color: string): THREE.Group {
     }
   }
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(buildPlanks((u, v) => hullPoint(u, v, length, beam), planks, color), plankMat));
+  group.add(new THREE.Mesh(buildPlanks((u, v) => hullPoint(u, v, length, beam), planks, color), hullMat));
   // DoubleSide: celah dek melihat sisi dalam backing (gelap), bukan tembus.
   const backing = new THREE.Mesh(
     loftGeometry(length, beam * 0.97),
@@ -206,7 +221,7 @@ function buildDeck(length: number, beam: number, color: string): THREE.Mesh {
       const hw = Math.max(0.05, (beam / 2) * taperAt(u) * 0.96);
       return [v * hw, 2.42, (u - 0.5) * length];
     }, planks, color),
-    plankMat,
+    deckMat,
   );
 }
 
@@ -283,6 +298,8 @@ function buildSail(width: number, height: number, tex: THREE.Texture, base: stri
     side: THREE.DoubleSide,
     emissive: base,
     emissiveIntensity: 0.2,
+    bumpMap: getFabricTexture(),
+    bumpScale: 0.015,
   });
   return new THREE.Mesh(geo, mat);
 }
@@ -356,8 +373,12 @@ export function buildShipModel(
   const length = def.length;
   const beam = def.beam;
   const wood = std(def.hullColor);
+  wood.bumpMap = getWoodTexture();
+  wood.bumpScale = 0.02;
   const woodDark = std("#4a3220");
-  const metal = std("#2a2a2e", 0.6);
+  woodDark.bumpMap = getWoodTexture();
+  woodDark.bumpScale = 0.02;
+  const metal = new THREE.MeshStandardMaterial({ color: "#2a2a2e", roughness: 0.6, flatShading: true, bumpMap: getMetalTexture(), bumpScale: 0.02 });
   // Bagian kecil dikumpul lalu di-merge jadi 2 mesh di akhir (kayu + logam).
   const woodParts: THREE.BufferGeometry[] = [];
   const metalParts: THREE.BufferGeometry[] = [];
@@ -366,7 +387,8 @@ export function buildShipModel(
   const sailTex = sailTexture(sailColor, opts.enemy ?? false);
 
   group.add(buildHull(length, beam, def.hullColor));
-  group.add(buildDeck(length, beam, "#a67c52"));
+  // Dek putih + variasi: warna kayu datang dari texture, bukan vertex color.
+  group.add(buildDeck(length, beam, "#ffffff"));
 
   // Kastil buritan + atap + jendela.
   const castle = new THREE.Mesh(new THREE.BoxGeometry(beam * 0.72, 2.4, length * 0.2), wood);
@@ -493,6 +515,8 @@ export function buildShipModel(
         side: THREE.DoubleSide,
         emissive: sailColor,
         emissiveIntensity: 0.2,
+        bumpMap: getFabricTexture(),
+        bumpScale: 0.015,
       }),
     );
     jib.rotation.y = -Math.PI / 2;
@@ -611,7 +635,7 @@ export function buildShipModel(
 
   // Gabung semua bagian kecil jadi 2 draw call (kayu + logam).
   const woodGeo = mergeGeometries(woodParts, false);
-  if (woodGeo) group.add(new THREE.Mesh(woodGeo, plankMat));
+  if (woodGeo) group.add(new THREE.Mesh(woodGeo, hullMat));
   const metalGeo = mergeGeometries(metalParts, false);
   if (metalGeo) group.add(new THREE.Mesh(metalGeo, metalMat));
 

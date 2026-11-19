@@ -9,6 +9,7 @@ import { Effects } from "./effects";
 import { buildClouds, buildSkyDome, buildSun, HORIZON_COLOR } from "./sky";
 import { SINK_DURATION, waveHeight } from "../../../../../shared/naval/sim";
 import { buildShipModel, type ShipModel } from "./shipModel";
+import { getGrassTexture, getRockTexture, getSandTexture } from "./textures";
 import type { GameState, IslandDef, MapDef, ShipDef, ShipState, SimEvent } from "../../../../../shared/naval/types";
 
 // Warna air per kedalaman (vertex colors): dangkal di dekat pantai,
@@ -27,6 +28,17 @@ function lerpAngle(a: number, b: number, t: number): number {
 function std(color: number, roughness = 0.9): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
+
+// Material pulau ber-texture (dibuat sekali, dipakai semua pulau).
+const sandTex = getSandTexture();
+sandTex.repeat.set(8, 8);
+const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.95, flatShading: true });
+const rockTex = getRockTexture();
+rockTex.repeat.set(2, 2);
+const rockMat = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 0.95, flatShading: true });
+const grassTex = getGrassTexture();
+grassTex.repeat.set(4, 4);
+const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95, flatShading: true });
 
 // Dekor instanced: 1 draw call per jenis untuk semua pulau.
 interface DecorItem {
@@ -67,14 +79,14 @@ function makeInstanced(
 function buildIslandMesh(isl: IslandDef, decor: IslandDecor): THREE.Group {
   const rng = mulberry32(isl.seed);
   const g = new THREE.Group();
-  const sand = new THREE.Mesh(new THREE.CircleGeometry(isl.radius * 1.12, 28), std(0xe6d3a1));
+  const sand = new THREE.Mesh(new THREE.CircleGeometry(isl.radius * 1.12, 28), sandMat);
   sand.rotation.x = -Math.PI / 2;
   sand.position.y = 0.15;
   g.add(sand);
   // Pantai miring: rok kerucut terpotong yang menurun dari pasir ke air.
   const skirt = new THREE.Mesh(
     new THREE.CylinderGeometry(isl.radius * 1.1, isl.radius * 1.5, 0.45, 28, 1, true),
-    std(0xdcc78f),
+    sandMat,
   );
   skirt.position.y = -0.05;
   g.add(skirt);
@@ -87,8 +99,6 @@ function buildIslandMesh(isl: IslandDef, decor: IslandDecor): THREE.Group {
   foam.position.y = 0.12;
   g.add(foam);
 
-  const rockMat = std(0x8a8a84);
-  const rockMat2 = std(0x6f6f68);
   // Batu utama: kerucut lebar + pendek (bukan piramida runcing) + topi rumput.
   const main = new THREE.Mesh(new THREE.ConeGeometry(isl.radius * 0.62, isl.height * 0.62, 9), rockMat);
   main.position.y = isl.height * 0.3;
@@ -96,14 +106,14 @@ function buildIslandMesh(isl: IslandDef, decor: IslandDecor): THREE.Group {
   g.add(main);
   const cap = new THREE.Mesh(
     new THREE.ConeGeometry(isl.radius * 0.4, isl.height * 0.16, 9),
-    std(0x5a9e4d),
+    grassMat,
   );
   cap.position.y = isl.height * 0.58;
   cap.rotation.y = rng() * Math.PI;
   g.add(cap);
   const second = new THREE.Mesh(
     new THREE.ConeGeometry(isl.radius * 0.4, isl.height * 0.45, 7),
-    rockMat2,
+    rockMat,
   );
   second.position.set(isl.radius * 0.3 * (rng() - 0.5) * 2, isl.height * 0.2, isl.radius * 0.3 * (rng() - 0.5) * 2);
   second.rotation.z = (rng() - 0.5) * 0.25;
