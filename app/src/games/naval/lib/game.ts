@@ -276,7 +276,7 @@ export class NavalGame {
   };
 
   private onMouseMove = (e: MouseEvent): void => {
-    const p = this.scene.screenToWater(e.clientX, e.clientY);
+    const p = this.scene.screenToAim(e.clientX, e.clientY);
     if (p) {
       this.scene.aimX = p.x;
       this.scene.aimZ = p.z;

@@ -237,6 +237,53 @@ export class NavalScene {
     return { x: p.x, z: p.z };
   }
 
+  /**
+   * Titik bidik dari posisi kursor. Kalau sinar mouse menembus silinder
+   * sebuah kapal (lambung + tiang), bidikan menempel ke tengah kapal itu.
+   * Tanpa ini, membidik lambung kapal (di atas air) membuat peluru jatuh
+   * puluhan meter di balik kapal (paralaks ketinggian).
+   */
+  screenToAim(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+    const ray = this.raycaster.ray;
+    // Uji tiap kapal musuh: sinar vs silinder vertikal (radius kapal,
+    // tinggi 22 m). Kapal sendiri (yang diikuti kamera) dikecualikan,
+    // karena sinar bidik selalu melewati tiangnya.
+    let bestT = Infinity;
+    let best: { x: number; z: number } | null = null;
+    for (const [id, m] of this.ships) {
+      if (id === this.followId) continue;
+      const cx = m.model.group.position.x;
+      const cz = m.model.group.position.z;
+      const r = m.def.radius;
+      const ox = ray.origin.x - cx;
+      const oz = ray.origin.z - cz;
+      const dx = ray.direction.x;
+      const dz = ray.direction.z;
+      const a = dx * dx + dz * dz;
+      if (a < 1e-9) continue;
+      const b = 2 * (ox * dx + oz * dz);
+      const c = ox * ox + oz * oz - r * r;
+      const disc = b * b - 4 * a * c;
+      if (disc < 0) continue;
+      const sq = Math.sqrt(disc);
+      let t = (-b - sq) / (2 * a);
+      if (t < 0) t = (-b + sq) / (2 * a);
+      if (t < 0 || t >= bestT) continue;
+      const y = ray.origin.y + t * ray.direction.y;
+      if (y < 0 || y > 22) continue;
+      bestT = t;
+      best = { x: cx, z: cz };
+    }
+    if (best) return best;
+    const p = new THREE.Vector3();
+    if (!ray.intersectPlane(this.waterPlane, p)) return null;
+    return { x: p.x, z: p.z };
+  }
+
   /** Mainkan efek visual untuk satu event simulasi. */
   playEvent(ev: SimEvent): void {
     switch (ev.type) {
