@@ -337,6 +337,117 @@ function isCheckPulse(sq: Square): boolean {
     store.showEndBadges && store.gameEnd?.kind === "checkmate"
   );
 }
+
+// ---- Drag bidak (Pointer Events, mouse + sentuhan) ----
+// Klik tetap jalan seperti biasa: pointerdown di bidak sendiri
+// memilihnya (langkah legal tampil); kalau pointer bergerak lebih
+// dari ambang, jadi drag (bidak melayang ikut pointer, bidak asli
+// jadi bayangan redup di petak asal). Lepas di petak legal = jalan
+// (lewat selectSquare, jadi promosi ikut terpicu); lepas di petak
+// ilegal/di luar papan = bidak kembali (tidak ada yang berubah).
+// Pointer capture di grid membuat klik sesudah drag tidak sampai
+// ke tombol petak, jadi tidak ada pemanggilan ganda selectSquare.
+const DRAG_THRESHOLD_PX = 8;
+
+const boardEl = ref<HTMLElement | null>(null);
+
+interface DragState {
+  from: Square;
+  color: Color;
+  type: PieceSymbol;
+  // Posisi pointer relatif terhadap papan (px).
+  x: number;
+  y: number;
+}
+
+const drag = ref<DragState | null>(null);
+let dragStart: { x: number; y: number; square: Square } | null = null;
+
+function isDraggedPiece(p: DisplayedPiece): boolean {
+  return (
+    drag.value !== null &&
+    !p.leaving &&
+    p.square === drag.value.from &&
+    p.color === drag.value.color &&
+    p.type === drag.value.type
+  );
+}
+
+// Petak dari koordinat klien; null kalau di luar papan.
+function squareFromPoint(clientX: number, clientY: number): Square | null {
+  const el = boardEl.value;
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const size = rect.width / 8;
+  const col = Math.floor((clientX - rect.left) / size);
+  const row = Math.floor((clientY - rect.top) / size);
+  if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+  const file = displayFiles.value[col]!;
+  const rank = displayRanks.value[row]!;
+  return `${file}${rank}` as Square;
+}
+
+function onPointerDown(e: PointerEvent, sq: Square) {
+  if (!e.isPrimary || e.button !== 0) return;
+  // Hanya bidak sendiri yang bisa di-drag. Guard sama seperti
+  // selectSquare (fase main, bukan review, bukan giliran bot).
+  const piece = store.boardMap.get(sq);
+  if (!piece || piece.color !== store.turn) return;
+  if (store.phase !== "playing" || store.result) return;
+  if (store.reviewPly !== null) return;
+  if (store.promotionPending) return;
+  if (store.isBotTurn || store.botThinking) return;
+  store.selectSquare(sq);
+  dragStart = { x: e.clientX, y: e.clientY, square: sq };
+  boardEl.value?.setPointerCapture(e.pointerId);
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (!dragStart) return;
+  const el = boardEl.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  if (!drag.value) {
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    const piece = store.boardMap.get(dragStart.square);
+    if (!piece) {
+      dragStart = null;
+      return;
+    }
+    drag.value = {
+      from: dragStart.square,
+      color: piece.color,
+      type: piece.type,
+      x,
+      y,
+    };
+    return;
+  }
+  drag.value.x = x;
+  drag.value.y = y;
+}
+
+function onPointerUp(e: PointerEvent) {
+  if (!dragStart) return;
+  const wasDragging = drag.value !== null;
+  dragStart = null;
+  drag.value = null;
+  if (!wasDragging) return;
+  // Lepas: kalau di petak legal, selectSquare menjalankan langkah
+  // (atau membuka pemilih promosi); kalau tidak, tidak terjadi
+  // apa-apa dan bidak tetap di petak asal (snap-back).
+  const dropSq = squareFromPoint(e.clientX, e.clientY);
+  if (dropSq) store.selectSquare(dropSq);
+}
+
+function onPointerCancel() {
+  dragStart = null;
+  drag.value = null;
+}
 </script>
 
 <template>
@@ -345,9 +456,13 @@ function isCheckPulse(sq: Square): boolean {
   >
     <div class="relative w-full">
       <div
-        class="grid aspect-square w-full grid-cols-8 overflow-hidden rounded-lg shadow-[inset_0_2px_12px_rgba(0,0,0,0.22)]"
+        ref="boardEl"
+        class="grid aspect-square w-full touch-none grid-cols-8 overflow-hidden rounded-lg shadow-[inset_0_2px_12px_rgba(0,0,0,0.22)]"
         role="grid"
         aria-label="Papan catur"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerCancel"
       >
         <template v-for="(rank, rowIndex) in displayRanks" :key="rank">
           <template
@@ -364,6 +479,9 @@ function isCheckPulse(sq: Square): boolean {
               ]"
               :aria-label="`${file}${rank}`"
               @click="store.selectSquare(squareAt(FILES.indexOf(file), rank))"
+              @pointerdown="
+                onPointerDown($event, squareAt(FILES.indexOf(file), rank))
+              "
               @mouseenter="
                 hoveredSquare = squareAt(FILES.indexOf(file), rank)
               "
@@ -486,6 +604,7 @@ function isCheckPulse(sq: Square): boolean {
           v-for="p in displayedPieces"
           :key="p.id"
           class="absolute top-0 left-0 flex h-[12.5%] w-[12.5%] items-center justify-center transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+          :class="{ 'opacity-30': isDraggedPiece(p) }"
           :style="{
             transform: `translate(${displayCol(p.square) * 100}%, ${displayRow(p.square) * 100}%)`,
           }"
@@ -537,6 +656,22 @@ function isCheckPulse(sq: Square): boolean {
             class="badge-pop absolute top-0 right-0 flex h-[30%] min-h-[16px] items-center justify-center rounded-full bg-zinc-600 px-1 text-[9px] leading-none font-bold whitespace-nowrap text-white shadow-md ring-2 ring-white/90"
             >{{ p.color === "w" ? "Draw 1/2" : "Draw" }}</span
           >
+        </div>
+        <!-- Bidak yang sedang di-drag: melayang ikut pointer,
+        sedikit membesar + bayangan lebih kuat. -->
+        <div
+          v-if="drag"
+          class="absolute top-0 left-0 flex h-[12.5%] w-[12.5%] items-center justify-center"
+          :style="{
+            transform: `translate(${drag.x}px, ${drag.y}px) translate(-50%, -50%) scale(1.1)`,
+          }"
+        >
+          <img
+            :src="pieceUrl(drag.color, drag.type)"
+            alt=""
+            draggable="false"
+            class="h-[92%] w-[92%] drop-shadow-[0_6px_6px_rgba(0,0,0,0.45)]"
+          />
         </div>
       </div>
 
