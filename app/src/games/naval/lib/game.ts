@@ -3,6 +3,7 @@
 
 import { BOT_LEVELS, BotController, type BotLevel } from "../../../../../shared/naval/bot";
 import { getMap } from "../../../../../shared/naval/maps";
+import { DragOrbit } from "./cameraDrag";
 import { NavalScene } from "./scene";
 import { getShipDef } from "../../../../../shared/naval/ships";
 import { ensureAudio } from "../../../lib/sound";
@@ -105,8 +106,8 @@ export class NavalGame {
   private acc = 0;
   private hudT = 0;
   private keys = new Set<string>();
-  private orbiting = false;
-  private lastOrbitX = 0;
+  /** Click-vs-drag kamera: klik cepat = tembak, geser = orbit. */
+  private drag: DragOrbit;
   private disposed = false;
   private over = false;
   /** Input joystick sentuh (digabung dengan keyboard di collectInputs). */
@@ -132,6 +133,10 @@ export class NavalGame {
     const fwd = shipForward(me.heading);
     this.scene.aimX = me.x + fwd.x * 200;
     this.scene.aimZ = me.z + fwd.z * 200;
+    this.drag = new DragOrbit(
+      () => this.playerFire(),
+      (dx) => this.scene.addOrbit(dx * 0.005),
+    );
 
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
@@ -393,23 +398,15 @@ export class NavalGame {
 
   private onMouseDown = (e: MouseEvent): void => {
     ensureAudio();
-    if (e.button === 0) {
-      // Klik kiri: tembak satu volley ke titik aim.
-      this.playerFire();
-    } else if (e.button === 2) {
-      this.orbiting = true;
-      this.lastOrbitX = e.clientX;
-    }
+    this.drag.onDown(e);
   };
 
   private onOrbitMove = (e: MouseEvent): void => {
-    if (!this.orbiting) return;
-    this.scene.addOrbit((e.clientX - this.lastOrbitX) * 0.005);
-    this.lastOrbitX = e.clientX;
+    this.drag.onMove(e);
   };
 
-  private onMouseUp = (): void => {
-    this.orbiting = false;
+  private onMouseUp = (e: MouseEvent): void => {
+    this.drag.onUp(e);
   };
 
   private onWheel = (e: WheelEvent): void => {

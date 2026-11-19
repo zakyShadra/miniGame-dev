@@ -32,6 +32,7 @@ import {
   playSplash,
   playThud,
 } from "./audio";
+import { DragOrbit } from "./cameraDrag";
 import { NavalScene } from "./scene";
 import { MATCH_DURATION, type DamageNumber, type NavalHud } from "./game";
 
@@ -131,8 +132,8 @@ export class NavalRemoteGame {
   private renderTime = 0;
   private hudT = 0;
   private keys = new Set<string>();
-  private orbiting = false;
-  private lastOrbitX = 0;
+  /** Click-vs-drag kamera: klik cepat = tembak, geser = orbit. */
+  private drag: DragOrbit;
   private disposed = false;
   private over = false;
   /** Input joystick sentuh (digabung dengan keyboard di currentInput). */
@@ -141,6 +142,17 @@ export class NavalRemoteGame {
   constructor(container: HTMLElement, opts: NavalRemoteGameOptions) {
     this.container = container;
     this.opts = opts;
+    this.drag = new DragOrbit(
+      () => {
+        // Klik kiri: tembak ke titik aim (server yang memvalidasi reload).
+        const aimX = this.scene?.aimX;
+        const aimZ = this.scene?.aimZ;
+        if (!this.over && aimX != null && aimZ != null) {
+          this.opts.onFire(aimX, aimZ);
+        }
+      },
+      (dx) => this.scene?.addOrbit(dx * 0.005),
+    );
 
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
@@ -584,27 +596,15 @@ export class NavalRemoteGame {
 
   private onMouseDown = (e: MouseEvent): void => {
     ensureAudio();
-    if (e.button === 0) {
-      // Klik kiri: tembak ke titik aim (server yang memvalidasi reload).
-      const aimX = this.scene?.aimX;
-      const aimZ = this.scene?.aimZ;
-      if (!this.over && aimX != null && aimZ != null) {
-        this.opts.onFire(aimX, aimZ);
-      }
-    } else if (e.button === 2) {
-      this.orbiting = true;
-      this.lastOrbitX = e.clientX;
-    }
+    this.drag.onDown(e);
   };
 
   private onOrbitMove = (e: MouseEvent): void => {
-    if (!this.orbiting || !this.scene) return;
-    this.scene.addOrbit((e.clientX - this.lastOrbitX) * 0.005);
-    this.lastOrbitX = e.clientX;
+    this.drag.onMove(e);
   };
 
-  private onMouseUp = (): void => {
-    this.orbiting = false;
+  private onMouseUp = (e: MouseEvent): void => {
+    this.drag.onUp(e);
   };
 
   private onWheel = (e: WheelEvent): void => {
