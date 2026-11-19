@@ -82,13 +82,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
     v-if="store.phase === 'setup'"
     class="chess-bg flex min-h-screen flex-col items-center justify-center gap-4 p-4"
   >
-    <button
-      type="button"
-      class="self-start rounded-full bg-surface-1 px-4 py-2 text-sm font-semibold text-ink shadow-md transition hover:bg-surface-2"
-      @click="$emit('exit')"
-    >
-      &larr; Semua game
-    </button>
+    <div class="flex w-full items-start justify-between">
+      <button
+        type="button"
+        class="rounded-full bg-surface-1 px-4 py-2 text-sm font-semibold text-ink shadow-md transition hover:bg-surface-2"
+        @click="$emit('exit')"
+      >
+        &larr; Semua game
+      </button>
+      <ThemeToggle />
+    </div>
     <ChessSetup />
     <ChessImport />
   </div>
