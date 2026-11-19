@@ -7,6 +7,7 @@ import { NavalScene } from "./scene";
 import { getShipDef } from "../../../../../shared/naval/ships";
 import {
   TICK_DT,
+  canSee,
   createGame,
   fireVolley,
   getShip,
@@ -249,7 +250,9 @@ export class NavalGame {
       maxHp: p.maxHp,
       dummyHp: d.hp,
       dummyMaxHp: d.maxHp,
-      dummyVisible: hasLineOfSight(this.state.map.islands, p.x, p.z, d.x, d.z),
+      // Visibilitas musuh: LoS jelas, atau radar (Sloop) aktif; kapal
+      // selam yang menyelam tidak terlihat (lihat canSee).
+      dummyVisible: canSee(this.state, PLAYER_ID, DUMMY_ID),
       px: p.x,
       pz: p.z,
       dx: d.x,

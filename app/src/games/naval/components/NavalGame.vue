@@ -109,7 +109,7 @@ const aimLabel = computed(() => {
 });
 
 function selectShip(id: ShipId) {
-  if (id === "frigate") store.selectedShip = id;
+  store.selectedShip = id;
 }
 
 // Level solo vs bot: nomor -> BotLevel, info (label/map/kapal) dari BOT_LEVELS.
@@ -221,11 +221,9 @@ const activeMap = computed(() => {
           type="button"
           class="rounded-xl border p-3 text-left backdrop-blur transition"
           :class="
-            s.id === 'frigate'
-              ? store.selectedShip === s.id
-                ? 'border-[#e8a33d] bg-white/15 shadow-sm'
-                : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
-              : 'cursor-not-allowed border-white/10 bg-white/5 opacity-60'
+            store.selectedShip === s.id
+              ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+              : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
           "
           @click="selectShip(s.id)"
         >
@@ -235,12 +233,6 @@ const activeMap = computed(() => {
               :style="{ backgroundColor: s.sailColor }"
             />
             <span class="font-display font-bold text-white">{{ s.name }}</span>
-            <span
-              v-if="s.id !== 'frigate'"
-              class="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/60"
-            >
-              SEGERA
-            </span>
           </span>
           <span class="mt-1 block text-xs text-white/60">
             HP {{ s.hp }} &middot; {{ s.abilityName }}: {{ s.abilityDesc }}
