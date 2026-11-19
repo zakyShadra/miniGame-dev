@@ -13,11 +13,12 @@ import type { ClientMessage, ServerMessage } from "../../../../../shared/protoco
 import type { NavalRoomState, PlayerState } from "../../../../../shared/types";
 import { createPartySocket, generateRoomCode } from "../../../lib/party";
 import { MATCH_DURATION, type DamageNumber, type NavalHud } from "../lib/game";
-import { NavalRemoteGame, type NavalCoopWinner } from "../lib/remote";
+import { NavalRemoteGame } from "../lib/remote";
 import type { DamageNum } from "./naval";
 
 export type NavalCoopPhase = "form" | "waiting" | "playing" | "over";
 export type NavalCoopStatus = "idle" | "connecting" | "connected" | "error";
+export type NavalCoopWinner = "players" | "bot" | "draw";
 
 /** Level angka (1-3) -> difficulty bot (cermin server). */
 export const COOP_LEVELS: Array<{ n: 1 | 2 | 3; key: BotLevel }> = [
@@ -153,7 +154,10 @@ export const useNavalCoopStore = defineStore("naval-coop", () => {
         name: pending.name,
         color: pending.color,
         playerKey: myKey.value,
+        mode: "coop",
         level: pending.level,
+        // Map ikut level; server mengabaikan mapId di co-op.
+        mapId: BOT_LEVELS[levelToBot(pending.level)].mapId,
         shipId: pending.shipId,
       });
     } else {
@@ -222,7 +226,12 @@ export const useNavalCoopStore = defineStore("naval-coop", () => {
           }
           phase.value = "playing";
         } else if (msg.room.status === "over") {
-          if (msg.room.winner) finishMatch(msg.room.winner, msg.room.level);
+          // Room co-op hanya menghasilkan players/bot/draw ("p1"/"p2"
+          // adalah hasil PvP, tidak mungkin di sini; abaikan defensif).
+          const w = msg.room.winner;
+          if (w === "players" || w === "bot" || w === "draw") {
+            finishMatch(w, msg.room.level);
+          }
         }
         // paused: phase tetap playing, komponen menampilkan banner jeda.
         break;
@@ -323,16 +332,14 @@ export const useNavalCoopStore = defineStore("naval-coop", () => {
     const r = room.value;
     const seat = mySeat.value;
     if (!r || !seat) return;
-    hud.value = freshHud(
-      seat.shipId,
-      BOT_LEVELS[levelToBot(r.level)].botShip,
-    );
+    const botShipId = BOT_LEVELS[levelToBot(r.level)].botShip;
+    hud.value = freshHud(seat.shipId, botShipId);
     const ships = [
       ...r.seats.map((s) => ({ key: s.shipKey, defId: s.shipId, name: s.name })),
       {
         key: "bot",
-        defId: BOT_LEVELS[levelToBot(r.level)].botShip,
-        name: "Bot",
+        defId: botShipId,
+        name: getShipDef(botShipId).name,
       },
     ];
     remote = new NavalRemoteGame(container, {
@@ -342,7 +349,12 @@ export const useNavalCoopStore = defineStore("naval-coop", () => {
       onHud: (h: NavalHud) => {
         hud.value = h;
       },
-      onMatchEnd: (w: NavalCoopWinner) => {
+      onMatchEnd: (winnerId: string) => {
+        // Hasil mentah server: "players"/"bot"/"draw" (co-op). Id kapal
+        // sim ("p1"/"p2") tidak muncul di co-op; petakan defensif ke
+        // players (kapal pemain yang selamat).
+        const w: NavalCoopWinner =
+          winnerId === "bot" ? "bot" : winnerId === "draw" ? "draw" : "players";
         finishMatch(w, r.level);
       },
       onDamage: (d: DamageNumber) => {
@@ -356,7 +368,18 @@ export const useNavalCoopStore = defineStore("naval-coop", () => {
         hitFlash.value++;
       },
     });
-    remote.start(r.level, r.mapId, seat.shipId, seat.shipKey, ships);
+    remote.start({
+      mode: "coop",
+      mapId: r.mapId,
+      myShipId: seat.shipId,
+      myShipKey: seat.shipKey,
+      ships,
+      opponent: {
+        key: "bot",
+        defId: botShipId,
+        name: getShipDef(botShipId).name,
+      },
+    });
   }
 
   function disposeRemote(): void {

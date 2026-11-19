@@ -1,11 +1,11 @@
-// Game naval remote (co-op): render + prediksi client untuk match yang
-// simulasinya jalan di server (PartyServer, tick 20 Hz). Kapal sendiri
-// diprediksi lokal (dead reckoning + moveShip) lalu direkonsiliasi
-// lembut ke posisi server; kapal lain diinterpolasi antar snapshot
-// (delay render 100 ms, tidak pernah ekstrapolasi). Server yang
+// Game naval remote (co-op + PvP): render + prediksi client untuk match
+// yang simulasinya jalan di server (PartyServer, tick 20 Hz). Kapal
+// sendiri diprediksi lokal (dead reckoning + moveShip) lalu
+// direkonsiliasi lembut ke posisi server; kapal lain diinterpolasi antar
+// snapshot (delay render 100 ms, tidak pernah ekstrapolasi). Server yang
 // memutuskan hit, LoS, dan akhir match; client hanya mengirim input.
+// Lawan digeneralisasi: bot (co-op) atau pemain lain (PvP).
 
-import { BOT_LEVELS, type BotLevel } from "../../../../../shared/naval/bot";
 import { getMap } from "../../../../../shared/naval/maps";
 import { getShipDef } from "../../../../../shared/naval/ships";
 import {
@@ -25,24 +25,30 @@ import type { NavalShipSnap, NavalSnapshot } from "../../../../../shared/types";
 import { NavalScene } from "./scene";
 import { MATCH_DURATION, type DamageNumber, type NavalHud } from "./game";
 
-export type NavalCoopWinner = "players" | "bot" | "draw";
-
 export interface NavalRemoteGameOptions {
   onInput: (input: ShipInput) => void;
   onFire: (aimX: number, aimZ: number) => void;
   onAbility: () => void;
   onHud: (hud: NavalHud) => void;
-  onMatchEnd: (winner: NavalCoopWinner) => void;
+  /** Hasil mentah dari server: "players" | "bot" | "draw" (co-op) atau
+   * shipKey pemenang "p1" | "p2" | "draw" (PvP). Store yang memetakan
+   * ke menang/kalah sesuai mode. */
+  onMatchEnd: (winnerId: string) => void;
   onDamage: (d: DamageNumber) => void;
   onPlayerHit: () => void;
 }
 
-/** Level angka (1-3) -> difficulty bot (cermin server). */
-const LEVEL_TO_BOT: Record<number, BotLevel> = {
-  1: "medium",
-  2: "hard",
-  3: "extreme",
-};
+/** Konfigurasi satu match remote (co-op atau PvP). */
+export interface NavalRemoteStart {
+  mode: "coop" | "pvp";
+  mapId: string;
+  myShipId: ShipId;
+  myShipKey: "p1" | "p2";
+  ships: Array<{ key: string; defId: ShipId; name: string }>;
+  /** Lawan: bot (co-op) atau pemain lain (PvP). Mesh-nya ditambah
+   * begitu snapshot pertama menyatakan lawan terlihat. */
+  opponent: { key: string; defId: ShipId; name: string };
+}
 
 /** Delay render interpolasi (ms): kapal remote digambar 100 ms di masa lalu. */
 const INTERP_DELAY_MS = 100;
@@ -91,7 +97,10 @@ export class NavalRemoteGame {
   private myShipId: ShipId = "frigate";
   private myShipKey: "p1" | "p2" = "p1";
   private myDef: ShipDef = getShipDef("frigate");
-  private botDef: ShipDef = getShipDef("galleon");
+  /** Lawan (bot di co-op, pemain lain di PvP). */
+  private foeKey = "bot";
+  private foeDef: ShipDef = getShipDef("galleon");
+  private foeName = "Bot";
 
   private prevSnap: NavalSnapshot | null = null;
   private curSnap: NavalSnapshot | null = null;
@@ -101,10 +110,10 @@ export class NavalRemoteGame {
   private pred: ShipState | null = null;
   /** Posisi render terakhir per kapal (buat prevX/prevZ scene). */
   private rendered = new Map<string, { x: number; z: number; heading: number }>();
-  /** Snapshot bot terakhir (buat HUD saat bot tersembunyi). */
-  private lastBotSnap: NavalShipSnap | null = null;
-  private botMesh = false;
-  private botVisible = false;
+  /** Snapshot lawan terakhir (buat HUD saat lawan tersembunyi). */
+  private lastFoeSnap: NavalShipSnap | null = null;
+  private foeMesh = false;
+  private foeVisible = false;
 
   private raf = 0;
   private inputTimer = 0;
@@ -140,27 +149,23 @@ export class NavalRemoteGame {
     }, 50);
   }
 
-  /** Pasang scene + kapal untuk satu match. Bot tidak ditambahkan di
+  /** Pasang scene + kapal untuk satu match. Lawan tidak ditambahkan di
    * sini: mesh-nya diatur snapshot pertama (bisa langsung tersembunyi). */
-  start(
-    level: 1 | 2 | 3,
-    mapId: string,
-    myShipId: ShipId,
-    myShipKey: "p1" | "p2",
-    ships: Array<{ key: string; defId: ShipId; name: string }>,
-  ): void {
+  start(cfg: NavalRemoteStart): void {
     this.scene?.dispose();
-    this.botDef = getShipDef(BOT_LEVELS[LEVEL_TO_BOT[level]!].botShip);
-    this.map = getMap(mapId);
-    this.myShipId = myShipId;
-    this.myShipKey = myShipKey;
-    this.myDef = getShipDef(myShipId);
+    this.foeKey = cfg.opponent.key;
+    this.foeDef = getShipDef(cfg.opponent.defId);
+    this.foeName = cfg.opponent.name;
+    this.map = getMap(cfg.mapId);
+    this.myShipId = cfg.myShipId;
+    this.myShipKey = cfg.myShipKey;
+    this.myDef = getShipDef(cfg.myShipId);
     this.scene = new NavalScene(this.container, this.map);
-    for (const s of ships) {
-      if (s.key === "bot") continue;
+    for (const s of cfg.ships) {
+      if (s.key === cfg.opponent.key) continue;
       this.scene.addShip(s.key, getShipDef(s.defId));
     }
-    this.scene.followId = myShipKey;
+    this.scene.followId = cfg.myShipKey;
     this.synth = {
       map: this.map,
       ships: [],
@@ -174,9 +179,9 @@ export class NavalRemoteGame {
     this.curSnap = null;
     this.pred = null;
     this.rendered.clear();
-    this.lastBotSnap = null;
-    this.botMesh = false;
-    this.botVisible = false;
+    this.lastFoeSnap = null;
+    this.foeMesh = false;
+    this.foeVisible = false;
     this.over = false;
     this.renderTime = 0;
 
@@ -188,17 +193,17 @@ export class NavalRemoteGame {
   }
 
   /** Terapkan snapshot server: simpan buat interpolasi, mainkan event,
-   * rekonsiliasi prediksi kapal sendiri, atur visibilitas bot. */
+   * rekonsiliasi prediksi kapal sendiri, atur visibilitas lawan. */
   applySnapshot(snap: NavalSnapshot): void {
     this.prevSnap = this.curSnap;
     this.prevRecvAt = this.curRecvAt;
     this.curSnap = snap;
     this.curRecvAt = performance.now();
 
-    const botInSnap = snap.ships.some((s) => s.id === "bot");
-    this.setBotVisible(snap.botVisible && botInSnap);
-    const botSnap = snap.ships.find((s) => s.id === "bot");
-    if (botSnap) this.lastBotSnap = botSnap;
+    const foeInSnap = snap.ships.some((s) => s.id === this.foeKey);
+    this.setFoeVisible(snap.foeVisible && foeInSnap);
+    const foeSnap = snap.ships.find((s) => s.id === this.foeKey);
+    if (foeSnap) this.lastFoeSnap = foeSnap;
 
     const me = snap.ships.find((s) => s.id === this.myShipKey);
     if (me) {
@@ -235,29 +240,24 @@ export class NavalRemoteGame {
 
     if (snap.winnerId && !this.over) {
       this.over = true;
-      const w: NavalCoopWinner =
-        snap.winnerId === "bot"
-          ? "bot"
-          : snap.winnerId === "draw"
-            ? "draw"
-            : "players";
-      // winnerId "p1"/"p2" (id kapal sim) juga berarti pemain menang.
-      this.opts.onMatchEnd(w);
+      // Hasil mentah diteruskan ke store (mapping menang/kalah beda
+      // per mode: co-op "players"/"bot", PvP "p1"/"p2").
+      this.opts.onMatchEnd(snap.winnerId);
     }
   }
 
-  /** Tampilkan/sembunyikan mesh bot (dipanggil applySnapshot; publik
+  /** Tampilkan/sembunyikan mesh lawan (dipanggil applySnapshot; publik
    * buat store bila perlu memaksa). */
-  setBotVisible(v: boolean): void {
-    if (v === this.botVisible) return;
-    this.botVisible = v;
+  setFoeVisible(v: boolean): void {
+    if (v === this.foeVisible) return;
+    this.foeVisible = v;
     if (!this.scene) return;
-    if (v && !this.botMesh) {
-      this.scene.addShip("bot", this.botDef, { enemy: true });
-      this.botMesh = true;
-    } else if (!v && this.botMesh) {
-      this.scene.removeShip("bot");
-      this.botMesh = false;
+    if (v && !this.foeMesh) {
+      this.scene.addShip(this.foeKey, this.foeDef, { enemy: true });
+      this.foeMesh = true;
+    } else if (!v && this.foeMesh) {
+      this.scene.removeShip(this.foeKey);
+      this.foeMesh = false;
     }
   }
 
@@ -381,7 +381,7 @@ export class NavalRemoteGame {
 
   private snapshotHud(): NavalHud {
     const def = this.myDef;
-    const bot = this.lastBotSnap;
+    const foe = this.lastFoeSnap;
     const me = this.pred ?? this.curSnap?.ships.find((s) => s.id === this.myShipKey);
     // Belum ada snapshot: HUD awal dari stats kapal.
     if (!me) {
@@ -391,8 +391,8 @@ export class NavalRemoteGame {
         headingDeg: 90,
         hp: def.hp,
         maxHp: def.hp,
-        dummyHp: this.botDef.hp,
-        dummyMaxHp: this.botDef.hp,
+        dummyHp: this.foeDef.hp,
+        dummyMaxHp: this.foeDef.hp,
         dummyVisible: false,
         px: -270,
         pz: 0,
@@ -406,7 +406,7 @@ export class NavalRemoteGame {
         abilityLeft: 0,
         abilityName: def.abilityName,
         shipName: def.name,
-        dummyName: this.botDef.name,
+        dummyName: this.foeName,
         aimDist: -1,
         aimLead: -1,
         aimBlocked: false,
@@ -436,17 +436,17 @@ export class NavalRemoteGame {
         this.map !== null &&
         !hasLineOfSight(this.map.islands, me.x, me.z, scene.aimX, scene.aimZ);
     }
-    const bx = bot?.x ?? 270;
-    const bz = bot?.z ?? 0;
+    const bx = foe?.x ?? 270;
+    const bz = foe?.z ?? 0;
     return {
       speed: me.speed,
       maxSpeed: def.maxSpeed,
       headingDeg: ((me.heading * 180) / Math.PI + 360) % 360,
       hp: me.hp,
       maxHp: me.maxHp,
-      dummyHp: bot?.hp ?? this.botDef.hp,
-      dummyMaxHp: bot?.maxHp ?? this.botDef.hp,
-      dummyVisible: this.botVisible,
+      dummyHp: foe?.hp ?? this.foeDef.hp,
+      dummyMaxHp: foe?.maxHp ?? this.foeDef.hp,
+      dummyVisible: this.foeVisible,
       px: me.x,
       pz: me.z,
       dx: bx,
@@ -464,7 +464,7 @@ export class NavalRemoteGame {
       abilityLeft,
       abilityName: def.abilityName,
       shipName: def.name,
-      dummyName: this.botDef.name,
+      dummyName: this.foeName,
       aimDist,
       aimLead,
       aimBlocked,
