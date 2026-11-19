@@ -19,6 +19,7 @@
     }
   ],
   "name": "minigames-party",
+  "workers_dev": true,
   "routes": [
     {
       "pattern": "party.ices.my.id",
