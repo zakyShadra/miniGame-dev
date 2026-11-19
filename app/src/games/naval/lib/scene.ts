@@ -1,17 +1,21 @@
-// Scene Three.js game naval: laut bergelombang, pulau low-poly, langit,
-// awan, kamera third-person yang mengikuti kapal. Tanpa shadow map dan
-// tanpa post-processing (target laptop kentang). Render di-interpolasi
-// dari state sim (prev -> current, alpha 0..1) supaya gerak mulus 60fps.
+// Scene Three.js game naval: laut bergelombang, pulau low-poly, kubah
+// langit gradasi + matahari, awan, kamera third-person. Tanpa shadow map
+// dan post-processing (target laptop kentang); grading murah via ACES
+// tone mapping. Render di-interpolasi dari state sim (alpha 0..1).
 
 import * as THREE from "three";
 import { mulberry32 } from "../../../../../shared/game/prng";
 import { Effects } from "./effects";
+import { buildClouds, buildSkyDome, buildSun, HORIZON_COLOR } from "./sky";
 import { SINK_DURATION, waveHeight } from "../../../../../shared/naval/sim";
 import { buildShipModel, type ShipModel } from "./shipModel";
 import type { GameState, IslandDef, MapDef, ShipDef, ShipState, SimEvent } from "../../../../../shared/naval/types";
 
-const SKY_COLOR = 0x9fd4f0;
-const WATER_COLOR = 0x12b5a8;
+// Warna air per kedalaman (vertex colors): dangkal di dekat pantai,
+// dalam menjauhi pusat arena.
+const WATER_SHALLOW = new THREE.Color(0x4ad8bd);
+const WATER_MID = new THREE.Color(0x14b3a6);
+const WATER_DEEP = new THREE.Color(0x0a6f9e);
 
 function lerpAngle(a: number, b: number, t: number): number {
   let d = (b - a) % (Math.PI * 2);
@@ -24,17 +28,59 @@ function std(color: number, roughness = 0.9): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Satu pulau: pasir + batu + palem (seeded, deterministik). */
-function buildIslandMesh(isl: IslandDef): THREE.Group {
+// Dekor instanced: 1 draw call per jenis untuk semua pulau.
+interface DecorItem {
+  m: THREE.Matrix4;
+  c: THREE.Color;
+}
+interface IslandDecor {
+  boulders: DecorItem[];
+  bushes: DecorItem[];
+  flowers: DecorItem[];
+}
+
+const BOULDER_COLORS = [0x8a8a84, 0x6f6f68, 0x9a9a92, 0x7d7d76];
+const BUSH_COLORS = [0x3a7d33, 0x4c9a45, 0x2f6b2a, 0x5aa854];
+const FLOWER_COLORS = [0xff7fae, 0xffd94d, 0xffffff, 0xff9a4d, 0xc77dff];
+
+function makeInstanced(
+  geo: THREE.BufferGeometry,
+  items: DecorItem[],
+  roughness: number,
+): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness, flatShading: true }),
+    items.length,
+  );
+  items.forEach((it, i) => {
+    mesh.setMatrixAt(i, it.m);
+    mesh.setColorAt(i, it.c);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  return mesh;
+}
+
+// Satu pulau (seeded): pasir + pantai miring + batu + palem + dekor
+// instanced (boulder/semak/bunga dikumpulkan ke `decor`, posisi dunia).
+function buildIslandMesh(isl: IslandDef, decor: IslandDecor): THREE.Group {
   const rng = mulberry32(isl.seed);
   const g = new THREE.Group();
   const sand = new THREE.Mesh(new THREE.CircleGeometry(isl.radius * 1.12, 28), std(0xe6d3a1));
   sand.rotation.x = -Math.PI / 2;
   sand.position.y = 0.15;
   g.add(sand);
+  // Pantai miring: rok kerucut terpotong yang menurun dari pasir ke air.
+  const skirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(isl.radius * 1.1, isl.radius * 1.5, 0.45, 28, 1, true),
+    std(0xdcc78f),
+  );
+  skirt.position.y = -0.05;
+  g.add(skirt);
   // Cincin buih di garis air (ombak memecah di pantai).
   const foam = new THREE.Mesh(
-    new THREE.RingGeometry(isl.radius * 1.12, isl.radius * 1.28, 28),
+    new THREE.RingGeometry(isl.radius * 1.3, isl.radius * 1.52, 28),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
   );
   foam.rotation.x = -Math.PI / 2;
@@ -62,16 +108,51 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
   second.position.set(isl.radius * 0.3 * (rng() - 0.5) * 2, isl.height * 0.2, isl.radius * 0.3 * (rng() - 0.5) * 2);
   second.rotation.z = (rng() - 0.5) * 0.25;
   g.add(second);
-  for (let i = 0; i < 3; i++) {
-    const b = new THREE.Mesh(new THREE.DodecahedronGeometry(isl.radius * 0.09 + rng() * 2, 0), rockMat2);
+
+  // Boulder bervariasi (instanced): ukuran + bentuk acak, setengah terbenam.
+  const nBoulder = 5 + Math.floor(rng() * 3);
+  for (let i = 0; i < nBoulder; i++) {
+    const s = isl.radius * (0.05 + rng() * 0.09);
     const a = rng() * Math.PI * 2;
-    const d = isl.radius * (0.55 + rng() * 0.4);
-    b.position.set(Math.cos(a) * d, 0.8, Math.sin(a) * d);
-    b.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-    g.add(b);
+    const d = isl.radius * (0.5 + rng() * 0.55);
+    const sy = s * (0.5 + rng() * 0.7);
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(isl.x + Math.cos(a) * d, sy * 0.45, isl.z + Math.sin(a) * d),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI)),
+      new THREE.Vector3(s * (0.7 + rng() * 0.8), sy, s * (0.7 + rng() * 0.8)),
+    );
+    decor.boulders.push({ m, c: new THREE.Color(BOULDER_COLORS[Math.floor(rng() * BOULDER_COLORS.length)]!) });
   }
 
-  // Palem: batang miring + 6 daun kerucut pipih.
+  // Semak hijau (instanced): bola pipih, ukuran + corak hijau beragam.
+  const nBush = 3 + Math.floor(rng() * 4);
+  for (let i = 0; i < nBush; i++) {
+    const s = 1.2 + rng() * 1.8;
+    const a = rng() * Math.PI * 2;
+    const d = isl.radius * (0.15 + rng() * 0.6);
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(isl.x + Math.cos(a) * d, s * 0.45, isl.z + Math.sin(a) * d),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rng() * Math.PI * 2, 0)),
+      new THREE.Vector3(s, s * 0.75, s),
+    );
+    decor.bushes.push({ m, c: new THREE.Color(BUSH_COLORS[Math.floor(rng() * BUSH_COLORS.length)]!) });
+  }
+
+  // Bunga kecil (instanced): titik warna di atas pasir/rumput.
+  const nFlower = 5 + Math.floor(rng() * 5);
+  for (let i = 0; i < nFlower; i++) {
+    const s = 0.8 + rng() * 0.6;
+    const a = rng() * Math.PI * 2;
+    const d = isl.radius * (0.2 + rng() * 0.65);
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(isl.x + Math.cos(a) * d, 0.35, isl.z + Math.sin(a) * d),
+      new THREE.Quaternion(),
+      new THREE.Vector3(s, s, s),
+    );
+    decor.flowers.push({ m, c: new THREE.Color(FLOWER_COLORS[Math.floor(rng() * FLOWER_COLORS.length)]!) });
+  }
+
+  // Palem: batang miring + 6 daun kerucut pipih, ukuran bervariasi.
   const palms = 1 + Math.floor(rng() * 3);
   for (let i = 0; i < palms; i++) {
     const palm = new THREE.Group();
@@ -92,6 +173,7 @@ function buildIslandMesh(isl: IslandDef): THREE.Group {
     const d = isl.radius * (0.35 + rng() * 0.35);
     palm.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d);
     palm.rotation.y = rng() * Math.PI * 2;
+    palm.scale.setScalar(0.75 + rng() * 0.7);
     g.add(palm);
   }
 
@@ -139,10 +221,15 @@ export class NavalScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
+    // Grading warna murah: ACES menghaluskan highlight langit/air.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(SKY_COLOR);
-    this.scene.fog = new THREE.Fog(SKY_COLOR, 280, 950);
+    // Background = warna horizon (fallback di balik kubah langit).
+    this.scene.background = new THREE.Color(HORIZON_COLOR);
+    // Fog sewarna horizon: air melebur ke langit di kejauhan.
+    this.scene.fog = new THREE.Fog(HORIZON_COLOR, 240, 1000);
 
     this.camera = new THREE.PerspectiveCamera(
       55,
@@ -152,58 +239,70 @@ export class NavalScene {
     );
     this.camera.position.set(0, 30, -60);
 
-    const sun = new THREE.DirectionalLight(0xfff2d9, 1.7);
+    // Kubah langit gradasi + matahari (searah directional light).
+    this.scene.add(buildSkyDome());
+    this.scene.add(buildSun(new THREE.Vector3(180, 240, 120)));
+
+    const sun = new THREE.DirectionalLight(0xffe3ae, 2.1);
     sun.position.set(180, 240, 120);
     this.scene.add(sun);
     // Lampu isi dari arah berlawanan (tanpa bayangan): sisi gelap kapal
     // + pulau tidak hitam pekat.
-    const fill = new THREE.DirectionalLight(0xbfd9ff, 0.45);
+    const fill = new THREE.DirectionalLight(0xcfe0ff, 0.5);
     fill.position.set(-160, 120, -140);
     this.scene.add(fill);
-    this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x2a6b8a, 1.25));
+    this.scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3a7d8a, 1.4));
 
     // Laut: plane 72x72 segmen, vertex digoyang tiap frame (JS).
+    // Vertex colors: dangkal terang di dekat pulau, gelap di laut dalam.
     const size = map.arenaRadius * 3.6;
     const geo = new THREE.PlaneGeometry(size, size, 72, 72);
     geo.rotateX(-Math.PI / 2);
     this.waterPos = geo.attributes.position as THREE.BufferAttribute;
+    const wColors = new Float32Array(this.waterPos.count * 3);
+    const wc = new THREE.Color();
     for (let i = 0; i < this.waterPos.count; i++) {
-      this.waterBase.push({ x: this.waterPos.getX(i), z: this.waterPos.getZ(i) });
+      const x = this.waterPos.getX(i);
+      const z = this.waterPos.getZ(i);
+      this.waterBase.push({ x, z });
+      const r = Math.hypot(x, z) / (size / 2);
+      const deepT = THREE.MathUtils.clamp((r - 0.2) / 0.8, 0, 1);
+      wc.lerpColors(WATER_MID, WATER_DEEP, deepT * deepT);
+      let shore = Infinity;
+      for (const isl of map.islands) {
+        shore = Math.min(shore, Math.hypot(x - isl.x, z - isl.z) - isl.radius);
+      }
+      if (shore < 70) {
+        const t = THREE.MathUtils.clamp(1 - shore / 70, 0, 1);
+        wc.lerp(WATER_SHALLOW, t * t);
+      }
+      wColors[i * 3] = wc.r;
+      wColors[i * 3 + 1] = wc.g;
+      wColors[i * 3 + 2] = wc.b;
     }
+    geo.setAttribute("color", new THREE.BufferAttribute(wColors, 3));
     this.water = new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
-        color: WATER_COLOR,
-        roughness: 0.35,
-        metalness: 0.05,
+        color: 0xffffff,
+        vertexColors: true,
+        roughness: 0.18,
+        metalness: 0.08,
         flatShading: true,
       }),
     );
     this.scene.add(this.water);
 
-    for (const isl of map.islands) this.scene.add(buildIslandMesh(isl));
+    const decor: IslandDecor = { boulders: [], bushes: [], flowers: [] };
+    for (const isl of map.islands) this.scene.add(buildIslandMesh(isl, decor));
+    // Dekor instanced: 3 draw call untuk semua pulau.
+    this.scene.add(makeInstanced(new THREE.DodecahedronGeometry(1, 0), decor.boulders, 0.95));
+    this.scene.add(makeInstanced(new THREE.SphereGeometry(1, 7, 6), decor.bushes, 0.9));
+    this.scene.add(makeInstanced(new THREE.SphereGeometry(0.28, 6, 5), decor.flowers, 0.7));
 
     // Awan low-poly (gumpalan bola pipih), melayang pelan.
-    const rng = mulberry32(99);
-    const cloudMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 1,
-      flatShading: true,
-      emissive: 0x555555,
-    });
-    for (let i = 0; i < 8; i++) {
-      const cloud = new THREE.Group();
-      const n = 3 + Math.floor(rng() * 3);
-      for (let j = 0; j < n; j++) {
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + rng() * 8, 7, 6), cloudMat);
-        puff.position.set(j * 9 - n * 4.5, rng() * 3, rng() * 6 - 3);
-        puff.scale.y = 0.55;
-        cloud.add(puff);
-      }
-      cloud.position.set(rng() * 1200 - 600, 70 + rng() * 35, rng() * 1200 - 600);
-      this.clouds.push(cloud);
-      this.scene.add(cloud);
-    }
+    this.clouds = buildClouds();
+    for (const cloud of this.clouds) this.scene.add(cloud);
 
     this.effects = new Effects(this.scene);
     // Pool mesh peluru (bola hitam kecil, 12 cukup buat 2 volley bersamaan).
@@ -436,10 +535,12 @@ export class NavalScene {
 
   /** Render satu frame: sinkron state sim + gambar. */
   render(state: GameState, alpha: number, time: number, dt: number): void {
-    // Laut bergelombang.
+    // Laut bergelombang: waveHeight sim + riak kecil visual-only
+    // (goyangan kapal tetap pakai waveHeight, tanpa riak ini).
     for (let i = 0; i < this.waterPos.count; i++) {
       const b = this.waterBase[i]!;
-      this.waterPos.setY(i, waveHeight(b.x, b.z, time));
+      const chop = 0.07 * Math.sin(b.x * 0.35 - time * 2.2) * Math.sin(b.z * 0.3 + time * 1.8);
+      this.waterPos.setY(i, waveHeight(b.x, b.z, time) + chop);
     }
     this.waterPos.needsUpdate = true;
 
