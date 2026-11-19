@@ -17,13 +17,13 @@ import type {
   RoomState,
 } from "../../shared/types";
 import { BotController, BOT_LEVELS, type BotLevel } from "../../shared/naval/bot";
-import { getMap } from "../../shared/naval/maps";
+import { getMap, MAPS } from "../../shared/naval/maps";
 import { SHIPS } from "../../shared/naval/ships";
 import {
+  canSee,
   createGame,
   fireVolley,
   getShip,
-  hasLineOfSight,
   stepGame,
   TICK_DT,
   useAbility,
@@ -103,8 +103,9 @@ export class Room extends Server<Env> {
             // Normalisasi room catur: state lama belum punya kind/chess.
             this.state.kind ??= "puzzle";
             this.state.chess ??= null;
-            // Normalisasi room naval: state lama belum punya naval.
+            // Normalisasi room naval: state lama belum punya naval/mode.
             this.state.naval ??= null;
+            if (this.state.naval) this.state.naval.mode ??= "coop";
             // Match naval yang sedang jalan tidak selamat dari restart
             // DO (sim hanya di memori): tandai seri supaya room tidak
             // macet di status playing tanpa game loop.
@@ -857,17 +858,19 @@ export class Room extends Server<Env> {
     );
   }
 
-  // ---------- Naval co-op (2 pemain vs bot) ----------
+  // ---------- Naval (co-op 2 pemain vs bot + PvP 1v1) ----------
   //
   // Server authoritative: sim murni (shared/naval) jalan di DO dengan
   // tick 20 Hz via setInterval (BUKAN alarm, supaya tidak hibernate
   // di tengah match). Client hanya mengirim input + aksi dan menerima
-  // snapshot per tick. LoS server-side: kapal bot tidak dikirim ke
-  // pemain yang garis pandangnya terhalang pulau.
+  // snapshot per tick. LoS server-side: kapal lawan (bot di co-op,
+  // pemain lain di PvP) tidak dikirim ke pemain yang garis pandangnya
+  // terhalang pulau.
   //
   // Kursi p1/p2 diikat ke playerKey (stabil antar reconnect), sama
   // seperti kursi catur. Match dijeda saat satu pemain putus (60 detik
-  // tenggang reconnect), forfeit (bot menang) bila tidak kembali.
+  // tenggang reconnect), forfeit bila tidak kembali (co-op: bot menang;
+  // PvP: pemain yang tersisa menang).
 
   private navalRoomMessage(): ServerMessage {
     return {
@@ -902,11 +905,14 @@ export class Room extends Server<Env> {
     if (
       !msg.playerKey ||
       !(msg.level === 1 || msg.level === 2 || msg.level === 3) ||
-      !Object.hasOwn(SHIPS, msg.shipId)
+      !Object.hasOwn(SHIPS, msg.shipId) ||
+      (msg.mode === "pvp" && !MAPS.some((m) => m.id === msg.mapId))
     ) {
       this.send(conn, { type: "error", message: "Data room tidak valid." });
       return;
     }
+    // Client lama (sebelum PvP) tidak mengirim mode: anggap co-op.
+    const mode = msg.mode === "pvp" ? "pvp" : "coop";
     const name = msg.name.trim().slice(0, 20) || "Pemain";
     const player: PlayerState = {
       id: conn.id,
@@ -923,8 +929,11 @@ export class Room extends Server<Env> {
       kind: "naval",
       chess: null,
       naval: {
-        level: msg.level,
-        mapId: info.mapId,
+        mode,
+        // PvP: level tidak relevan (simpan 1), map pilihan host.
+        // Co-op: map ikut level, mapId client diabaikan.
+        level: mode === "pvp" ? 1 : msg.level,
+        mapId: mode === "pvp" ? msg.mapId : info.mapId,
         status: "waiting",
         seats: [{ key: msg.playerKey, name, shipId: msg.shipId, shipKey: "p1" }],
         winner: null,
@@ -1044,22 +1053,31 @@ export class Room extends Server<Env> {
     });
   }
 
-  // Buat game baru dari kursi yang ada (p1 spawn A, p2 spawn C, bot B)
-  // dan mulai tick. Dipakai saat match pertama dan tiap rematch.
+  // Buat game baru dari kursi yang ada dan mulai tick. Dipakai saat
+  // match pertama dan tiap rematch. Co-op: p1 spawn A, p2 spawn C,
+  // bot spawn B. PvP: p1 spawn A, p2 spawn B, TANPA bot.
   private startNavalMatch(): void {
     const naval = this.state?.naval;
     if (!naval) return;
     const p1 = naval.seats.find((s) => s.shipKey === "p1");
     const p2 = naval.seats.find((s) => s.shipKey === "p2");
     if (!p1 || !p2) return;
-    const botLevel = NAVAL_LEVEL_TO_BOT[naval.level];
     const map = getMap(naval.mapId);
-    this.navalGame = createGame(map, [
-      { id: "p1", defId: p1.shipId, spawn: "A" },
-      { id: "p2", defId: p2.shipId, spawn: "C" },
-      { id: NAVAL_BOT_ID, defId: BOT_LEVELS[botLevel].botShip, spawn: "B" },
-    ]);
-    this.navalBot = new BotController(botLevel, NAVAL_BOT_ID);
+    if (naval.mode === "pvp") {
+      this.navalGame = createGame(map, [
+        { id: "p1", defId: p1.shipId, spawn: "A" },
+        { id: "p2", defId: p2.shipId, spawn: "B" },
+      ]);
+      this.navalBot = null;
+    } else {
+      const botLevel = NAVAL_LEVEL_TO_BOT[naval.level];
+      this.navalGame = createGame(map, [
+        { id: "p1", defId: p1.shipId, spawn: "A" },
+        { id: "p2", defId: p2.shipId, spawn: "C" },
+        { id: NAVAL_BOT_ID, defId: BOT_LEVELS[botLevel].botShip, spawn: "B" },
+      ]);
+      this.navalBot = new BotController(botLevel, NAVAL_BOT_ID);
+    }
     this.navalInputs.clear();
     this.navalPendingEvents = [];
     naval.status = "playing";
@@ -1085,7 +1103,13 @@ export class Room extends Server<Env> {
     const naval = this.state?.naval;
     const game = this.navalGame;
     const bot = this.navalBot;
-    if (!naval || !game || !bot || naval.status !== "playing") {
+    if (!naval || !game || naval.status !== "playing") {
+      this.stopNavalTick();
+      return;
+    }
+    const isPvp = naval.mode === "pvp";
+    // Co-op tanpa bot = state rusak, hentikan tick. PvP memang tanpa bot.
+    if (!isPvp && !bot) {
       this.stopNavalTick();
       return;
     }
@@ -1096,36 +1120,69 @@ export class Room extends Server<Env> {
         this.navalInputs.get(seat.shipKey) ?? { throttle: 0, rudder: 0 },
       );
     }
-    // Bot: keputusan + tembakan + kemampuan sebelum step.
-    const decision = bot.update(game, TICK_DT);
-    inputs.set(NAVAL_BOT_ID, decision.input);
-    if (decision.fireAt) {
-      const botShip = getShip(game, NAVAL_BOT_ID);
-      if (
-        botShip &&
-        fireVolley(game, NAVAL_BOT_ID, decision.fireAt.x, decision.fireAt.z)
-      ) {
-        this.navalPendingEvents.push({
-          type: "fire",
-          shipId: NAVAL_BOT_ID,
-          x: botShip.x,
-          y: 4,
-          z: botShip.z,
-        });
+    // Bot (co-op saja): keputusan + tembakan + kemampuan sebelum step.
+    if (bot) {
+      const decision = bot.update(game, TICK_DT);
+      inputs.set(NAVAL_BOT_ID, decision.input);
+      if (decision.fireAt) {
+        const botShip = getShip(game, NAVAL_BOT_ID);
+        if (
+          botShip &&
+          fireVolley(game, NAVAL_BOT_ID, decision.fireAt.x, decision.fireAt.z)
+        ) {
+          this.navalPendingEvents.push({
+            type: "fire",
+            shipId: NAVAL_BOT_ID,
+            x: botShip.x,
+            y: 4,
+            z: botShip.z,
+          });
+        }
       }
+      if (decision.useAbility) useAbility(game, NAVAL_BOT_ID);
     }
-    if (decision.useAbility) useAbility(game, NAVAL_BOT_ID);
 
     const events = stepGame(game, inputs, TICK_DT);
     const allEvents = [...this.navalPendingEvents, ...events];
     this.navalPendingEvents = [];
 
-    // Akhir match (tim, bukan kapal tunggal): bot tenggelam -> pemain
-    // menang; kedua pemain tenggelam -> bot menang; waktu habis ->
-    // total HP pemain vs HP bot, seri bila sama.
-    const botShip = getShip(game, NAVAL_BOT_ID);
     const p1 = getShip(game, "p1");
     const p2 = getShip(game, "p2");
+    // PvP: kapal terakhir hidup menang; waktu habis = HP tertinggi
+    // (seri bila sama); dua-duanya tenggelam di tick yang sama = seri.
+    if (isPvp) {
+      const p1Dead = p1 && !p1.alive;
+      const p2Dead = p2 && !p2.alive;
+      if (p1Dead && p2Dead) {
+        this.endNavalMatch("draw", allEvents);
+        return;
+      }
+      if (p1Dead) {
+        this.endNavalMatch("p2", allEvents);
+        return;
+      }
+      if (p2Dead) {
+        this.endNavalMatch("p1", allEvents);
+        return;
+      }
+      if (game.time >= NAVAL_MATCH_DURATION) {
+        const h1 = p1?.hp ?? 0;
+        const h2 = p2?.hp ?? 0;
+        this.endNavalMatch(
+          h1 > h2 ? "p1" : h2 > h1 ? "p2" : "draw",
+          allEvents,
+          "timeout",
+        );
+        return;
+      }
+      this.broadcastNavalSnapshot(allEvents, game.winnerId);
+      return;
+    }
+
+    // Akhir match co-op (tim, bukan kapal tunggal): bot tenggelam ->
+    // pemain menang; kedua pemain tenggelam -> bot menang; waktu habis
+    // -> total HP pemain vs HP bot, seri bila sama.
+    const botShip = getShip(game, NAVAL_BOT_ID);
     if (botShip && !botShip.alive) {
       this.endNavalMatch("players", allEvents);
       return;
@@ -1140,6 +1197,7 @@ export class Room extends Server<Env> {
       this.endNavalMatch(
         playersHp > botHp ? "players" : botHp > playersHp ? "bot" : "draw",
         allEvents,
+        "timeout",
       );
       return;
     }
@@ -1148,8 +1206,9 @@ export class Room extends Server<Env> {
   }
 
   private endNavalMatch(
-    winner: "players" | "bot" | "draw",
+    winner: "players" | "bot" | "draw" | "p1" | "p2",
     events: SimEvent[],
+    cause: "sink" | "timeout" | "forfeit" = "sink",
   ): void {
     const naval = this.state?.naval;
     if (!naval) return;
@@ -1157,40 +1216,63 @@ export class Room extends Server<Env> {
     naval.status = "over";
     naval.winner = winner;
     this.persist();
-    // Snapshot terakhir membawa hasil tim di winnerId (bukan id kapal).
+    // Snapshot terakhir membawa hasil di winnerId (tim co-op, atau
+    // shipKey pemenang PvP).
     this.broadcastNavalSnapshot(events, winner);
     this.sendAll(this.navalRoomMessage());
+    // Forfeit: pemanggil sudah mengirim pesan sistemnya sendiri.
+    if (cause === "forfeit") return;
+    const winnerName =
+      winner === "p1" || winner === "p2"
+        ? (naval.seats.find((s) => s.shipKey === winner)?.name ?? "Pemain")
+        : "";
     this.sendSystem(
       winner === "players"
-        ? "Kalian menang! Kapal bot tenggelam."
+        ? cause === "timeout"
+          ? "Kalian menang! HP tim kalian lebih tinggi."
+          : "Kalian menang! Kapal bot tenggelam."
         : winner === "bot"
-          ? "Bot menang. Kapal kalian tenggelam."
-          : "Seri! HP kedua tim sama.",
+          ? cause === "timeout"
+            ? "Bot menang. HP bot lebih tinggi."
+            : "Bot menang. Kapal kalian tenggelam."
+          : winner === "draw"
+            ? naval.mode === "pvp"
+              ? "Seri! HP kedua kapal sama."
+              : "Seri! HP kedua tim sama."
+            : cause === "timeout"
+              ? `${winnerName} menang! HP lebih tinggi saat waktu habis.`
+              : `${winnerName} menang! Kapal lawan tenggelam.`,
     );
   }
 
-  // Snapshot per pemain: kapal bot dihilangkan bila tidak ada garis
-  // pandang dari kapal pemain itu (kecuali bot sedang tenggelam/mati,
-  // supaya animasi tenggelam tetap terlihat).
+  // Snapshot per pemain: kapal lawan dihilangkan bila tidak ada garis
+  // pandang dari kapal pemain itu (co-op: bot; PvP: pemain lain).
+  // Kapal yang sedang tenggelam/mati tetap dikirim supaya animasi
+  // tenggelam terlihat. Radar (Sloop) dan menyelam (Kapal Selam)
+  // ditangani canSee.
   private navalSnapshotFor(
     shipKey: "p1" | "p2",
     events: SimEvent[],
     winnerId: string | null = null,
   ): NavalSnapshot | null {
     const game = this.navalGame;
-    if (!game) return null;
+    const naval = this.state?.naval;
+    if (!game || !naval) return null;
     const me = getShip(game, shipKey);
-    const bot = getShip(game, NAVAL_BOT_ID);
-    let botVisible = false;
-    if (me && bot) {
-      botVisible =
-        hasLineOfSight(game.map.islands, me.x, me.z, bot.x, bot.z) ||
-        bot.sinking ||
-        !bot.alive;
+    const foeId =
+      naval.mode === "pvp"
+        ? shipKey === "p1"
+          ? "p2"
+          : "p1"
+        : NAVAL_BOT_ID;
+    const foe = getShip(game, foeId);
+    let foeVisible = false;
+    if (me && foe) {
+      foeVisible = canSee(game, shipKey, foeId);
     }
     const ships: NavalShipSnap[] = [];
     for (const s of game.ships) {
-      if (s.id === NAVAL_BOT_ID && !botVisible) continue;
+      if (s.id === foeId && !foeVisible) continue;
       ships.push({
         id: s.id,
         defId: s.defId,
@@ -1209,11 +1291,11 @@ export class Room extends Server<Env> {
         abilityReadyAt: s.abilityReadyAt,
       });
     }
-    // Event tembakan bot dibuang bila bot tidak terlihat (posisi
+    // Event tembakan lawan dibuang bila lawan tidak terlihat (posisi
     // muzzle flash akan membocorkan lokasinya).
-    const visibleEvents = botVisible
+    const visibleEvents = foeVisible
       ? events
-      : events.filter((e) => !(e.type === "fire" && e.shipId === NAVAL_BOT_ID));
+      : events.filter((e) => !(e.type === "fire" && e.shipId === foeId));
     return {
       t: game.time,
       timeLeft: Math.max(0, NAVAL_MATCH_DURATION - game.time),
@@ -1223,7 +1305,7 @@ export class Room extends Server<Env> {
         .filter((s) => s.alive)
         .map((s) => ({ x: s.x, y: s.y, z: s.z })),
       events: visibleEvents,
-      botVisible,
+      foeVisible,
     };
   }
 
@@ -1316,8 +1398,8 @@ export class Room extends Server<Env> {
   }
 
   // Timer forfeit: bila ada kursi yang masih putus setelah tenggang,
-  // match yang dijeda berakhir (bot menang). Dibatalkan saat semua
-  // pemain kembali (lihat rejoin).
+  // match yang dijeda berakhir (co-op: bot menang; PvP: pemain yang
+  // tersisa menang). Dibatalkan saat semua pemain kembali (rejoin).
   private scheduleNavalForfeit(): void {
     if (this.navalDisconnectTimer) return;
     if (this.state?.naval?.status !== "paused") return;
@@ -1330,10 +1412,18 @@ export class Room extends Server<Env> {
         return !p || !p.connected;
       });
       if (goneSeat && naval.status === "paused") {
-        this.sendSystem(
-          `${goneSeat.name} tidak kembali dalam 60 detik, bot menang (forfeit).`,
-        );
-        this.endNavalMatch("bot", []);
+        if (naval.mode === "pvp") {
+          const winnerSeat = naval.seats.find((s) => s.key !== goneSeat.key);
+          this.sendSystem(
+            `${goneSeat.name} tidak kembali dalam 60 detik, ${winnerSeat?.name ?? "lawan"} menang (forfeit).`,
+          );
+          this.endNavalMatch(winnerSeat?.shipKey ?? "p1", [], "forfeit");
+        } else {
+          this.sendSystem(
+            `${goneSeat.name} tidak kembali dalam 60 detik, bot menang (forfeit).`,
+          );
+          this.endNavalMatch("bot", [], "forfeit");
+        }
       }
       // Room kosong total: bersihkan game dari memori.
       if (this.state!.players.every((p) => !p.connected)) {
@@ -1367,7 +1457,8 @@ export class Room extends Server<Env> {
     // Room naval: kursi diikat ke playerKey, pemain yang putus hanya
     // ditandai terputus. Match yang sedang jalan DIJEDA (tick berhenti)
     // dan dilanjutkan saat pemain reconnect; bila tidak kembali dalam
-    // 60 detik, match berakhir forfeit (bot menang).
+    // 60 detik, match berakhir forfeit (co-op: bot menang; PvP: pemain
+    // yang tersisa menang).
     if (this.state.kind === "naval" && this.state.naval) {
       const naval = this.state.naval;
       this.state.players[idx]!.connected = false;

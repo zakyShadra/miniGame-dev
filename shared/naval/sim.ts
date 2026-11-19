@@ -103,6 +103,27 @@ function hasArmor(ship: ShipState, time: number): boolean {
   return ship.defId === "battleship" && ship.abilityUntil > time;
 }
 
+/** Bisakah kapal viewer melihat kapal target? Garis pandang jelas,
+ * atau radar viewer aktif (Sloop, 5 detik). Kapal selam yang sedang
+ * menyelam tidak terlihat. Kapal yang tenggelam/mati selalu terlihat
+ * (supaya animasi tenggelam tetap kelihatan). */
+export function canSee(
+  state: GameState,
+  viewerId: string,
+  targetId: string,
+): boolean {
+  const viewer = getShip(state, viewerId);
+  const target = getShip(state, targetId);
+  if (!viewer || !target) return false;
+  if (target.sinking || !target.alive) return true;
+  if (isDiving(target, state.time)) return false;
+  const radar = viewer.defId === "sloop" && viewer.abilityUntil > state.time;
+  return (
+    radar ||
+    hasLineOfSight(state.map.islands, viewer.x, viewer.z, target.x, target.z)
+  );
+}
+
 /** Garis pandang A -> B terhalang pulau? (segmen 2D vs lingkaran pulau). */
 export function hasLineOfSight(
   islands: IslandDef[],
