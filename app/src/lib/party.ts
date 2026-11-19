@@ -45,3 +45,23 @@ export function createPartySocket(code: string): PartySocket {
     party: "room",
   });
 }
+
+// Kunci pemain yang stabil antar reconnect (UUID di localStorage).
+// Dipakai server buat menautkan ulang koneksi baru ke kursi yang
+// sama (kursi catur Putih/Hitam), karena conn.id PartySocket berubah
+// tiap koneksi baru. Kalau localStorage tidak tersedia, pakai UUID
+// sekali pakai (rejoin tidak akan menautkan kursi).
+const PLAYER_KEY_STORAGE = "minigame:player-key";
+
+export function getPlayerKey(): string {
+  try {
+    let key = localStorage.getItem(PLAYER_KEY_STORAGE);
+    if (!key) {
+      key = crypto.randomUUID();
+      localStorage.setItem(PLAYER_KEY_STORAGE, key);
+    }
+    return key;
+  } catch {
+    return crypto.randomUUID();
+  }
+}

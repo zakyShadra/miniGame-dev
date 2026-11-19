@@ -13,6 +13,8 @@ import {
   type PieceSymbol,
   type Square,
 } from "chess.js";
+import type { ChessRoomState } from "../../../../../shared/types";
+import { useRoomStore } from "../../../stores/room";
 import { PIECE_VALUES } from "../lib/pieces";
 import {
   stockfish,
@@ -30,7 +32,7 @@ import {
 import { parsePgn, type ImportedGameMeta } from "../lib/pgn";
 import { ensureAudio, playGameEnd } from "../../../lib/sound";
 
-export type ChessMode = "local" | "bot" | "import";
+export type ChessMode = "local" | "bot" | "import" | "online";
 export type ChessPhase = "setup" | "playing" | "over";
 export type BotLevel = "easy" | "medium" | "hard" | "extreme";
 export type HumanColorChoice = "w" | "b" | "random";
@@ -70,6 +72,27 @@ export const useChessStore = defineStore("chess", () => {
   // Warna manusia di mode bot (C2). Di mode lokal tidak dipakai.
   const humanColor = ref<Color>("w");
   const orientation = ref<Color>("w");
+
+  // State game online (server authoritative): warna sendiri, status
+  // room, nama lawan, permintaan rematch yang tertunda. Lawan
+  // terputus dibaca dari daftar pemain room (connected=false).
+  const onlineColor = ref<Color | null>(null);
+  const onlineStatus = ref<ChessRoomState["status"]>("waiting");
+  const opponentName = ref("");
+  const opponentKey = ref<string | null>(null);
+  const rematchPendingBy = ref<Color | null>(null);
+  const onlineGameNumber = ref(0);
+  // Langkah yang sudah dikirim ke server tapi state balasannya belum
+  // sampai: input dikunci sementara supaya tidak ada langkah ganda.
+  const movePending = ref(false);
+  let movePendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const opponentConnected = computed(() => {
+    if (mode.value !== "online" || !opponentKey.value) return true;
+    const room = useRoomStore();
+    const opp = room.players.find((p) => p.key === opponentKey.value);
+    return opp?.connected ?? true;
+  });
 
   // State engine (C2): loading, bot berpikir, hint, error.
   const engineStatus = ref<EngineStatus>("idle");
@@ -211,7 +234,17 @@ export const useChessStore = defineStore("chess", () => {
     // Game baru berakhir di sync ini: bunyi + modal. Mode import
     // dikecualikan: game import langsung dimuat ke posisi akhir
     // tanpa bunyi/modal (bukan game yang baru saja dimainkan).
-    if (!prevEnd && gameEnd.value && mode.value !== "import") onGameEnd();
+    // Mode online dikecualikan: akhir game di sana ditentukan
+    // server dan onGameEnd dipanggil applyOnlineState (supaya
+    // menyerah, yang tidak terdeteksi dari aturan, juga berbunyi
+    // + bermodal).
+    if (
+      !prevEnd &&
+      gameEnd.value &&
+      mode.value !== "import" &&
+      mode.value !== "online"
+    )
+      onGameEnd();
     version.value++;
     if (phase.value === "playing") scheduleLiveEval();
   }
@@ -336,6 +369,12 @@ export const useChessStore = defineStore("chess", () => {
     }
     if (result.value) return result.value;
     if (phase.value !== "playing") return "";
+    if (mode.value === "online" && onlineStatus.value === "waiting") {
+      return "Menunggu lawan bergabung...";
+    }
+    if (mode.value === "online" && !opponentConnected.value) {
+      return "Lawan terputus, menunggu kembali...";
+    }
     return `${COLOR_NAME[turn.value]} jalan${inCheck.value ? " (skak!)" : ""}`;
   });
 
@@ -387,6 +426,109 @@ export const useChessStore = defineStore("chess", () => {
     reviewPly.value = null;
   }
 
+  function resetOnlineState() {
+    onlineColor.value = null;
+    onlineStatus.value = "waiting";
+    opponentName.value = "";
+    opponentKey.value = null;
+    rematchPendingBy.value = null;
+    onlineGameNumber.value = 0;
+    movePending.value = false;
+    if (movePendingTimer) {
+      clearTimeout(movePendingTimer);
+      movePendingTimer = null;
+    }
+  }
+
+  // Teks hasil game online (nama pemain dari server, bukan warna).
+  function onlineResultText(cs: ChessRoomState, end: GameEnd): string {
+    if (end.winner === null) {
+      switch (end.kind) {
+        case "stalemate":
+          return "Remis (stalemate).";
+        case "repetition":
+          return "Remis (pengulangan 3x).";
+        case "insufficient":
+          return "Remis (materi tidak cukup).";
+        case "fifty":
+          return "Remis (aturan 50 langkah).";
+        default:
+          return "Remis.";
+      }
+    }
+    const name = end.winner === "w" ? cs.whiteName : cs.blackName;
+    const reason = end.kind === "resign" ? "lawan menyerah" : "skakmat";
+    return `${name} menang (${reason}).`;
+  }
+
+  // Terapkan state catur dari server (room store meneruskan pesan
+  // "state"). Server authoritative: posisi dibangun ulang dengan
+  // replay daftar langkah, akhir game ikut status server. Engine
+  // TIDAK di-load di sini (analisa online jalan on-demand saat user
+  // pencet Analisa; tanpa prefetch supaya tidak sedot kuota).
+  function applyOnlineState(cs: ChessRoomState, myKey: string) {
+    const myColor: Color | null =
+      myKey === cs.whiteKey ? "w" : myKey === cs.blackKey ? "b" : null;
+    const isNewGame = cs.gameNumber !== onlineGameNumber.value;
+    const prevEnd = gameEnd.value;
+
+    mode.value = "online";
+    onlineColor.value = myColor;
+    onlineStatus.value = cs.status;
+    onlineGameNumber.value = cs.gameNumber;
+    opponentName.value =
+      myColor === "w" ? cs.blackName : myColor === "b" ? cs.whiteName : "";
+    opponentKey.value =
+      myColor === "w" ? cs.blackKey : myColor === "b" ? cs.whiteKey : null;
+    rematchPendingBy.value = cs.rematchPendingBy;
+    movePending.value = false;
+    if (movePendingTimer) {
+      clearTimeout(movePendingTimer);
+      movePendingTimer = null;
+    }
+    if (myColor) orientation.value = myColor;
+
+    // Bangun ulang posisi dari daftar langkah server.
+    const game = new Chess();
+    for (const uci of cs.moves) {
+      try {
+        game.move({
+          from: uci.slice(0, 2) as Square,
+          to: uci.slice(2, 4) as Square,
+          promotion: (uci[4] as PieceSymbol | undefined) ?? undefined,
+        });
+      } catch {
+        // Langkah rusak di state: berhenti, jangan crash.
+        break;
+      }
+    }
+    chess = game;
+
+    // Game baru (rematch diterima): reset analisa + modal hasil.
+    if (isNewGame) {
+      resetAnalysis();
+      endModalVisible.value = false;
+    }
+    clearSelection();
+    promotionPending.value = null;
+    hintMove.value = null;
+    sync();
+    if (cs.status === "over") {
+      phase.value = "over";
+      const end: GameEnd = { kind: cs.endKind ?? "draw", winner: cs.winner };
+      gameEnd.value = end;
+      result.value = onlineResultText(cs, end);
+      if (!prevEnd) onGameEnd();
+    } else {
+      // Status server menang atas deteksi lokal: kalau server bilang
+      // game belum berakhir, tidak ada gameEnd (misal sync sempat
+      // mendeteksi skakmat dari replay sebelum status sampai).
+      gameEnd.value = null;
+      result.value = null;
+      phase.value = "playing";
+    }
+  }
+
   function clearSelection() {
     selected.value = null;
     targets.value = [];
@@ -395,6 +537,7 @@ export const useChessStore = defineStore("chess", () => {
   function newLocalGame() {
     chess = new Chess();
     mode.value = "local";
+    resetOnlineState();
     importedMeta.value = null;
     importedNote.value = "";
     orientation.value = "w";
@@ -531,6 +674,7 @@ export const useChessStore = defineStore("chess", () => {
     await stockfish.load();
     chess = new Chess();
     mode.value = "bot";
+    resetOnlineState();
     importedMeta.value = null;
     importedNote.value = "";
     orientation.value = humanColor.value;
@@ -576,6 +720,10 @@ export const useChessStore = defineStore("chess", () => {
   }
 
   function toSetup() {
+    // Mode online: keluar dari setup = keluar dari room (putus
+    // koneksi; lawan melihat kita terputus, kursi tetap milik kita
+    // dan bisa di-rejoin dengan kode yang sama).
+    if (mode.value === "online") useRoomStore().disconnect();
     phase.value = "setup";
     clearSelection();
     promotionPending.value = null;
@@ -585,6 +733,25 @@ export const useChessStore = defineStore("chess", () => {
   }
 
   function doMove(from: Square, to: Square, promotion?: PieceSymbol) {
+    if (mode.value === "online") {
+      // Online: langkah dikirim ke server, posisi berubah saat state
+      // balasan sampai (applyOnlineState). Jangan terapkan lokal
+      // supaya tidak ada divergensi kalau server menolak. Input
+      // dikunci sampai balasan tiba (maks 5 detik, pengaman kalau
+      // balasan hilang di jalan).
+      const uci = from + to + (promotion ?? "");
+      useRoomStore().sendChessMove(uci);
+      clearSelection();
+      promotionPending.value = null;
+      hintMove.value = null;
+      movePending.value = true;
+      if (movePendingTimer) clearTimeout(movePendingTimer);
+      movePendingTimer = setTimeout(() => {
+        movePending.value = false;
+        movePendingTimer = null;
+      }, 5000);
+      return;
+    }
     try {
       chess.move({ from, to, promotion });
     } catch {
@@ -610,6 +777,18 @@ export const useChessStore = defineStore("chess", () => {
     if (promotionPending.value) return;
     // Giliran bot: input manusia dikunci.
     if (isBotTurn.value || botThinking.value) return;
+    // Online: hanya boleh jalan saat giliran warna sendiri, game
+    // sedang berjalan, dan tidak ada langkah yang menunggu
+    // konfirmasi server.
+    if (mode.value === "online") {
+      if (
+        onlineStatus.value !== "playing" ||
+        turn.value !== onlineColor.value ||
+        movePending.value
+      ) {
+        return;
+      }
+    }
 
     // Klik target legal dari bidak terpilih = jalan.
     if (selected.value) {
@@ -648,7 +827,9 @@ export const useChessStore = defineStore("chess", () => {
   // Mode lokal: undo satu setengah langkah. Mode bot: undo dua
   // (langkah manusia + balasan bot) supaya giliran kembali ke manusia.
   // Undo membatalkan analisa (game berubah, analisa tidak berlaku lagi).
+  // Mode online: tidak ada takeback lintas jaringan di v1.
   function undo() {
+    if (mode.value === "online") return;
     if (phase.value !== "playing" && phase.value !== "over") return;
     if (botThinking.value) return;
     resetAnalysis();
@@ -669,6 +850,12 @@ export const useChessStore = defineStore("chess", () => {
 
   function resign() {
     if (phase.value !== "playing") return;
+    // Online: menyerah dikirim ke server, akhir game disinkronkan
+    // ke kedua pemain lewat state. Tidak ada efek lokal langsung.
+    if (mode.value === "online") {
+      useRoomStore().sendChessResign();
+      return;
+    }
     if (mode.value === "bot") {
       result.value = "Bot menang (kamu menyerah).";
       gameEnd.value = { kind: "resign", winner: botColor.value };
@@ -682,6 +869,15 @@ export const useChessStore = defineStore("chess", () => {
     phase.value = "over";
     clearSelection();
     onGameEnd();
+  }
+
+  // Minta rematch online (hanya setelah game berakhir). Permintaan
+  // pertama dicatat server, permintaan lawan mengonfirmasi dan
+  // memulai game baru dengan warna ditukar.
+  function requestRematch() {
+    if (mode.value !== "online") return;
+    if (onlineStatus.value !== "over") return;
+    useRoomStore().sendChessRematch();
   }
 
   // Analisa pasca-game (C3, round 2: dua mode + progresif). Engine
@@ -778,8 +974,11 @@ export const useChessStore = defineStore("chess", () => {
   }
 
   // Nyalakan/matikan eval bar. Menyalakan di mode lokal butuh load
-  // engine dulu (download ~99 MB di load pertama).
+  // engine dulu (download ~99 MB di load pertama). Mode online:
+  // eval bar dimatikan demi fair play (bantuan engine saat lawan
+  // manusia, tanpa sepengetahuan lawan, tidak adil).
   async function toggleEvalBar() {
+    if (mode.value === "online") return;
     if (evalBarEnabled.value) {
       evalBarEnabled.value = false;
       liveEvalScore.value = null;
@@ -852,6 +1051,15 @@ export const useChessStore = defineStore("chess", () => {
     liveEvalCp,
     evalBarEnabled,
     loadImportedGame,
+    onlineColor,
+    onlineStatus,
+    opponentName,
+    opponentConnected,
+    rematchPendingBy,
+    onlineGameNumber,
+    movePending,
+    applyOnlineState,
+    requestRematch,
     newLocalGame,
     newBotGame,
     toSetup,

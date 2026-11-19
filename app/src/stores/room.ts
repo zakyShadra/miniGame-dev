@@ -7,8 +7,9 @@ import { defineStore } from "pinia";
 import type PartySocket from "partysocket";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol";
 import type { PlayerState } from "../../../shared/types";
-import { createPartySocket } from "../lib/party";
+import { createPartySocket, getPlayerKey } from "../lib/party";
 import { useGameStore } from "./game";
+import { useChessStore } from "../games/chess/stores/chess";
 
 export type RoomStatus = "idle" | "connecting" | "connected" | "error";
 
@@ -54,12 +55,18 @@ export const useRoomStore = defineStore("room", () => {
   const isHost = computed(
     () => hostId.value !== null && hostId.value === myId.value,
   );
+  // Kunci pemain stabil (buat kursi catur + rejoin). Dibuat sekali
+  // per browser, disimpan di localStorage.
+  const playerKey = getPlayerKey();
+  // Jenis room yang sedang tersambung (puzzle/catur). null = belum
+  // tersambung. Dipakai UI buat membedakan perilaku per game.
+  const roomKind = ref<"puzzle" | "chess" | "naval" | null>(null);
   // Grab yang ditolak server (piece direbut pemain lain). BoardCanvas
   // mengawasi ini untuk membatalkan drag.
   const grabDenied = ref<{ pieceId: number; at: number } | null>(null);
 
   let socket: PartySocket | null = null;
-  let mode: "create" | "join" = "join";
+  let mode: "create" | "join" | "create-chess" | "join-chess" = "join";
   let joined = false;
   let createConfig: {
     imageUrl: string;
@@ -78,7 +85,12 @@ export const useRoomStore = defineStore("room", () => {
   }
 
   function sendJoin() {
-    send({ type: "join", name: myName.value, color: myColor.value });
+    send({
+      type: "join",
+      name: myName.value,
+      color: myColor.value,
+      playerKey,
+    });
   }
 
   function pushMessage(msg: ChatMessage) {
@@ -96,6 +108,25 @@ export const useRoomStore = defineStore("room", () => {
       ...createConfig,
       name: myName.value,
       color: myColor.value,
+      playerKey,
+    });
+  }
+
+  function sendCreateChess() {
+    send({
+      type: "create-chess",
+      name: myName.value,
+      color: myColor.value,
+      playerKey,
+    });
+  }
+
+  function sendJoinChess() {
+    send({
+      type: "join-chess",
+      name: myName.value,
+      color: myColor.value,
+      playerKey,
     });
   }
 
@@ -113,20 +144,33 @@ export const useRoomStore = defineStore("room", () => {
         break;
       case "error":
         // Tabrakan kode saat create (room sudah ada): coba join saja.
+        // Berlaku buat puzzle maupun catur.
         if (mode === "create" && !joined && createConfig) {
           mode = "join";
           sendJoin();
           break;
         }
+        if (mode === "create-chess" && !joined) {
+          mode = "join-chess";
+          sendJoinChess();
+          break;
+        }
         status.value = "error";
         error.value = msg.message;
         break;
-      case "state":
+      case "state": {
         joined = true;
         status.value = "connected";
         error.value = "";
         players.value = msg.state.players;
         hostId.value = msg.state.hostId;
+        roomKind.value = msg.state.kind;
+        // Room catur: state diteruskan ke chess store (replay langkah
+        // + status game). Jangan panggil game store puzzle.
+        if (msg.state.kind === "chess" && msg.state.chess) {
+          useChessStore().applyOnlineState(msg.state.chess, playerKey);
+          break;
+        }
         game.loadRoomState(msg.state, msg.now);
         lastRoom.value = {
           code: code.value,
@@ -139,6 +183,7 @@ export const useRoomStore = defineStore("room", () => {
           // localStorage penuh/nonaktif: abaikan, bukan fatal.
         }
         break;
+      }
       case "player-joined": {
         const i = players.value.findIndex((p) => p.id === msg.player.id);
         if (i === -1) players.value.push(msg.player);
@@ -188,7 +233,7 @@ export const useRoomStore = defineStore("room", () => {
   function connect(
     roomCode: string,
     opts: {
-      mode: "create" | "join";
+      mode: "create" | "join" | "create-chess" | "join-chess";
       name: string;
       color: string;
       createConfig?: {
@@ -222,8 +267,15 @@ export const useRoomStore = defineStore("room", () => {
     ws.addEventListener("open", () => {
       // Reconnect otomatis (partySocket): kalau sudah pernah join,
       // kirim join lagi; kalau create belum berhasil, coba create lagi.
-      if (joined || mode === "join") sendJoin();
-      else sendCreate();
+      // Catur dan puzzle punya pesan join/create sendiri-sendiri.
+      if (mode === "create-chess" || mode === "join-chess") {
+        if (joined || mode === "join-chess") sendJoinChess();
+        else sendCreateChess();
+      } else if (joined || mode === "join") {
+        sendJoin();
+      } else {
+        sendCreate();
+      }
     });
     ws.addEventListener("message", (ev) => {
       if (typeof ev.data === "string") handleMessage(ev.data);
@@ -251,6 +303,7 @@ export const useRoomStore = defineStore("room", () => {
     messages.value = [];
     hostId.value = null;
     error.value = "";
+    roomKind.value = null;
     joined = false;
     createConfig = null;
     try {
@@ -309,6 +362,20 @@ export const useRoomStore = defineStore("room", () => {
     send({ type: "change-image", ...config });
   }
 
+  // Catur online: langkah (UCI), menyerah, rematch. Server
+  // memvalidasi dan menyiarkan state penuh sebagai balasan.
+  function sendChessMove(uci: string) {
+    send({ type: "chess-move", uci });
+  }
+
+  function sendChessResign() {
+    send({ type: "chess-resign" });
+  }
+
+  function sendChessRematch() {
+    send({ type: "chess-rematch" });
+  }
+
   return {
     status,
     code,
@@ -322,6 +389,8 @@ export const useRoomStore = defineStore("room", () => {
     hostId,
     isHost,
     grabDenied,
+    playerKey,
+    roomKind,
     connect,
     disconnect,
     leaveGame,
@@ -332,5 +401,8 @@ export const useRoomStore = defineStore("room", () => {
     sendChat,
     sendSort,
     sendChangeImage,
+    sendChessMove,
+    sendChessResign,
+    sendChessRematch,
   };
 });
