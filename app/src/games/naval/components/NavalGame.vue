@@ -9,12 +9,20 @@ import { BOT_LEVELS, type BotLevel } from "../../../../../shared/naval/bot";
 import { getMap } from "../../../../../shared/naval/maps";
 import { SHIP_LIST, getShipDef } from "../../../../../shared/naval/ships";
 import type { ShipId } from "../../../../../shared/naval/types";
+import NavalCoop from "./NavalCoop.vue";
 import NavalMinimap from "./NavalMinimap.vue";
 
 const store = useNavalStore();
 defineEmits<{ exit: [] }>();
 
 const canvasWrap = ref<HTMLDivElement | null>(null);
+// Mode layar naval: solo (vs bot sendiri) atau co-op (berdua vs bot).
+type NavalMode = "solo" | "coop";
+const mode = ref<NavalMode>("solo");
+// Computed di script (tidak dipersempit control-flow template seperti
+// perbandingan langsung di dalam cabang v-else-if).
+const isSolo = computed(() => mode.value === "solo");
+const isCoop = computed(() => mode.value === "coop");
 // Posisi kursor (buat crosshair).
 const crossX = ref(-100);
 const crossY = ref(-100);
@@ -120,12 +128,21 @@ function levelInfo(botLevel: BotLevel) {
 function selectLevel(num: NavalLevel) {
   if (num <= store.unlockedLevel) store.level = num;
 }
+
+// Map aktif buat minimap (per level solo).
+const activeMap = computed(() => {
+  const botLevel = LEVELS.find((l) => l.num === store.level)?.botLevel ?? "medium";
+  return getMap(BOT_LEVELS[botLevel].mapId);
+});
 </script>
 
 <template>
+  <!-- CO-OP: layar room + game berdua vs bot (komponen mandiri). -->
+  <NavalCoop v-if="mode === 'coop'" @exit="mode = 'solo'" />
+
   <!-- SETUP: menu gelap ala preview (NAVAL DUEL, emas + kaca gelap). -->
   <div
-    v-if="store.phase === 'setup'"
+    v-else-if="store.phase === 'setup'"
     class="flex min-h-screen flex-col items-center justify-center gap-4 bg-[linear-gradient(180deg,#0a3a4f_0%,#041824_60%,#020f18_100%)] p-4"
   >
     <button
@@ -141,8 +158,38 @@ function selectLevel(num: NavalLevel) {
       </h1>
       <p class="mt-2 text-center text-sm text-white/70">
         Duel kapal 3D ala World of Warships. Pilih kapalmu, berlayar, dan
-        tenggelamkan lawan. Latihan solo dulu, PvP menyusul.
+        tenggelamkan lawan. Main solo lawan bot, atau mabar berdua lawan bot.
       </p>
+
+      <!-- Pilih mode: solo vs bot, atau co-op berdua vs bot. -->
+      <div class="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          class="rounded-xl border px-3 py-3 text-left backdrop-blur transition"
+          :class="
+            isSolo
+              ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+              : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
+          "
+          @click="mode = 'solo'"
+        >
+          <span class="block font-display text-sm font-bold text-white">Solo vs Bot</span>
+          <span class="mt-0.5 block text-xs text-white/60">Kamu sendiri lawan bot</span>
+        </button>
+        <button
+          type="button"
+          class="rounded-xl border px-3 py-3 text-left backdrop-blur transition"
+          :class="
+            isCoop
+              ? 'border-[#e8a33d] bg-white/15 shadow-sm'
+              : 'border-white/15 bg-white/10 hover:border-[#e8a33d]'
+          "
+          @click="mode = 'coop'"
+        >
+          <span class="block font-display text-sm font-bold text-white">Co-op vs Bot</span>
+          <span class="mt-0.5 block text-xs text-white/60">Berdua lawan bot, lewat room</span>
+        </button>
+      </div>
 
       <h2 class="mt-6 text-xs font-bold tracking-widest text-white/60 uppercase">
         Pilih kapal
@@ -380,6 +427,7 @@ function selectLevel(num: NavalLevel) {
           :dx="store.hud.dx"
           :dz="store.hud.dz"
           :dummy-visible="store.hud.dummyVisible"
+          :map="activeMap"
         />
       </div>
 

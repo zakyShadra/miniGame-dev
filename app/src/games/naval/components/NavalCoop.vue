@@ -113,6 +113,11 @@ const teammate = computed(() =>
   store.room?.seats.find((s) => s.key !== store.myKey),
 );
 
+// Map aktif buat minimap (dari room; default teluk sebelum room ada).
+const activeMap = computed(() =>
+  store.room ? getMap(store.room.mapId) : getMap("teluk"),
+);
+
 const overTitle = computed(() => {
   if (store.winner === "players") return "KALIAN MENANG!";
   if (store.winner === "bot") return "KAPAL KALIAN TENGGELAM";
@@ -500,6 +505,7 @@ const aimLabel = computed(() => {
           :dx="store.hud.dx"
           :dz="store.hud.dz"
           :dummy-visible="store.hud.dummyVisible"
+          :map="activeMap"
         />
       </div>
 

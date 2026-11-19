@@ -2,7 +2,7 @@
 teal searah heading, musuh titik merah (hilang bila terhalang pulau). -->
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import { MAP_OPEN_BAY } from "../../../../../shared/naval/maps";
+import type { MapDef } from "../../../../../shared/naval/types";
 
 const props = defineProps<{
   px: number;
@@ -11,6 +11,8 @@ const props = defineProps<{
   dx: number;
   dz: number;
   dummyVisible: boolean;
+  /** Map aktif (pulau + radius arena digambar dari sini). */
+  map: MapDef;
 }>();
 
 const SIZE = 128;
@@ -39,8 +41,8 @@ function draw(): void {
   bg.addColorStop(1, "#06283a");
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, SIZE, SIZE);
-  // Skala: arena diameter 800 m muat di lingkaran (margin kecil).
-  const s = r / (MAP_OPEN_BAY.arenaRadius + 20);
+  // Skala: arena diameter muat di lingkaran (margin kecil).
+  const s = r / (props.map.arenaRadius + 20);
   const toX = (x: number) => c + x * s;
   // +z = utara (sesuai kompas HUD) = atas minimap.
   const toY = (z: number) => c - z * s;
@@ -54,7 +56,7 @@ function draw(): void {
   }
   // Pulau: hijau.
   ctx.fillStyle = "#2e9e5b";
-  for (const isl of MAP_OPEN_BAY.islands) {
+  for (const isl of props.map.islands) {
     ctx.beginPath();
     ctx.arc(toX(isl.x), toY(isl.z), Math.max(2, isl.radius * s), 0, Math.PI * 2);
     ctx.fill();
@@ -94,7 +96,10 @@ function draw(): void {
 }
 
 onMounted(draw);
-watch(() => [props.px, props.pz, props.headingDeg, props.dx, props.dz, props.dummyVisible], draw);
+watch(
+  () => [props.px, props.pz, props.headingDeg, props.dx, props.dz, props.dummyVisible, props.map],
+  draw,
+);
 </script>
 
 <template>
