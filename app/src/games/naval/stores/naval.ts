@@ -5,30 +5,37 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
 import { NavalGame, type NavalHud } from "../lib/game";
+import { getShipDef } from "../lib/ships";
 import type { ShipId } from "../lib/types";
 
 export type NavalPhase = "setup" | "playing";
 
-const EMPTY_HUD: NavalHud = {
-  speed: 0,
-  headingDeg: 90,
-  hp: 300,
-  maxHp: 300,
-  dummyHp: 300,
-  dummyMaxHp: 300,
-  dummyVisible: true,
-};
+/** HUD awal dari stats kapal yang dipilih (musuh latihan = Galleon). */
+function freshHud(shipId: ShipId): NavalHud {
+  const me = getShipDef(shipId);
+  const foe = getShipDef("galleon");
+  return {
+    speed: 0,
+    headingDeg: 90,
+    hp: me.hp,
+    maxHp: me.hp,
+    dummyHp: foe.hp,
+    dummyMaxHp: foe.hp,
+    dummyVisible: true,
+  };
+}
 
 export const useNavalStore = defineStore("naval", () => {
   const phase = ref<NavalPhase>("setup");
-  const selectedShip = ref<ShipId>("galleon");
-  const hud = ref<NavalHud>({ ...EMPTY_HUD });
+  // Default Frigate (kapal pemain di preview yang di-approve).
+  const selectedShip = ref<ShipId>("frigate");
+  const hud = ref<NavalHud>(freshHud("frigate"));
 
   let game: NavalGame | null = null;
 
   /** Masuk layar game (render container dulu, game dipasang menyusul). */
   function begin(): void {
-    hud.value = { ...EMPTY_HUD };
+    hud.value = freshHud(selectedShip.value);
     phase.value = "playing";
   }
 

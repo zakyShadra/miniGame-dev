@@ -45,7 +45,7 @@ const dummyPct = computed(() =>
 );
 
 function selectShip(id: ShipId) {
-  if (id === "galleon") store.selectedShip = id;
+  if (id === "frigate") store.selectedShip = id;
 }
 </script>
 
@@ -81,7 +81,7 @@ function selectShip(id: ShipId) {
           type="button"
           class="rounded-xl border p-3 text-left transition"
           :class="
-            s.id === 'galleon'
+            s.id === 'frigate'
               ? store.selectedShip === s.id
                 ? 'border-primary bg-white shadow-sm'
                 : 'border-hairline bg-white hover:border-primary'
@@ -96,7 +96,7 @@ function selectShip(id: ShipId) {
             />
             <span class="font-display font-bold text-ink">{{ s.name }}</span>
             <span
-              v-if="s.id !== 'galleon'"
+              v-if="s.id !== 'frigate'"
               class="ml-auto rounded-full bg-surface-3 px-2 py-0.5 text-[10px] font-bold text-muted"
             >
               SEGERA
