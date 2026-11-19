@@ -4,6 +4,7 @@
 
 import { MAP_OPEN_BAY } from "./maps";
 import { NavalScene } from "./scene";
+import { getShipDef } from "./ships";
 import {
   TICK_DT,
   createGame,
@@ -57,8 +58,8 @@ export class NavalGame {
       { id: DUMMY_ID, defId: "galleon" },
     );
     this.scene = new NavalScene(container, MAP_OPEN_BAY);
-    this.scene.addShip(PLAYER_ID, opts.shipId);
-    this.scene.addShip(DUMMY_ID, "galleon", { sailColor: "#3a6ea5", hullColor: "#5a4a3a" });
+    this.scene.addShip(PLAYER_ID, getShipDef(opts.shipId));
+    this.scene.addShip(DUMMY_ID, getShipDef("galleon"), { sailColor: "#3a6ea5", hullColor: "#5a4a3a" });
     this.scene.followId = PLAYER_ID;
 
     window.addEventListener("keydown", this.onKeyDown);
