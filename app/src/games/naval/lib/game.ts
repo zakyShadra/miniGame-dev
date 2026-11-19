@@ -5,6 +5,15 @@ import { BOT_LEVELS, BotController, type BotLevel } from "../../../../../shared/
 import { getMap } from "../../../../../shared/naval/maps";
 import { NavalScene } from "./scene";
 import { getShipDef } from "../../../../../shared/naval/ships";
+import { ensureAudio } from "../../../lib/sound";
+import {
+  attenByDistance,
+  playCannon,
+  playExplosion,
+  playSink,
+  playSplash,
+  playThud,
+} from "./audio";
 import {
   TICK_DT,
   canSee,
@@ -152,7 +161,12 @@ export class NavalGame {
         // Bot diputuskan tiap tick; saat match over bot berhenti (input nol).
         const botDecision = this.over ? null : this.bot.update(this.state, TICK_DT);
         if (botDecision?.fireAt) {
-          fireVolley(this.state, DUMMY_ID, botDecision.fireAt.x, botDecision.fireAt.z);
+          // fireVolley tidak menghasilkan event "fire" sendiri: kirim
+          // manual supaya muzzle flash + bunyi meriam ikut jalan.
+          if (fireVolley(this.state, DUMMY_ID, botDecision.fireAt.x, botDecision.fireAt.z)) {
+            const d = getShip(this.state, DUMMY_ID)!;
+            this.handleEvent({ type: "fire", shipId: DUMMY_ID, x: d.x, y: 4, z: d.z });
+          }
         }
         if (botDecision?.useAbility) useAbility(this.state, DUMMY_ID);
         const events = stepGame(this.state, this.collectInputs(botDecision?.input), TICK_DT);
@@ -190,8 +204,16 @@ export class NavalGame {
 
   /** Tembak satu volley ke titik aim saat ini (tombol tembak mobile). */
   fireAtAim(): void {
-    if (!this.over && this.scene.aimX !== null && this.scene.aimZ !== null) {
-      fireVolley(this.state, PLAYER_ID, this.scene.aimX, this.scene.aimZ);
+    this.playerFire();
+  }
+
+  /** Tembakan pemain (klik kiri / tombol mobile): volley + event fire
+   * manual buat muzzle flash + bunyi meriam. */
+  private playerFire(): void {
+    if (this.over || this.scene.aimX === null || this.scene.aimZ === null) return;
+    if (fireVolley(this.state, PLAYER_ID, this.scene.aimX, this.scene.aimZ)) {
+      const p = getShip(this.state, PLAYER_ID)!;
+      this.handleEvent({ type: "fire", shipId: PLAYER_ID, x: p.x, y: 4, z: p.z });
     }
   }
 
@@ -200,9 +222,37 @@ export class NavalGame {
     if (!this.over) useAbility(this.state, PLAYER_ID);
   }
 
-  /** Teruskan event sim ke efek visual + angka damage + flash kena hit. */
+  /** Teruskan event sim ke efek visual + suara + angka damage + flash kena hit. */
   private handleEvent(ev: SimEvent): void {
     this.scene.playEvent(ev);
+    // Suara: volume meredup dengan jarak dari kapal pemain.
+    const p = getShip(this.state, PLAYER_ID)!;
+    const volAt = (x: number, z: number) =>
+      attenByDistance(Math.hypot(x - p.x, z - p.z));
+    switch (ev.type) {
+      case "fire":
+        playCannon(volAt(ev.x, ev.z));
+        break;
+      case "hit":
+        playExplosion(volAt(ev.x, ev.z));
+        break;
+      case "splash":
+        playSplash(volAt(ev.x, ev.z));
+        break;
+      case "island-hit":
+        playThud(volAt(ev.x, ev.z));
+        break;
+      case "sink-start": {
+        const s = getShip(this.state, ev.shipId);
+        playSink(s ? volAt(s.x, s.z) : 0.5);
+        break;
+      }
+      case "bump":
+        playThud(0.5);
+        break;
+      default:
+        break;
+    }
     if (ev.type === "hit" && ev.byShipId === PLAYER_ID) {
       const pt = this.scene.projectToScreen(ev.x, ev.y + 2, ev.z);
       if (pt) this.opts.onDamage({ x: pt.x, y: pt.y, amount: ev.damage });
@@ -321,6 +371,7 @@ export class NavalGame {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return;
+    ensureAudio();
     this.keys.add(e.code);
     if (e.code === "Space") {
       e.preventDefault();
@@ -341,11 +392,10 @@ export class NavalGame {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
+    ensureAudio();
     if (e.button === 0) {
       // Klik kiri: tembak satu volley ke titik aim.
-      if (!this.over && this.scene.aimX !== null && this.scene.aimZ !== null) {
-        fireVolley(this.state, PLAYER_ID, this.scene.aimX, this.scene.aimZ);
-      }
+      this.playerFire();
     } else if (e.button === 2) {
       this.orbiting = true;
       this.lastOrbitX = e.clientX;

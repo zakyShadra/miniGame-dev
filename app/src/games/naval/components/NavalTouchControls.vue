@@ -6,6 +6,8 @@ ke store (game solo / remote). -->
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import type { ShipInput } from "../../../../../shared/naval/types";
+import { ensureAudio } from "../../../lib/sound";
+import NavalMuteButton from "./NavalMuteButton.vue";
 
 defineProps<{ abilityName: string }>();
 
@@ -58,6 +60,7 @@ function joyUpdate(clientX: number, clientY: number): void {
 
 function joyStart(e: PointerEvent): void {
   if (joyId.value !== null) return;
+  ensureAudio();
   joyId.value = e.pointerId;
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   joyUpdate(e.clientX, e.clientY);
@@ -95,6 +98,11 @@ function aimAt(e: PointerEvent): void {
       @pointermove="aimAt"
     />
 
+    <!-- Tombol mute (mobile): kanan atas, di bawah panel HUD lawan. -->
+    <div class="pointer-events-auto absolute top-32 right-3">
+      <NavalMuteButton />
+    </div>
+
     <!-- Joystick kiri bawah. -->
     <div
       ref="joyZone"
@@ -126,7 +134,7 @@ function aimAt(e: PointerEvent): void {
         aria-label="Kemampuan"
         class="pointer-events-auto flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 border-[#e8a33d] bg-[rgba(4,24,32,0.7)] text-white shadow-lg backdrop-blur-sm active:bg-[#e8a33d]/40"
         style="touch-action: none"
-        @pointerdown.prevent="emit('ability')"
+        @pointerdown.prevent="ensureAudio(); emit('ability')"
       >
         <span class="text-lg leading-none font-bold">&#9733;</span>
         <span class="mt-0.5 max-w-14 truncate text-[8px] font-bold tracking-wider uppercase">
@@ -138,7 +146,7 @@ function aimAt(e: PointerEvent): void {
         aria-label="Tembak"
         class="pointer-events-auto flex h-20 w-20 flex-col items-center justify-center rounded-full border-2 border-[#ff5a47] bg-[rgba(120,20,10,0.75)] text-white shadow-lg backdrop-blur-sm active:bg-[#ff5a47]/50"
         style="touch-action: none"
-        @pointerdown.prevent="emit('fire')"
+        @pointerdown.prevent="ensureAudio(); emit('fire')"
       >
         <span class="text-xl leading-none font-bold">&#9679;</span>
         <span class="mt-0.5 text-[9px] font-bold tracking-wider">TEMBAK</span>

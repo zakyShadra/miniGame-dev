@@ -45,6 +45,14 @@ export function ensureAudio() {
   }
 }
 
+/** AudioContext bersama (dipakai modul suara naval). Null bila browser
+ * belum mengizinkan audio (belum ada interaksi user) atau tidak
+ * didukung. Memanggil ensureAudio() dulu. */
+export function getAudioContext(): AudioContext | null {
+  ensureAudio();
+  return ctx && ctx.state === "running" ? ctx : null;
+}
+
 // Bunyi akhir game catur (round 2, tugas 5): jingle pendek WebAudio,
 // tanpa file audio. Menang = 3 nada naik, kalah = 2 nada turun,
 // remis = 2 nada datar. Memanggil ensureAudio() dulu: kalau game

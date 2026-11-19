@@ -10,6 +10,7 @@ import { SHIP_LIST, getShipDef } from "../../../../../shared/naval/ships";
 import type { ShipId } from "../../../../../shared/naval/types";
 import { CURSOR_COLORS } from "../../../lib/party";
 import NavalMinimap from "./NavalMinimap.vue";
+import NavalMuteButton from "./NavalMuteButton.vue";
 import NavalTouchControls from "./NavalTouchControls.vue";
 
 const store = useNavalCoopStore();
@@ -516,6 +517,7 @@ const aimLabel = computed(() => {
         <div class="rounded-2xl border border-white/10 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-center text-xs font-medium text-white/80 backdrop-blur-md">
           WASD gerak &middot; Mouse aim &middot; Klik kiri tembak &middot; Spasi kemampuan &middot; Klik kanan orbit &middot; Scroll zoom
         </div>
+        <NavalMuteButton />
         <button
           type="button"
           class="pointer-events-auto rounded-full border border-white/20 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-[rgba(4,24,32,0.9)]"

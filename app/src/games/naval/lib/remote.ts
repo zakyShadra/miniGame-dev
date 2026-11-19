@@ -23,6 +23,15 @@ import type {
   ShipState,
 } from "../../../../../shared/naval/types";
 import type { NavalShipSnap, NavalSnapshot } from "../../../../../shared/types";
+import { ensureAudio } from "../../../lib/sound";
+import {
+  attenByDistance,
+  playCannon,
+  playExplosion,
+  playSink,
+  playSplash,
+  playThud,
+} from "./audio";
 import { NavalScene } from "./scene";
 import { MATCH_DURATION, type DamageNumber, type NavalHud } from "./game";
 
@@ -308,6 +317,37 @@ export class NavalRemoteGame {
 
   private handleEvent(ev: NavalSnapshot["events"][number]): void {
     this.scene?.playEvent(ev);
+    // Suara: volume meredup dengan jarak dari kapal sendiri (prediksi).
+    const me = this.pred;
+    const volAt = (x: number, z: number) =>
+      me ? attenByDistance(Math.hypot(x - me.x, z - me.z)) : 0.5;
+    switch (ev.type) {
+      case "fire":
+        playCannon(volAt(ev.x, ev.z));
+        break;
+      case "hit":
+        playExplosion(volAt(ev.x, ev.z));
+        break;
+      case "splash":
+        playSplash(volAt(ev.x, ev.z));
+        break;
+      case "island-hit":
+        playThud(volAt(ev.x, ev.z));
+        break;
+      case "sink-start": {
+        const s =
+          ev.shipId === this.myShipKey
+            ? this.pred
+            : (this.curSnap?.ships.find((sh) => sh.id === ev.shipId) ?? this.lastFoeSnap);
+        playSink(s ? volAt(s.x, s.z) : 0.5);
+        break;
+      }
+      case "bump":
+        playThud(0.5);
+        break;
+      default:
+        break;
+    }
     if (ev.type === "hit" && ev.byShipId === this.myShipKey) {
       const pt = this.scene?.projectToScreen(ev.x, ev.y + 2, ev.z);
       if (pt) this.opts.onDamage({ x: pt.x, y: pt.y, amount: ev.damage });
@@ -522,6 +562,7 @@ export class NavalRemoteGame {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return;
+    ensureAudio();
     this.keys.add(e.code);
     if (e.code === "Space") {
       e.preventDefault();
@@ -542,6 +583,7 @@ export class NavalRemoteGame {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
+    ensureAudio();
     if (e.button === 0) {
       // Klik kiri: tembak ke titik aim (server yang memvalidasi reload).
       const aimX = this.scene?.aimX;
