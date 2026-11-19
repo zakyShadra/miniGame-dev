@@ -745,7 +745,7 @@ function onPointerCancel() {
       <!-- Pilih promosi saat pion sampai baris terakhir -->
       <div
         v-if="store.promotionPending"
-        class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-ink/40"
+        class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/40"
         @click="store.cancelPromotion()"
       >
         <div

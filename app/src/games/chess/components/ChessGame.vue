@@ -7,7 +7,6 @@ supaya tidak ada ruang kosong besar; di HP menumpuk normal. -->
 import { computed, onBeforeUnmount, onMounted } from "vue";
 import type { Color } from "chess.js";
 import { useChessStore } from "../stores/chess";
-import { useTheme } from "../../../lib/theme";
 import { BOT_LEVELS } from "../lib/levels";
 import ChessActions from "./ChessActions.vue";
 import ChessBoard from "./ChessBoard.vue";
@@ -16,9 +15,9 @@ import ChessSetup from "./ChessSetup.vue";
 import ChessSidebar from "./ChessSidebar.vue";
 import EvalBar from "./EvalBar.vue";
 import PlayerStrip from "./PlayerStrip.vue";
+import ThemeToggle from "../../../components/ThemeToggle.vue";
 
 const store = useChessStore();
-const { darkMode, toggleDarkMode } = useTheme();
 
 defineEmits<{ exit: [] }>();
 
@@ -121,48 +120,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
                 : "2 pemain"
         }}
       </span>
-      <button
-        type="button"
-        data-testid="theme-toggle"
-        class="shrink-0 rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-ink"
-        :aria-label="darkMode ? 'Mode terang' : 'Mode gelap'"
-        @click="toggleDarkMode()"
-      >
-        <svg
-          v-if="!darkMode"
-          viewBox="0 0 24 24"
-          class="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          class="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="5" />
-          <line x1="12" y1="1" x2="12" y2="3" />
-          <line x1="12" y1="21" x2="12" y2="23" />
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-          <line x1="1" y1="12" x2="3" y2="12" />
-          <line x1="21" y1="12" x2="23" y2="12" />
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-        </svg>
-      </button>
+      <ThemeToggle />
     </header>
     <div
       class="mx-auto flex w-full max-w-[1060px] flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:min-h-0 lg:flex-row"

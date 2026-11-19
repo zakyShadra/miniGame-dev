@@ -11,6 +11,7 @@ import type { ShipId } from "../../../../../shared/naval/types";
 import { CURSOR_COLORS } from "../../../lib/party";
 import NavalMinimap from "./NavalMinimap.vue";
 import NavalMuteButton from "./NavalMuteButton.vue";
+import ThemeToggle from "../../../components/ThemeToggle.vue";
 import NavalTouchControls from "./NavalTouchControls.vue";
 
 const store = useNavalCoopStore();
@@ -152,13 +153,16 @@ const aimLabel = computed(() => {
     v-if="store.phase === 'form'"
     class="flex min-h-screen flex-col items-center justify-center gap-4 bg-[linear-gradient(180deg,#0a3a4f_0%,#041824_60%,#020f18_100%)] p-4"
   >
-    <button
-      type="button"
-      class="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+    <div class="flex w-full items-start justify-between">
+      <button
+        type="button"
+        class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
       @click="$emit('exit')"
     >
       &larr; Semua game
     </button>
+      <ThemeToggle glass />
+    </div>
     <div class="w-full max-w-xl">
       <h1 class="text-center font-pirate text-5xl tracking-wide text-[#e8a33d] sm:text-6xl">
         NAVAL CO-OP
@@ -518,6 +522,7 @@ const aimLabel = computed(() => {
           WASD gerak &middot; Mouse aim &middot; Klik kiri tembak &middot; Spasi kemampuan &middot; Klik kanan orbit &middot; Scroll zoom
         </div>
         <NavalMuteButton />
+        <ThemeToggle glass />
         <button
           type="button"
           class="pointer-events-auto rounded-full border border-white/20 bg-[rgba(4,24,32,0.75)] px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-[rgba(4,24,32,0.9)]"
