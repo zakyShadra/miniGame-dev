@@ -68,6 +68,14 @@ Pick a game on the home screen: Puzzle or Chess.
 - **Chess.com-style game end:** result modal over the board (no
   dimming), red/green crown badges on the kings, game-end sound,
   classification stats after analysis.
+- **Drag pieces:** drag a piece to move it (mouse + touch), with
+  legal-move highlights while dragging, snap-back on illegal drops,
+  and the promotion picker when you drag to the last rank.
+  Click-to-move still works exactly as before.
+- **Import games for analysis:** paste any PGN, or fetch games by
+  chess.com username + month, then analyze them like a local game
+  (Fast/Thinking modes, glyphs, eval chart, accuracy). Imported
+  games load straight to the final position, read-only.
 
 ## Tech stack
 
@@ -87,7 +95,7 @@ Pick a game on the home screen: Puzzle or Chess.
 - `party/` PartyServer worker (room state, locks, chat, image upload and serving)
 - `shared/` protocol types + jigsaw engine (cutter, scatter, snap,
   grouping) used by both sides
-- `app/src/games/chess/` chess game (board, rules, bot, analysis, eval bar)
+- `app/src/games/chess/` chess game (board, drag, rules, bot, analysis, eval bar, PGN import)
 - `docs/` screenshots, UI audit notes, CV + LinkedIn drafts
 - `ROADMAP.md` milestone cheat sheet (M0-M6 + chess C1-C4), `DESIGN.md` design tokens
 
@@ -111,7 +119,8 @@ esbuild or workerd, run
 - PartyKit's hosted platform shut down in October 2026. This uses
   PartyServer (self-hosted on Cloudflare Workers) instead.
 - Chess is local or vs bot only for now. Online 2-player chess is
-  planned (C4-online). Board animations, review effects, fast/thinking
-  analysis modes, and the game-end modal shipped in C4-polish.
+  planned (C4-online). Drag pieces and PGN import (paste + chess.com
+  username) shipped after C4-polish, along with board animations,
+  review effects, fast/thinking analysis modes, and the game-end modal.
 - The chess engine downloads ~99 MB on first use (then cached).
   Everything runs on free tiers, no paid add-ons.

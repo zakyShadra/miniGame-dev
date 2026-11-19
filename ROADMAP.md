@@ -22,6 +22,7 @@
 | C2 Catur: bot 4 level | ✅ selesai | 2026-11-18 | Stockfish 19 full, Mudah/Medium/Sulit/Extreme, hint, undo; verifikasi live 15/15 |
 | C3 Catur: analisa | ✅ selesai | 2026-11-18 | Depth 18 multipv 2, klasifikasi 7 level, akurasi, grafik eval, review + best line, eval bar live; verifikasi live 11/11 |
 | C4 Catur: polish | ✅ selesai | 2026-11-18 | Animasi slide, papan 3D, glyph + efek review, badge glyph di bidak, daftar langkah bisa diklik, mode analisa Cepat/Thinking + prefetch, modal akhir game ala chess.com; QA C4a 30/30, C4b 22/22, R2 22/22, C5 24/24 |
+| C5 Catur: drag + import PGN | ✅ selesai | 2026-11-19 | Drag bidak (pointer + touch, snap-back, promosi) + import PGN (paste + username chess.com) untuk analisa; QA drag 14/14, import 15/15 (VM, tanpa engine) + 16/16 (laptop, analisa + V2, 1 download wasm); belum deploy |
 | C4-online Catur: 2P online | ⏳ belum mulai | - | Backlog: catur online 2 pemain via room PartyServer |
 
 Legenda: ⏳ belum mulai, 🔨 jalan, ✅ selesai.
@@ -418,6 +419,18 @@ Puzzle + kartu Catur). Puzzle tidak disentuh kecuali lobby.
   Draw saat remis, bunyi game-end WebAudio (tanpa confetti/pulse,
   sesuai observasi chess.com). Verifikasi live: C4a 30/30, C4b
   22/22, R2 22/22, C5 24/24.
+- **C5 Drag + import PGN:** drag bidak pakai Pointer Events (mouse +
+  sentuhan): bidak melayang ikut pointer, bidak asli jadi bayangan
+  redup di petak asal, lepas di petak legal = jalan (promosi ikut
+  terpicu), lepas di petak ilegal = kembali. Threshold 8px bedakan
+  drag vs klik; klik-pilih tetap jalan. Import PGN: tempel PGN apa
+  pun (paste) atau ambil game dari username chess.com + bulan (API
+  publik, fetch langsung dari browser), game dimuat ke posisi akhir
+  (read-only, tanpa modal hasil + badge mahkota), analisa
+  Cepat/Thinking + review sama seperti game lokal. QA: drag 14/14,
+  import 15/15 (VM, tanpa engine) + 16/16 (laptop, analisa + V2,
+  1 download wasm). Belum deploy (deploy sekali di akhir bareng
+  fitur lain, atas konfirmasi Zaky).
 - **Engine:** file .wasm 99 MB TIDAK dibundel (Pages batas 25 MB/file).
   Load runtime dari unpkg (satu-satunya CDN yang lolos: CORS `*` +
   MIME application/wasm; GitHub release tanpa CORS, jsdelivr 403,
@@ -428,13 +441,14 @@ Puzzle + kartu Catur). Puzzle tidak disentuh kecuali lobby.
   `app/public/stockfish/`. Lisensi Stockfish.js GPLv3, lihat
   `app/public/stockfish/STOCKFISH.md`.
 
-Tidak masuk scope C1-C4-polish: drag bidak, catur online 2 pemain
-(C4-online, fase terpisah setelah C4-polish).
+Tidak masuk scope C1-C5: catur online 2 pemain (C4-online, fase
+terpisah; server sudah deploy, client + deploy Pages ditunda).
 
 File kunci: `app/src/games/chess/` (lib/engine.ts, lib/levels.ts,
-lib/analysis.ts, stores/chess.ts, components/ChessBoard.vue,
-ChessSetup.vue, ChessSidebar.vue, ChessGame.vue, EvalBar.vue,
-AnalysisPanel.vue, GameEndModal.vue), `app/src/components/GamePicker.vue`.
+lib/analysis.ts, lib/pgn.ts, lib/chesscom.ts, stores/chess.ts,
+components/ChessBoard.vue, ChessSetup.vue, ChessImport.vue,
+ChessSidebar.vue, ChessGame.vue, EvalBar.vue, AnalysisPanel.vue,
+GameEndModal.vue), `app/src/components/GamePicker.vue`.
 
 ## Backlog (v2, bukan sekarang)
 
