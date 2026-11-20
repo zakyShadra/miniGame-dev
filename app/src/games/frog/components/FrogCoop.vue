@@ -1,5 +1,5 @@
 <!-- Layar katak co-op (2 pemain online): form buat/gabung room, lalu
-bengkel 3D + HUD co-op. Host = katak oranye, yang gabung = katak ungu. -->
+bengkel 3D + HUD co-op. Host = katak oranye, yang gabung = katak hijau. -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { CURSOR_COLORS } from "../../../lib/party";
@@ -167,7 +167,7 @@ const tongueLabel = computed(() => {
       <p class="mt-3 text-sm text-body">
         Pembuat room jadi katak
         <span class="font-bold text-ink">Oranye</span>, yang gabung jadi katak
-        <span class="font-bold text-ink">Ungu</span>.
+        <span class="font-bold text-ink">Hijau</span>.
       </p>
 
       <h2 class="mt-5 text-xs font-bold tracking-widest text-muted uppercase">
@@ -276,11 +276,11 @@ const tongueLabel = computed(() => {
         >
           <span
             class="h-4 w-4 rounded-full"
-            :class="s.color === 'orange' ? 'bg-[#ff8c42]' : 'bg-[#8b5cf6]'"
+            :class="s.color === 'orange' ? 'bg-[#e8552d]' : 'bg-[#7ec850]'"
           />
           <span class="font-display font-bold text-ink">{{ s.name }}</span>
           <span class="ml-auto text-xs text-muted">
-            {{ s.color === "orange" ? "Oranye" : "Ungu" }}
+            {{ s.color === "orange" ? "Oranye" : "Hijau" }}
             {{ s.key === store.myKey ? "(kamu)" : "" }}
           </span>
         </div>
@@ -288,7 +288,7 @@ const tongueLabel = computed(() => {
           v-if="(store.room?.seats.length ?? 0) < 2"
           class="rounded-xl border border-dashed border-hairline px-4 py-2.5 text-sm text-subtle"
         >
-          Menunggu pemain ke-2 (katak ungu)...
+          Menunggu pemain ke-2 (katak hijau)...
         </div>
       </div>
       <button
@@ -344,13 +344,13 @@ const tongueLabel = computed(() => {
         <div class="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-4 py-2 text-xs font-semibold text-body shadow-md">
           <span
             class="h-4 w-4 rounded-full"
-            :class="store.mySeat?.color === 'orange' ? 'bg-[#ff8c42]' : 'bg-[#8b5cf6]'"
+            :class="store.mySeat?.color === 'orange' ? 'bg-[#e8552d]' : 'bg-[#7ec850]'"
           />
           {{ store.hud.atGoalMe ? "Sampai ✓" : "Belum sampai" }}
           <span class="text-subtle">|</span>
           <span
             class="h-4 w-4 rounded-full"
-            :class="store.partnerSeat?.color === 'orange' ? 'bg-[#ff8c42]' : 'bg-[#8b5cf6]'"
+            :class="store.partnerSeat?.color === 'orange' ? 'bg-[#e8552d]' : 'bg-[#7ec850]'"
           />
           {{ store.partnerSeat?.name ?? "Partner" }}:
           {{ store.hud.atGoalPartner ? "Sampai ✓" : "Belum sampai" }}

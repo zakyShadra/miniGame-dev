@@ -10,7 +10,7 @@ import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
 import { FrogGame, type FrogHud } from "../lib/game";
 
 export type FrogPhase = "setup" | "playing" | "won";
-export type FrogColorChoice = "orange" | "purple";
+export type FrogColorChoice = "orange" | "green";
 
 function freshHud(): FrogHud {
   return {
@@ -26,7 +26,7 @@ function freshHud(): FrogHud {
 
 export const useFrogStore = defineStore("frog", () => {
   const phase = ref<FrogPhase>("setup");
-  // F1 solo: hanya oranye. Ungu dibuka di F2 (co-op).
+  // F1 solo: hanya oranye. Hijau dibuka di F2 (co-op).
   const selectedColor = ref<FrogColorChoice>("orange");
   /** Id pack level yang dipilih di setup (F3). */
   const selectedLevel = ref("bengkel");

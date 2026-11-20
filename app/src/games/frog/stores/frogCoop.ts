@@ -1,5 +1,5 @@
 // Store katak co-op (Pinia): koneksi WebSocket ke PartyServer, state
-// room co-op (2 pemain, oranye + ungu), dan instance FrogRemoteGame
+// room co-op (2 pemain, oranye + hijau), dan instance FrogRemoteGame
 // yang disimpan NON-reaktif. HUD di-sync lewat callback ~10 Hz dari
 // game loop. Meniru navalCoop.ts.
 
@@ -308,7 +308,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     remote.start({
       myIndex: myIdx,
       myColor: seat.color,
-      partnerColor: seat.color === "orange" ? "purple" : "orange",
+      partnerColor: seat.color === "orange" ? "green" : "orange",
       levelId: r.levelId,
     });
   }

@@ -1515,7 +1515,7 @@ export class Room extends Server<Env> {
     }, NAVAL_DISCONNECT_GRACE_MS);
   }
 
-  // ---------- Katak co-op (2 pemain, oranye + ungu) ----------
+  // ---------- Katak co-op (2 pemain, oranye + hijau) ----------
   //
   // Server authoritative: sim murni (shared/frog) jalan di DO dengan
   // tick 20 Hz via setInterval (BUKAN alarm, supaya tidak hibernate
@@ -1680,7 +1680,7 @@ export class Room extends Server<Env> {
         key: msg.playerKey,
         name,
         seatKey: "p2",
-        color: "purple",
+        color: "green",
       });
       const player: PlayerState = {
         id: conn.id,
@@ -1705,7 +1705,7 @@ export class Room extends Server<Env> {
   }
 
   // Buat game baru dari kursi yang ada dan mulai tick. Dipakai saat
-  // match pertama dan tiap rematch. p1 = oranye (spawn A), p2 = ungu
+  // match pertama dan tiap rematch. p1 = oranye (spawn A), p2 = hijau
   // (spawn B). Level dari room (dipilih host, F3).
   private startFrogMatch(): void {
     const frog = this.state?.frog;

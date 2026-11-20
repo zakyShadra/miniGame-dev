@@ -50,7 +50,7 @@ function exit() {
 }
 
 function selectColor(c: FrogColorChoice) {
-  // Ungu baru dibuka di F2 (co-op); F1 solo hanya oranye.
+  // Hijau baru dibuka di F2 (co-op); F1 solo hanya oranye.
   if (c === "orange") store.selectedColor = c;
 }
 
@@ -126,7 +126,7 @@ const tongueLabel = computed(() => {
           @click="selectColor('orange')"
         >
           <span class="flex items-center gap-2">
-            <span class="h-4 w-4 rounded-full bg-[#ff8c42]" />
+            <span class="h-4 w-4 rounded-full bg-[#e8552d]" />
             <span class="font-display font-bold text-ink">Oranye</span>
           </span>
           <span class="mt-1 block text-xs text-muted">Katak solo F1</span>
@@ -137,8 +137,8 @@ const tongueLabel = computed(() => {
           class="cursor-not-allowed rounded-xl border border-hairline bg-surface-1 p-3 text-left opacity-60"
         >
           <span class="flex items-center gap-2">
-            <span class="h-4 w-4 rounded-full bg-[#8b5cf6]" />
-            <span class="font-display font-bold text-ink">Ungu</span>
+            <span class="h-4 w-4 rounded-full bg-[#7ec850]" />
+            <span class="font-display font-bold text-ink">Hijau</span>
             <svg class="ml-auto h-4 w-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
           </span>
           <span class="mt-1 block text-xs text-muted">Pemain ke-2 di Co-op Online</span>

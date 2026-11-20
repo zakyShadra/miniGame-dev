@@ -9,7 +9,7 @@ export interface Vec3 {
   z: number;
 }
 
-export type FrogColor = "orange" | "purple";
+export type FrogColor = "orange" | "green";
 
 export interface FrogState {
   /** Posisi kaki katak. */
@@ -111,7 +111,7 @@ export interface LevelDef {
   anchors: AnchorDef[];
   flies: FlyDef[];
   spawn: Vec3;
-  /** Spawn katak ke-2 (co-op, ungu). Kosong = level solo. */
+  /** Spawn katak ke-2 (co-op, hijau). Kosong = level solo. */
   spawn2?: Vec3;
   /** Tombol lantai (co-op). */
   buttons?: ButtonDef[];

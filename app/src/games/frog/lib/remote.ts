@@ -70,8 +70,8 @@ export interface FrogRemoteOptions {
 
 export interface FrogRemoteStart {
   myIndex: 0 | 1;
-  myColor: "orange" | "purple";
-  partnerColor: "orange" | "purple";
+  myColor: "orange" | "green";
+  partnerColor: "orange" | "green";
   /** Id definisi level co-op (F3, dari room). */
   levelId: string;
 }
