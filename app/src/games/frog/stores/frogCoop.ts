@@ -362,6 +362,27 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     send({ type: "frog-next-level" });
   }
 
+  /** Input sentuh (dari FrogTouchControls, diteruskan ke game remote). */
+  function touchMove(x: number, y: number): void {
+    remote?.setTouchMove(x, y);
+  }
+
+  function touchJump(): void {
+    remote?.queueJump();
+  }
+
+  function touchTongue(): void {
+    remote?.toggleTongue();
+  }
+
+  function touchCroak(): void {
+    remote?.croak();
+  }
+
+  function touchOrbit(dx: number): void {
+    remote?.orbitBy(dx);
+  }
+
   return {
     status,
     phase,
@@ -396,5 +417,10 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     disconnect,
     sendRematch,
     sendNextLevel,
+    touchMove,
+    touchJump,
+    touchTongue,
+    touchCroak,
+    touchOrbit,
   };
 });

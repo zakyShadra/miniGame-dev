@@ -114,6 +114,27 @@ export const useFrogStore = defineStore("frog", () => {
     game = null;
   }
 
+  /** Input sentuh (dari FrogTouchControls, diteruskan ke game). */
+  function touchMove(x: number, y: number): void {
+    game?.setTouchMove(x, y);
+  }
+
+  function touchJump(): void {
+    game?.queueJump();
+  }
+
+  function touchTongue(): void {
+    game?.toggleTongue();
+  }
+
+  function touchCroak(): void {
+    game?.croak();
+  }
+
+  function touchOrbit(dx: number): void {
+    game?.orbitBy(dx);
+  }
+
   function toSetup(): void {
     disposeGame();
     croakPos.value = null;
@@ -140,5 +161,10 @@ export const useFrogStore = defineStore("frog", () => {
     rematch,
     nextLevel,
     toSetup,
+    touchMove,
+    touchJump,
+    touchTongue,
+    touchCroak,
+    touchOrbit,
   };
 });

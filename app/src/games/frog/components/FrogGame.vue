@@ -1,14 +1,28 @@
 <!-- Layar game katak: setup (pilih katak) lalu bengkel 3D + HUD.
 HUD compact: lalat kiri atas, status lidah tengah, timer + keluar kanan. -->
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useFrogStore, type FrogColorChoice } from "../stores/frog";
+import { preloadFrogTextures } from "../lib/textures";
 import ThemeToggle from "../../../components/ThemeToggle.vue";
 import FrogCoop from "./FrogCoop.vue";
 import FrogLevelSelect from "./FrogLevelSelect.vue";
+import FrogMuteButton from "./FrogMuteButton.vue";
+import FrogTouchControls from "./FrogTouchControls.vue";
 
 const store = useFrogStore();
 defineEmits<{ exit: [] }>();
+
+// Perangkat sentuh: sembunyikan hint keyboard, tampilkan joystick.
+const isTouch = ref(false);
+onMounted(() => {
+  // Mulai unduh texture HD selagi pemain di layar setup, supaya
+  // sudah tersimpan di cache saat game dimulai.
+  void preloadFrogTextures();
+  isTouch.value =
+    window.matchMedia("(pointer: coarse)").matches ||
+    "ontouchstart" in window;
+});
 
 const canvasWrap = ref<HTMLDivElement | null>(null);
 // Mode co-op: layar penuh FrogCoop (form room + game online).
@@ -210,8 +224,9 @@ const tongueLabel = computed(() => {
           {{ timerText }}
         </div>
         <span class="hidden rounded-full border border-hairline bg-surface-1 px-3 py-2 text-xs font-semibold text-muted shadow-md md:inline">
-          {{ store.hud.fps }} FPS
+          {{ store.hud.fps }} FPS &middot; {{ store.hud.calls }} draw
         </span>
+        <FrogMuteButton />
         <span class="pointer-events-auto rounded-full border border-hairline bg-surface-1 shadow-md">
           <ThemeToggle />
         </span>
@@ -225,15 +240,25 @@ const tongueLabel = computed(() => {
       </div>
     </div>
 
-    <!-- Hint kontrol (bawah, ringkas). -->
+    <!-- Hint kontrol (bawah, ringkas; desktop saja, mobile pakai joystick). -->
     <div
-      v-if="store.phase === 'playing'"
+      v-if="store.phase === 'playing' && !isTouch"
       class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3"
     >
       <div class="rounded-full border border-hairline bg-surface-1 px-4 py-2 text-center text-xs font-medium text-muted shadow-md">
         WASD gerak &middot; Spasi lompat &middot; Klik kiri / J lidah &middot; K kroak &middot; Drag orbit &middot; Scroll zoom
       </div>
     </div>
+
+    <!-- Kontrol sentuh (mobile saja). -->
+    <FrogTouchControls
+      v-if="store.phase === 'playing'"
+      @move="(x, y) => store.touchMove(x, y)"
+      @jump="store.touchJump()"
+      @tongue="store.touchTongue()"
+      @croak="store.touchCroak()"
+      @orbit="(dx) => store.touchOrbit(dx)"
+    />
 
     <!-- Modal menang. -->
     <div
