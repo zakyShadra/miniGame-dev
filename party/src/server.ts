@@ -9,6 +9,8 @@ import { Chess, type Color, type Square } from "chess.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol";
 import type {
   ChessRoomState,
+  FrogRoomState,
+  FrogSnapshot,
   NavalRoomState,
   NavalShipSnap,
   NavalSnapshot,
@@ -16,6 +18,18 @@ import type {
   PlayerState,
   RoomState,
 } from "../../shared/types";
+import {
+  createCoopGame,
+  releaseTongueCoop,
+  stepCoop,
+  TICK_DT as FROG_TICK_DT,
+  tryFireCoop,
+} from "../../shared/frog/sim";
+import type {
+  CoopSimEvent,
+  FrogCoopState,
+  FrogInput,
+} from "../../shared/frog/types";
 import { BotController, BOT_LEVELS, type BotLevel } from "../../shared/naval/bot";
 import { getMap, MAPS } from "../../shared/naval/maps";
 import { SHIPS } from "../../shared/naval/ships";
@@ -65,6 +79,17 @@ const NAVAL_DISCONNECT_GRACE_MS = 60_000;
 /** Id kapal di sim: p1/p2 = pemain (sama dengan shipKey kursi). */
 const NAVAL_BOT_ID = "bot";
 
+/** Level co-op katak (F2): satu-satunya level co-op saat ini. */
+const FROG_LEVEL_ID = "workshop-coop";
+/** Interval tick game loop katak (20 Hz, 3 substep sim 60 Hz). */
+const FROG_TICK_MS = 50;
+/** Substep sim 60 Hz per tick server 20 Hz. */
+const FROG_SUBSTEPS = 3;
+/** Tenggang reconnect katak: match dijeda, lalu room bubar. */
+const FROG_DISCONNECT_GRACE_MS = 60_000;
+/** Durasi bubble kroak (detik). */
+const FROG_CROAK_DURATION = 1.4;
+
 export class Room extends Server<Env> {
   private state: RoomState | null = null;
   private cut: CutResult | null = null;
@@ -86,6 +111,19 @@ export class Room extends Server<Env> {
   // Event di luar tick (tembakan pemain/bot) yang ikut snapshot berikut.
   private navalPendingEvents: SimEvent[] = [];
 
+  // State game katak co-op (in-memory saja, tidak di-persist: sim
+  // 20 Hz terlalu berat buat SQLite per tick). Kalau DO restart di
+  // tengah match, match ditandai bubar saat load (lihat ensureLoaded).
+  private frogGame: FrogCoopState | null = null;
+  private frogTimer: ReturnType<typeof setInterval> | null = null;
+  // Input terakhir per kursi ("p1"/"p2").
+  private frogInputs = new Map<string, FrogInput>();
+  private frogDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // Event di luar tick (tembakan lidah) yang ikut snapshot berikut.
+  private frogPendingEvents: CoopSimEvent[] = [];
+  // Jam game saat bubble kroak hilang, per katak (indeks 0/1).
+  private frogCroakUntil: [number, number] = [0, 0];
+
   // Muat state dari SQLite sekali per aktivasi DO. Dipanggil di awal
   // tiap handler supaya tidak ada balapan antar pesan.
   private ensureLoaded(): Promise<void> {
@@ -106,6 +144,8 @@ export class Room extends Server<Env> {
             // Normalisasi room naval: state lama belum punya naval/mode.
             this.state.naval ??= null;
             if (this.state.naval) this.state.naval.mode ??= "coop";
+            // Normalisasi room katak: state lama belum punya frog.
+            this.state.frog ??= null;
             // Match naval yang sedang jalan tidak selamat dari restart
             // DO (sim hanya di memori): tandai seri supaya room tidak
             // macet di status playing tanpa game loop.
@@ -118,6 +158,19 @@ export class Room extends Server<Env> {
               this.state.naval.status = "over";
               this.state.naval.winner = "draw";
               this.state.naval.rematchPendingBy = null;
+              this.persist();
+            }
+            // Match katak yang sedang jalan juga tidak selamat dari
+            // restart DO: tandai bubar supaya room tidak macet.
+            if (
+              this.state.kind === "frog" &&
+              this.state.frog &&
+              (this.state.frog.status === "playing" ||
+                this.state.frog.status === "paused")
+            ) {
+              this.state.frog.status = "over";
+              this.state.frog.winner = "abandoned";
+              this.state.frog.rematchPendingBy = null;
               this.persist();
             }
             this.deriveGame();
@@ -252,6 +305,27 @@ export class Room extends Server<Env> {
       case "naval-rematch":
         this.handleNavalRematch(conn);
         break;
+      case "create-frog":
+        this.handleCreateFrog(conn, msg);
+        break;
+      case "join-frog":
+        this.handleJoinFrog(conn, msg);
+        break;
+      case "frog-input":
+        this.handleFrogInput(conn, msg);
+        break;
+      case "frog-fire":
+        this.handleFrogFire(conn, msg);
+        break;
+      case "frog-release":
+        this.handleFrogRelease(conn);
+        break;
+      case "frog-croak":
+        this.handleFrogCroak(conn);
+        break;
+      case "frog-rematch":
+        this.handleFrogRematch(conn);
+        break;
       default:
         break;
     }
@@ -304,6 +378,7 @@ export class Room extends Server<Env> {
       kind: "puzzle",
       chess: null,
       naval: null,
+      frog: null,
       imageUrl: msg.imageUrl,
       imageName: msg.imageName,
       imageW: msg.imageW,
@@ -674,6 +749,7 @@ export class Room extends Server<Env> {
         gameNumber: 1,
       },
       naval: null,
+      frog: null,
       // Field puzzle tidak dipakai di room catur.
       imageUrl: "",
       imageName: "",
@@ -940,6 +1016,7 @@ export class Room extends Server<Env> {
         rematchPendingBy: null,
         gameNumber: 1,
       },
+      frog: null,
       // Field puzzle tidak dipakai di room naval.
       imageUrl: "",
       imageName: "",
@@ -1434,6 +1511,450 @@ export class Room extends Server<Env> {
     }, NAVAL_DISCONNECT_GRACE_MS);
   }
 
+  // ---------- Katak co-op (2 pemain, oranye + ungu) ----------
+  //
+  // Server authoritative: sim murni (shared/frog) jalan di DO dengan
+  // tick 20 Hz via setInterval (BUKAN alarm, supaya tidak hibernate
+  // di tengah match dan tidak membakar invocasi). Tiap tick server =
+  // 3 substep sim 60 Hz. Client hanya mengirim input + aksi lidah dan
+  // menerima snapshot per tick. Menang = kedua katak sampai portal.
+  // Disconnect: match dijeda 60 detik, lalu room bubar (co-op murni,
+  // tidak ada forfeit ke bot).
+
+  private frogRoomMessage(): ServerMessage {
+    return {
+      type: "frog-room",
+      room: this.state!.frog!,
+      players: this.state!.players,
+    };
+  }
+
+  // Kursi katak yang dipegang koneksi ini (null bila bukan pemain).
+  private frogSeatOf(
+    conn: Connection,
+  ): FrogRoomState["seats"][number] | null {
+    const frog = this.state?.frog;
+    if (!frog) return null;
+    const key = this.playerKeyOf(conn);
+    if (!key) return null;
+    return frog.seats.find((s) => s.key === key) ?? null;
+  }
+
+  private handleCreateFrog(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "create-frog" }>,
+  ) {
+    if (this.state) {
+      this.send(conn, {
+        type: "error",
+        message: "Room sudah ada, coba kode lain.",
+      });
+      return;
+    }
+    if (!msg.playerKey) {
+      this.send(conn, { type: "error", message: "Data room tidak valid." });
+      return;
+    }
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    const player: PlayerState = {
+      id: conn.id,
+      name,
+      color: msg.color,
+      cursor: null,
+      connected: true,
+      lastSeen: Date.now(),
+      key: msg.playerKey,
+    };
+    this.state = {
+      code: this.name,
+      kind: "frog",
+      chess: null,
+      naval: null,
+      frog: {
+        levelId: FROG_LEVEL_ID,
+        status: "waiting",
+        seats: [
+          { key: msg.playerKey, name, seatKey: "p1", color: "orange" },
+        ],
+        winner: null,
+        rematchPendingBy: null,
+        gameNumber: 1,
+      },
+      // Field puzzle tidak dipakai di room katak.
+      imageUrl: "",
+      imageName: "",
+      imageW: 0,
+      imageH: 0,
+      pieceCount: 0,
+      seed: 0,
+      pieces: [],
+      players: [player],
+      hostId: conn.id,
+      startedAt: Date.now(),
+      solvedAt: null,
+    };
+    this.persist();
+    this.send(conn, this.frogRoomMessage());
+  }
+
+  private handleJoinFrog(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "join-frog" }>,
+  ) {
+    if (!this.state || !this.state.frog) {
+      this.send(conn, {
+        type: "error",
+        message: "Room tidak ditemukan, cek kodenya.",
+      });
+      return;
+    }
+    if (this.state.kind !== "frog") {
+      this.send(conn, {
+        type: "error",
+        message: "Room ini bukan room katak.",
+      });
+      return;
+    }
+    if (!msg.playerKey) {
+      this.send(conn, { type: "error", message: "Data room tidak valid." });
+      return;
+    }
+    const frog = this.state.frog;
+    const name = msg.name.trim().slice(0, 20) || "Pemain";
+    // Rejoin kursi sendiri (refresh/reconnect): key cocok dengan kursi.
+    const seat = frog.seats.find((s) => s.key === msg.playerKey);
+    if (seat) {
+      const existing = this.state.players.find(
+        (p) => p.key === msg.playerKey,
+      );
+      if (existing) {
+        existing.id = conn.id;
+        existing.name = name;
+        existing.color = msg.color;
+        existing.connected = true;
+        existing.lastSeen = Date.now();
+      }
+      // Batalkan timer bubar; match yang dijeda dilanjutkan hanya
+      // bila SEMUA kursi sudah kembali.
+      if (this.frogDisconnectTimer) {
+        clearTimeout(this.frogDisconnectTimer);
+        this.frogDisconnectTimer = null;
+      }
+      if (frog.status === "paused" && this.frogGame) {
+        const allBack = frog.seats.every((s) => {
+          const p = this.state!.players.find((pl) => pl.key === s.key);
+          return p?.connected;
+        });
+        if (allBack) {
+          frog.status = "playing";
+          this.startFrogTick();
+          this.sendSystem(`${name} kembali, match dilanjutkan!`);
+        } else {
+          this.scheduleFrogAbandon();
+        }
+      }
+      this.persist();
+      // Siarkan ke SEMUA pemain (bukan hanya yang rejoin): partner yang
+      // menunggu harus tahu match dilanjutkan lagi (banner jeda di
+      // layarnya hilang). Tanpa ini partner tetap melihat status paused
+      // meski snapshot sudah mengalir lagi.
+      this.sendAll(this.frogRoomMessage());
+      // Kirim snapshot terakhir supaya client yang rejoin langsung sinkron.
+      if (this.frogGame && frog.status === "playing") {
+        const snap = this.frogSnapshot([]);
+        if (snap) this.send(conn, { type: "frog-snapshot", snap });
+      }
+      return;
+    }
+    // Kursi p2 masih kosong: pemain kedua masuk, match dimulai.
+    if (frog.seats.length < 2) {
+      frog.seats.push({
+        key: msg.playerKey,
+        name,
+        seatKey: "p2",
+        color: "purple",
+      });
+      const player: PlayerState = {
+        id: conn.id,
+        name,
+        color: msg.color,
+        cursor: null,
+        connected: true,
+        lastSeen: Date.now(),
+        key: msg.playerKey,
+      };
+      this.state.players.push(player);
+      this.sendAll({ type: "player-joined", player }, [conn.id]);
+      this.sendSystem(`${name} bergabung, match dimulai!`);
+      this.startFrogMatch();
+      this.sendAll(this.frogRoomMessage());
+      return;
+    }
+    this.send(conn, {
+      type: "error",
+      message: "Room katak sudah penuh (2 pemain).",
+    });
+  }
+
+  // Buat game baru dari kursi yang ada dan mulai tick. Dipakai saat
+  // match pertama dan tiap rematch. p1 = oranye (spawn A), p2 = ungu
+  // (spawn B).
+  private startFrogMatch(): void {
+    const frog = this.state?.frog;
+    if (!frog) return;
+    if (frog.seats.length < 2) return;
+    this.frogGame = createCoopGame();
+    this.frogInputs.clear();
+    this.frogPendingEvents = [];
+    this.frogCroakUntil = [0, 0];
+    frog.status = "playing";
+    frog.winner = null;
+    frog.rematchPendingBy = null;
+    this.persist();
+    this.startFrogTick();
+  }
+
+  private startFrogTick(): void {
+    this.stopFrogTick();
+    this.frogTimer = setInterval(() => this.frogTick(), FROG_TICK_MS);
+  }
+
+  private stopFrogTick(): void {
+    if (this.frogTimer) {
+      clearInterval(this.frogTimer);
+      this.frogTimer = null;
+    }
+  }
+
+  private frogTick(): void {
+    const frog = this.state?.frog;
+    const game = this.frogGame;
+    if (!frog || !game || frog.status !== "playing") {
+      this.stopFrogTick();
+      return;
+    }
+    // Input per kursi; lompat hanya dipakai di substep pertama lalu
+    // dibersihkan (tepi naik, bukan tahan).
+    const inputs: [FrogInput, FrogInput] = [
+      this.frogInputs.get("p1") ?? { moveX: 0, moveZ: 0, jump: false },
+      this.frogInputs.get("p2") ?? { moveX: 0, moveZ: 0, jump: false },
+    ];
+    const events: CoopSimEvent[] = [...this.frogPendingEvents];
+    this.frogPendingEvents = [];
+    for (let s = 0; s < FROG_SUBSTEPS; s++) {
+      events.push(
+        ...stepCoop(
+          game,
+          s === 0
+            ? inputs
+            : ([
+                { ...inputs[0], jump: false },
+                { ...inputs[1], jump: false },
+              ] as [FrogInput, FrogInput]),
+          FROG_TICK_DT,
+        ),
+      );
+      if (game.won) break;
+    }
+    // Bersihkan flag lompat yang sudah dipakai (bila ada input tersimpan).
+    const in1 = this.frogInputs.get("p1");
+    if (in1) in1.jump = false;
+    const in2 = this.frogInputs.get("p2");
+    if (in2) in2.jump = false;
+    if (game.won) {
+      this.endFrogMatch("players", events);
+      return;
+    }
+    this.broadcastFrogSnapshot(events);
+  }
+
+  private endFrogMatch(
+    winner: "players" | "abandoned",
+    events: CoopSimEvent[],
+  ): void {
+    const frog = this.state?.frog;
+    if (!frog) return;
+    this.stopFrogTick();
+    frog.status = "over";
+    frog.winner = winner;
+    this.persist();
+    // Snapshot terakhir membawa status menang (won=true).
+    this.broadcastFrogSnapshot(events);
+    this.sendAll(this.frogRoomMessage());
+    if (winner === "players") {
+      this.sendSystem("Kalian menang! Kedua katak sampai portal.");
+    }
+  }
+
+  private frogSnapshot(events: CoopSimEvent[]): FrogSnapshot | null {
+    const game = this.frogGame;
+    if (!game) return null;
+    return {
+      t: game.time,
+      frogs: [0, 1].map((i) => {
+        const f = game.frogs[i as 0 | 1];
+        const t = game.tongues[i as 0 | 1];
+        return {
+          x: f.pos.x,
+          y: f.pos.y,
+          z: f.pos.z,
+          vx: f.vel.x,
+          vy: f.vel.y,
+          vz: f.vel.z,
+          facing: f.facing,
+          onGround: f.onGround,
+          tongue: {
+            mode: t.mode,
+            ax: t.anchor?.x ?? 0,
+            ay: t.anchor?.y ?? 0,
+            az: t.anchor?.z ?? 0,
+            anchorFrog: t.anchorFrog,
+          },
+        };
+      }) as FrogSnapshot["frogs"],
+      fliesGot: [...game.fliesGot],
+      usedAnchors: [...game.usedAnchors],
+      buttonDown: game.buttonDown,
+      doorOpen: game.doorOpen,
+      atGoal: [...game.atGoal] as [boolean, boolean],
+      won: game.won,
+      croakUntil: [...this.frogCroakUntil] as [number, number],
+      events,
+    };
+  }
+
+  private broadcastFrogSnapshot(events: CoopSimEvent[]): void {
+    const frog = this.state?.frog;
+    if (!frog) return;
+    const snap = this.frogSnapshot(events);
+    if (!snap) return;
+    const conns = new Map<string, Connection>();
+    for (const c of this.getConnections()) conns.set(c.id, c);
+    for (const seat of frog.seats) {
+      const player = this.state!.players.find((p) => p.key === seat.key);
+      if (!player || !player.connected) continue;
+      const conn = conns.get(player.id);
+      if (conn) this.send(conn, { type: "frog-snapshot", snap });
+    }
+  }
+
+  private handleFrogInput(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "frog-input" }>,
+  ) {
+    const frog = this.state?.frog;
+    if (!frog || frog.status !== "playing") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat) return;
+    if (!Number.isFinite(msg.moveX) || !Number.isFinite(msg.moveZ)) return;
+    // Jepit ke [-1, 1] (client nakal tidak bisa ngebut di luar batas).
+    this.frogInputs.set(seat.seatKey, {
+      moveX: Math.max(-1, Math.min(1, msg.moveX)),
+      moveZ: Math.max(-1, Math.min(1, msg.moveZ)),
+      jump: msg.jump === true,
+    });
+  }
+
+  private handleFrogFire(
+    conn: Connection,
+    msg: Extract<ClientMessage, { type: "frog-fire" }>,
+  ) {
+    const frog = this.state?.frog;
+    const game = this.frogGame;
+    if (!frog || !game || frog.status !== "playing") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat) return;
+    const nums = [msg.ox, msg.oy, msg.oz, msg.dx, msg.dy, msg.dz];
+    if (!nums.every((n) => Number.isFinite(n))) return;
+    const dl = Math.hypot(msg.dx, msg.dy, msg.dz);
+    if (dl < 1e-6) return;
+    const idx = (seat.seatKey === "p1" ? 0 : 1) as 0 | 1;
+    const ok = tryFireCoop(
+      game,
+      idx,
+      { x: msg.ox, y: msg.oy, z: msg.oz },
+      { x: msg.dx / dl, y: msg.dy / dl, z: msg.dz / dl },
+    );
+    if (ok) {
+      this.frogPendingEvents.push({
+        type: "tongue-fire",
+        anchorId: game.tongues[idx].anchorId ?? "",
+        frog: idx,
+      });
+    }
+  }
+
+  private handleFrogRelease(conn: Connection) {
+    const frog = this.state?.frog;
+    const game = this.frogGame;
+    if (!frog || !game || frog.status !== "playing") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat) return;
+    const idx = (seat.seatKey === "p1" ? 0 : 1) as 0 | 1;
+    if (releaseTongueCoop(game, idx)) {
+      this.frogPendingEvents.push({ type: "tongue-release", frog: idx });
+    }
+  }
+
+  private handleFrogCroak(conn: Connection) {
+    const frog = this.state?.frog;
+    const game = this.frogGame;
+    if (!frog || !game || frog.status !== "playing") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat) return;
+    const idx = seat.seatKey === "p1" ? 0 : 1;
+    this.frogCroakUntil[idx] = game.time + FROG_CROAK_DURATION;
+  }
+
+  private handleFrogRematch(conn: Connection) {
+    const frog = this.state?.frog;
+    if (!frog || frog.status !== "over") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat) return;
+    // Sudah minta: tunggu pemain lain, jangan duplikat.
+    if (frog.rematchPendingBy === seat.key) return;
+    // Pemain lain sudah minta duluan: rematch jalan, kursi tetap.
+    if (frog.rematchPendingBy !== null) {
+      frog.gameNumber += 1;
+      this.startFrogMatch();
+      this.sendAll(this.frogRoomMessage());
+      this.sendSystem("Rematch! Match baru dimulai.");
+      return;
+    }
+    frog.rematchPendingBy = seat.key;
+    this.persist();
+    this.sendAll(this.frogRoomMessage());
+    this.sendSystem(`${seat.name} minta rematch.`);
+  }
+
+  // Timer bubar: bila ada kursi yang masih putus setelah tenggang,
+  // match yang dijeda berakhir (room bubar, tidak ada pemenang).
+  // Dibatalkan saat semua pemain kembali (rejoin).
+  private scheduleFrogAbandon(): void {
+    if (this.frogDisconnectTimer) return;
+    if (this.state?.frog?.status !== "paused") return;
+    this.frogDisconnectTimer = setTimeout(() => {
+      this.frogDisconnectTimer = null;
+      const frog = this.state?.frog;
+      if (!frog) return;
+      const goneSeat = frog.seats.find((s) => {
+        const p = this.state!.players.find((pl) => pl.key === s.key);
+        return !p || !p.connected;
+      });
+      if (goneSeat && frog.status === "paused") {
+        this.sendSystem(
+          `${goneSeat.name} tidak kembali dalam 60 detik, match bubar.`,
+        );
+        this.endFrogMatch("abandoned", []);
+      }
+      // Room kosong total: bersihkan game dari memori.
+      if (this.state!.players.every((p) => !p.connected)) {
+        this.stopFrogTick();
+        this.frogGame = null;
+      }
+    }, FROG_DISCONNECT_GRACE_MS);
+  }
+
   async onClose(conn: Connection) {
     await this.ensureLoaded();
     if (!this.state) return;
@@ -1474,6 +1995,26 @@ export class Room extends Server<Env> {
       this.sendAll(this.navalRoomMessage());
       // Timer forfeit (satu saja, meski dua pemain putus berurutan).
       if (naval.status === "paused") this.scheduleNavalForfeit();
+      this.lastChatAt.delete(conn.id);
+      return;
+    }
+    // Room katak: sama seperti naval (kursi diikat ke playerKey,
+    // match dijeda saat putus), tapi bila tidak kembali dalam 60 detik
+    // room BUBAR (co-op murni, tidak ada forfeit ke bot).
+    if (this.state.kind === "frog" && this.state.frog) {
+      const frog = this.state.frog;
+      this.state.players[idx]!.connected = false;
+      this.state.players[idx]!.cursor = null;
+      if (frog.status === "playing") {
+        frog.status = "paused";
+        this.stopFrogTick();
+        this.sendSystem(`${name} terputus, match dijeda (60 detik).`);
+      } else {
+        this.sendSystem(`${name} terputus`);
+      }
+      this.persist();
+      this.sendAll(this.frogRoomMessage());
+      if (frog.status === "paused") this.scheduleFrogAbandon();
       this.lastChatAt.delete(conn.id);
       return;
     }
