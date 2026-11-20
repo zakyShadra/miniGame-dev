@@ -79,6 +79,31 @@ export interface DoorDef {
   buttonIds: string[];
 }
 
+/** Jamur lompat (F3): katak yang berpijak di atasnya dilontarkan ke
+ * atas. pos.y = permukaan tempat katak berdiri (atas platform). */
+export interface MushroomDef {
+  id: string;
+  pos: Vec3;
+  radius: number;
+  /** Kecepatan vertikal lontaran (m/s, default MUSHROOM_BOUNCE). */
+  bounce?: number;
+}
+
+/** Platform bergerak (F3): bolak-balik sinus di satu sumbu.
+ * offset(t) = amplitude * sin(2*pi*t/period + phase), deterministik
+ * dari jam sim (server + client + autopilot menghitung posisi sama). */
+export interface MoverDef {
+  platformId: string;
+  axis: "x" | "z";
+  amplitude: number;
+  /** Detik per siklus penuh (bolak-balik). */
+  period: number;
+  phase?: number;
+}
+
+/** Tema visual level (F3): palet + dekor scene. Default workshop. */
+export type FrogTheme = "workshop" | "sewer" | "library" | "garden";
+
 export interface LevelDef {
   id: string;
   name: string;
@@ -92,6 +117,12 @@ export interface LevelDef {
   buttons?: ButtonDef[];
   /** Pintu (co-op). */
   door?: DoorDef;
+  /** Jamur lompat (F3). */
+  mushrooms?: MushroomDef[];
+  /** Platform bergerak (F3). */
+  movers?: MoverDef[];
+  /** Tema visual (default workshop). */
+  theme?: FrogTheme;
   goal: { pos: Vec3; radius: number };
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number; killY: number };
 }
@@ -102,6 +133,13 @@ export interface FrogGameState {
   tongue: TongueState;
   /** Id lalat yang sudah dimakan. */
   fliesGot: string[];
+  /** Pintu sedang terbuka. Solo (F3): sekali ditekan tombolnya,
+   * pintu terbuka permanen (latch) supaya 1 katak bisa lewat. */
+  doorOpen: boolean;
+  /** Ada tombol yang sedang tertekan saat ini. */
+  buttonDown: boolean;
+  /** Id tombol yang sedang tertekan (buat render kubah tombol). */
+  pressedButtons: string[];
   won: boolean;
   /** Waktu game (detik) sejak level mulai. */
   time: number;
@@ -124,6 +162,7 @@ export type FrogSimEvent =
   | { type: "tongue-release" }
   | { type: "fly"; flyId: string }
   | { type: "respawn" }
+  | { type: "bounce"; mushroomId: string }
   | { type: "win" };
 
 /** State match co-op 2 katak (server-authoritative di F2). */

@@ -13,6 +13,7 @@ import type {
   FrogSimEvent,
   FrogState,
   LevelDef,
+  MoverDef,
   PlatformDef,
   TongueState,
   Vec3,
@@ -40,6 +41,8 @@ export const SPRING_DAMP = 2.5;
 /** Lidah ke pasangan menggulung tali (m/detik) sampai panjang minimum. */
 export const TONGUE_REEL_SPEED = 4;
 export const TONGUE_MIN_REST = 1.5;
+/** Lontaran vertikal jamur lompat (m/s): apex ~3.27 m. */
+export const MUSHROOM_BOUNCE = 12;
 /** Setengah lebar badan katak + tinggi badan (meter). */
 const HALF_X = 0.4;
 const HALF_Z = 0.4;
@@ -75,6 +78,9 @@ export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameS
     frog: freshFrog(level.spawn),
     tongue: freshTongue(),
     fliesGot: [],
+    doorOpen: false,
+    buttonDown: false,
+    pressedButtons: [],
     won: false,
     time: 0,
   };
@@ -158,6 +164,47 @@ export function hasLineOfSight(platforms: PlatformDef[], a: Vec3, b: Vec3): bool
 function activePlatforms(level: LevelDef, doorOpen: boolean): PlatformDef[] {
   if (!doorOpen || !level.door) return level.platforms;
   return level.platforms.filter((p) => p.id !== level.door!.platformId);
+}
+
+/** Offset platform bergerak di waktu t (sinus bolak-balik). */
+export function moverOffset(m: MoverDef, t: number): number {
+  return m.amplitude * Math.sin((2 * Math.PI * t) / m.period + (m.phase ?? 0));
+}
+
+/** Platform di waktu t: posisi penggerak diterapkan + pintu difilter
+ * bila terbuka. Dipakai sim (tabrakan) dan scene (render). */
+export function platformsAt(level: LevelDef, t: number, doorOpen: boolean): PlatformDef[] {
+  const movers = new Map((level.movers ?? []).map((m) => [m.platformId, m]));
+  return activePlatforms(level, doorOpen).map((p) => {
+    const m = movers.get(p.id);
+    if (!m) return p;
+    const o = moverOffset(m, t);
+    const dx = m.axis === "x" ? o : 0;
+    const dz = m.axis === "z" ? o : 0;
+    return {
+      id: p.id,
+      min: { x: p.min.x + dx, y: p.min.y, z: p.min.z + dz },
+      max: { x: p.max.x + dx, y: p.max.y, z: p.max.z + dz },
+    };
+  });
+}
+
+/** Id tombol yang sedang tertekan (ada katak berdiri di atasnya). */
+export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
+  const out: string[] = [];
+  for (const b of level.buttons ?? []) {
+    for (const f of frogs) {
+      if (
+        f.onGround &&
+        Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < b.radius &&
+        Math.abs(f.pos.y - b.pos.y) < 1.5
+      ) {
+        out.push(b.id);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 /** Tembak lidah katak ke-i sepanjang sinar bidik (origin + aimDir,
@@ -337,7 +384,9 @@ function stepTongue(
 }
 
 /** Satu tick untuk katak ke-i: gerak, lompat, lidah, tabrakan,
- * checkpoint, respawn. Lalat + goal ditangani pemanggil (shared). */
+ * checkpoint, respawn. Lalat + goal ditangani pemanggil (shared).
+ * plats = platform di waktu sekarang, prevPlats = tick lalu (buat
+ * membawa katak yang berdiri di platform bergerak). */
 function stepOne(
   level: LevelDef,
   frogs: FrogState[],
@@ -346,12 +395,34 @@ function stepOne(
   i: number,
   input: FrogInput,
   plats: PlatformDef[],
+  prevPlats: PlatformDef[],
   dt: number,
   events: CoopSimEvent[],
 ): void {
   const f = frogs[i]!;
   const wasGround = f.onGround;
   const fallSpeed = -f.vel.y;
+
+  // Platform bergerak: katak yang berdiri di atasnya ikut terbawa
+  // (delta posisi platform sejak tick lalu).
+  if (f.onGround) {
+    const support = prevPlats.find(
+      (p) =>
+        Math.abs(f.pos.y - p.max.y) < 0.05 &&
+        f.pos.x > p.min.x - HALF_X &&
+        f.pos.x < p.max.x + HALF_X &&
+        f.pos.z > p.min.z - HALF_Z &&
+        f.pos.z < p.max.z + HALF_Z,
+    );
+    if (support) {
+      const cur = plats.find((p) => p.id === support.id);
+      if (cur) {
+        f.pos.x += cur.min.x - support.min.x;
+        f.pos.y += cur.max.y - support.max.y;
+        f.pos.z += cur.min.z - support.min.z;
+      }
+    }
+  }
   f.prevPos = { ...f.pos };
 
   // Lompat: dari tanah, atau lepas dari ayunan (lompat di udara).
@@ -443,6 +514,21 @@ function stepOne(
     events.push({ type: "land", frog: i as 0 | 1 });
   }
 
+  // Jamur lompat: katak yang berpijak di atas jamur dilontarkan ke atas.
+  if (f.onGround) {
+    for (const m of level.mushrooms ?? []) {
+      if (
+        Math.hypot(f.pos.x - m.pos.x, f.pos.z - m.pos.z) < m.radius &&
+        Math.abs(f.pos.y - m.pos.y) < 0.6
+      ) {
+        f.vel.y = m.bounce ?? MUSHROOM_BOUNCE;
+        f.onGround = false;
+        events.push({ type: "bounce", mushroomId: m.id, frog: i as 0 | 1 });
+        break;
+      }
+    }
+  }
+
   // Batas arena: tahan di dalam (dinding bengkel).
   const b = level.bounds;
   if (f.pos.x < b.minX) {
@@ -463,9 +549,13 @@ function stepOne(
   // Checkpoint: posisi terakhir saat berpijak di tanah DENGAN TOPANGAN
   // (tengah katak 0.3 m di dalam tepi platform). Tanpa margin, checkpoint
   // bisa tepat di ujung dan katak jatuh lagi begitu respawn.
+  // Platform bergerak TIDAK jadi checkpoint: platform sudah pindah saat
+  // katak respawn, dan katak akan jatuh berulang di titik yang sama.
   if (f.onGround) {
+    const moverIds = new Set((level.movers ?? []).map((m) => m.platformId));
     const supported = plats.some(
       (p) =>
+        !moverIds.has(p.id) &&
         f.pos.x > p.min.x + 0.3 &&
         f.pos.x < p.max.x - 0.3 &&
         f.pos.z > p.min.z + 0.3 &&
@@ -520,6 +610,13 @@ export function stepFrog(
   if (state.won) return [];
   state.time += dt;
   const events: CoopSimEvent[] = [];
+  // Tombol (solo): sekali ditekan, pintu terbuka permanen (latch),
+  // supaya puzzle tombol-pintu bisa diselesaikan 1 katak.
+  state.pressedButtons = pressedButtons(state.level, [state.frog]);
+  state.buttonDown = state.pressedButtons.length > 0;
+  if (state.buttonDown) state.doorOpen = true;
+  const plats = platformsAt(state.level, state.time, state.doorOpen);
+  const prevPlats = platformsAt(state.level, state.time - dt, state.doorOpen);
   stepOne(
     state.level,
     [state.frog],
@@ -527,7 +624,8 @@ export function stepFrog(
     [],
     0,
     input,
-    state.level.platforms,
+    plats,
+    prevPlats,
     dt,
     events,
   );
@@ -553,24 +651,14 @@ export function stepCoop(
   // Tombol: tertekan bila ada katak berdiri di atasnya. Pintu terbuka
   // selama ada tombol yang tertekan (dari kedua sisi).
   const level = state.level;
-  let pressed = false;
-  for (const b of level.buttons ?? []) {
-    for (const f of state.frogs) {
-      if (
-        f.onGround &&
-        Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < b.radius &&
-        Math.abs(f.pos.y - b.pos.y) < 1.5
-      ) {
-        pressed = true;
-      }
-    }
-  }
+  const pressed = pressedButtons(level, state.frogs).length > 0;
   state.buttonDown = pressed;
   state.doorOpen = !!level.door && pressed;
 
-  const plats = activePlatforms(level, state.doorOpen);
-  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, dt, events);
-  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, dt, events);
+  const plats = platformsAt(level, state.time, state.doorOpen);
+  const prevPlats = platformsAt(level, state.time - dt, state.doorOpen);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, prevPlats, dt, events);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, prevPlats, dt, events);
 
   // Lidah yang nempel ke katak yang baru respawn ikut lepas (anchor
   // melompat ke checkpoint, tarikan pegas akan menyentak).
