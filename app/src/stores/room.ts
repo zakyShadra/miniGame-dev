@@ -60,7 +60,7 @@ export const useRoomStore = defineStore("room", () => {
   const playerKey = getPlayerKey();
   // Jenis room yang sedang tersambung (puzzle/catur). null = belum
   // tersambung. Dipakai UI buat membedakan perilaku per game.
-  const roomKind = ref<"puzzle" | "chess" | "naval" | null>(null);
+  const roomKind = ref<"puzzle" | "chess" | "naval" | "frog" | null>(null);
   // Grab yang ditolak server (piece direbut pemain lain). BoardCanvas
   // mengawasi ini untuk membatalkan drag.
   const grabDenied = ref<{ pieceId: number; at: number } | null>(null);

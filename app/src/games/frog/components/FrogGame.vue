@@ -4,11 +4,14 @@ HUD compact: lalat kiri atas, status lidah tengah, timer + keluar kanan. -->
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useFrogStore, type FrogColorChoice } from "../stores/frog";
 import ThemeToggle from "../../../components/ThemeToggle.vue";
+import FrogCoop from "./FrogCoop.vue";
 
 const store = useFrogStore();
 defineEmits<{ exit: [] }>();
 
 const canvasWrap = ref<HTMLDivElement | null>(null);
+// Mode co-op: layar penuh FrogCoop (form room + game online).
+const showCoop = ref(false);
 
 // Pasang game begitu layar playing ter-render.
 watch(
@@ -53,9 +56,12 @@ const tongueLabel = computed(() => {
 </script>
 
 <template>
+  <!-- CO-OP: layar penuh FrogCoop (form room + game online). -->
+  <FrogCoop v-if="showCoop" @exit="showCoop = false" />
+
   <!-- SETUP: kartu cozy sesuai DESIGN.md. -->
   <div
-    v-if="store.phase === 'setup'"
+    v-else-if="store.phase === 'setup'"
     class="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas p-4"
   >
     <ThemeToggle class="absolute top-4 right-4" />
@@ -108,7 +114,7 @@ const tongueLabel = computed(() => {
             <span class="font-display font-bold text-ink">Ungu</span>
             <svg class="ml-auto h-4 w-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
           </span>
-          <span class="mt-1 block text-xs text-muted">Dibuka di co-op (F2)</span>
+          <span class="mt-1 block text-xs text-muted">Pemain ke-2 di Co-op Online</span>
         </button>
       </div>
 
@@ -125,15 +131,28 @@ const tongueLabel = computed(() => {
         lentera di atas jurang, ayun, lalu lompat saat sampai seberang.
       </p>
 
-      <button
-        type="button"
-        class="mt-6 w-full rounded-full bg-primary py-3 font-display text-base font-bold text-white shadow-md transition hover:bg-primary-hover"
-        @click="start"
-      >
-        Mulai Main
-      </button>
+      <h2 class="mt-5 text-xs font-bold tracking-widest text-muted uppercase">
+        Mode
+      </h2>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          class="rounded-full bg-primary py-3 font-display text-base font-bold text-white shadow-md transition hover:bg-primary-hover"
+          @click="start"
+        >
+          Solo
+        </button>
+        <button
+          type="button"
+          class="rounded-full border-2 border-primary bg-surface-1 py-3 font-display text-base font-bold text-primary transition hover:bg-surface-2"
+          @click="showCoop = true"
+        >
+          Co-op Online
+        </button>
+      </div>
       <p class="mt-3 text-center text-xs text-subtle">
-        Paling enak dimainkan dengan keyboard + mouse.
+        Co-op: 2 katak, puzzle tombol-pintu + ayun pasangan. Paling enak
+        dimainkan dengan keyboard + mouse.
       </p>
     </div>
   </div>
