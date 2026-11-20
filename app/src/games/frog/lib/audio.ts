@@ -29,6 +29,7 @@ const THROTTLE_MS: Record<string, number> = {
   bounce: 200,
   land: 150,
   ring: 300,
+  kiss: 1000,
 };
 const lastPlayed: Record<string, number> = {};
 
@@ -238,6 +239,21 @@ export function playRing(vol = 1): void {
     tone(ac, "sine", now, 0.25, 880, 880, 0.2 * v);
     tone(ac, "sine", now + 0.09, 0.3, 1318.5, 1318.5, 0.18 * v);
     noise(ac, now, 0.3, "highpass", 6000, 9000, 0.05 * v);
+  } catch {
+    // Audio gagal: abaikan.
+  }
+}
+
+/** Ciuman lidah (F6.8): kecupan "muah" (smack + cicit naik). */
+export function playKiss(vol = 1): void {
+  try {
+    const ac = ready("kiss");
+    if (!ac) return;
+    const now = ac.currentTime;
+    const v = clampVol(vol);
+    noise(ac, now, 0.07, "lowpass", 1200, 300, 0.3 * v);
+    tone(ac, "sine", now + 0.05, 0.16, 700, 1250, 0.16 * v);
+    tone(ac, "sine", now + 0.16, 0.12, 1250, 1568, 0.1 * v);
   } catch {
     // Audio gagal: abaikan.
   }

@@ -50,6 +50,14 @@ export const TONGUE_REEL_SPEED = 4;
 export const TONGUE_MIN_REST = 1.5;
 /** Lontaran vertikal jamur lompat (m/s): apex ~3.27 m. */
 export const MUSHROOM_BOUNCE = 12;
+/** Ciuman lidah (F6.8): dua ujung lidah bertemu dalam jarak ini (m). */
+export const KISS_TIP_DIST = 1.0;
+/** Ciuman lidah (F6.8): kedua katak saling jilat + pusat badan
+ * sedekat ini (m). Lidah ke pasangan menggulung sampai 1.5 m, jadi
+ * 2.5 m memberi ruang sebelum katak bertabrakan. */
+export const KISS_FROG_DIST = 2.5;
+/** Jeda minimum antar ciuman (detik). */
+export const KISS_COOLDOWN = 3;
 /** Setengah lebar badan katak + tinggi badan (meter). */
 const HALF_X = 0.4;
 const HALF_Z = 0.4;
@@ -109,6 +117,7 @@ export function createCoopGame(
     atGoal: [false, false],
     won: false,
     time: 0,
+    lastKissAt: -99,
   };
 }
 
@@ -717,6 +726,57 @@ function activateRings(
   events.push({ type: "ring", ringId, frog: i as 0 | 1 });
 }
 
+/** Ujung lidah katak ke-i saat ini: anchor bila menempel, titik di
+ * antara mulut dan anchor bila masih terbang (F6.8). Null bila lidah
+ * idle. */
+function tongueTip(frogs: FrogState[], tongues: TongueState[], i: number): Vec3 | null {
+  const t = tongues[i]!;
+  if (t.mode === "idle" || !t.anchor) return null;
+  if (t.mode === "attached") return { ...t.anchor };
+  const p = Math.max(0, Math.min(1, 1 - t.flyTime / TONGUE_FLY_TIME));
+  const m = mouthPos(frogs[i]!);
+  return {
+    x: m.x + (t.anchor.x - m.x) * p,
+    y: m.y + (t.anchor.y - m.y) * p,
+    z: m.z + (t.anchor.z - m.z) * p,
+  };
+}
+
+/** Ciuman lidah (F6.8, co-op): dua ujung lidah bertemu (dalam
+ * KISS_TIP_DIST), ATAU kedua katak saling jilat (lidah masing-masing
+ * nempel ke pasangannya) dan sudah dekat. Dua lidah yang nempel ke
+ * target yang SAMA (anchor/lalat/cincin yang sama) bukan ciuman:
+ * ujungnya memang di titik yang sama. Cooldown 3 detik. Event "kiss"
+ * diteruskan server ke kedua pemain lewat snapshot. */
+function checkKiss(state: FrogCoopState, events: CoopSimEvent[]): void {
+  if (state.time - state.lastKissAt < KISS_COOLDOWN) return;
+  const tip0 = tongueTip(state.frogs, state.tongues, 0);
+  const tip1 = tongueTip(state.frogs, state.tongues, 1);
+  if (!tip0 || !tip1) return;
+  const t0 = state.tongues[0]!;
+  const t1 = state.tongues[1]!;
+  // Dua lidah menuju/menempel target yang SAMA (anchor/lalat/cincin/
+  // katak yang sama) bukan ciuman: ujungnya memang bertemu di titik
+  // yang sama. Berlaku saat terbang maupun menempel (ujung-ujung
+  // sudah berdekatan sebelum keduanya menempel).
+  if (t0.anchorId !== null && t0.anchorId === t1.anchorId) return;
+  const tipsClose = len(sub(tip0, tip1)) < KISS_TIP_DIST;
+  const mutual = t0.anchorFrog === 1 && t1.anchorFrog === 0;
+  const frogsClose =
+    len(sub(centerPos(state.frogs[0]!), centerPos(state.frogs[1]!))) < KISS_FROG_DIST;
+  if (!tipsClose && !(mutual && frogsClose)) return;
+  state.lastKissAt = state.time;
+  events.push({
+    type: "kiss",
+    pos: {
+      x: (tip0.x + tip1.x) / 2,
+      y: (tip0.y + tip1.y) / 2,
+      z: (tip0.z + tip1.z) / 2,
+    },
+    frog: 0,
+  });
+}
+
 function atGoalPos(level: LevelDef, f: FrogState): boolean {
   const g = level.goal;
   return (
@@ -817,6 +877,10 @@ export function stepCoop(
   eatTongueFlies(state.tongues, state.fliesGot, 1, events);
   activateRings(state.tongues, state.ringsHit, 0, events);
   activateRings(state.tongues, state.ringsHit, 1, events);
+
+  // Ciuman lidah (F6.8): dicek SETELAH lidah lalat/cincin dilepas,
+  // supaya lidah yang baru saja makan/aktivasi tidak ikut dihitung.
+  checkKiss(state, events);
 
   // Goal per katak (menempel); menang saat keduanya sudah sampai.
   let justArrived: 0 | 1 = 0;

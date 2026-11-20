@@ -160,6 +160,34 @@ function stainedGlassTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+let heartTex: THREE.CanvasTexture | null = null;
+
+/** Texture hati pink (F6.8, ciuman lidah): digambar sekali di canvas,
+ * dipakai semua sprite hati. */
+function heartTexture(): THREE.CanvasTexture {
+  if (heartTex) return heartTex;
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#ff6b9d";
+  g.beginPath();
+  g.moveTo(32, 56);
+  g.bezierCurveTo(8, 38, 6, 20, 18, 12);
+  g.bezierCurveTo(26, 7, 32, 14, 32, 20);
+  g.bezierCurveTo(32, 14, 38, 7, 46, 12);
+  g.bezierCurveTo(58, 20, 56, 38, 32, 56);
+  g.fill();
+  // Kilau kecil di kiri atas.
+  g.fillStyle = "rgba(255,255,255,0.65)";
+  g.beginPath();
+  g.ellipse(22, 20, 5, 7, -0.4, 0, Math.PI * 2);
+  g.fill();
+  heartTex = new THREE.CanvasTexture(c);
+  heartTex.colorSpace = THREE.SRGBColorSpace;
+  return heartTex;
+}
+
 interface FlyMesh {
   group: THREE.Group;
   wingL: THREE.Mesh;
@@ -232,6 +260,8 @@ export class FrogScene {
   private hiddenMeshes: { ringId: string; meshes: THREE.Mesh[] }[] = [];
   /** Ledakan sparkle biru aktif (F6.2): titik + kecepatan + umur. */
   private sparks: { points: THREE.Points; vel: Float32Array; age: number }[] = [];
+  /** Hati melayang aktif (F6.8, ciuman lidah): sprite + kecepatan + umur. */
+  private hearts: { sprite: THREE.Sprite; vel: THREE.Vector3; age: number; life: number; phase: number }[] = [];
   private doorGroup: THREE.Group | null = null;
   private doorY = 0;
   private buttonDomes: { id: string; mat: THREE.MeshStandardMaterial }[] = [];
@@ -973,10 +1003,11 @@ export class FrogScene {
 
   /** Event sim ke efek visual: squash katak saat mendarat, jamur
    * berdenyut saat melontarkan katak, lalat tersedot ke mulut saat
-   * dimakan lidah (F6.4), sparkle biru saat cincin emas aktif (F6.2).
-   * slot 0 = katak sendiri, 1 = pasangan (co-op). id = id jamur
-   * (bounce), id lalat (fly), atau id cincin (ring). */
-  playEvent(type: string, slot = 0, id?: string): void {
+   * dimakan lidah (F6.4), sparkle biru saat cincin emas aktif (F6.2),
+   * hati melayang saat ciuman lidah (F6.8, pos = titik tengah kedua
+   * ujung lidah). slot 0 = katak sendiri, 1 = pasangan (co-op).
+   * id = id jamur (bounce), id lalat (fly), atau id cincin (ring). */
+  playEvent(type: string, slot = 0, id?: string, pos?: { x: number; y: number; z: number }): void {
     if (type === "land") {
       if (slot === 0) this.slot0.squash = 0.22;
       else if (this.slot1) this.slot1.squash = 0.22;
@@ -1026,6 +1057,42 @@ export class FrogScene {
       );
       this.scene.add(points);
       this.sparks.push({ points, vel, age: 0 });
+    }
+    if (type === "kiss") {
+      // Ciuman lidah (F6.8): 6 hati pink melayang naik dari titik
+      // tengah kedua ujung lidah + kedua katak mengembang senang.
+      const at = pos ?? { x: 0, y: 1, z: 0 };
+      const tex = heartTexture();
+      for (let i = 0; i < 6; i++) {
+        const mat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(mat);
+        const s = 0.28 + Math.random() * 0.2;
+        sprite.scale.setScalar(s);
+        sprite.position.set(
+          at.x + (Math.random() - 0.5) * 0.6,
+          at.y + (Math.random() - 0.5) * 0.4,
+          at.z + (Math.random() - 0.5) * 0.6,
+        );
+        this.scene.add(sprite);
+        this.hearts.push({
+          sprite,
+          vel: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.4,
+            0.7 + Math.random() * 0.5,
+            (Math.random() - 0.5) * 0.4,
+          ),
+          age: 0,
+          life: 1.2 + Math.random() * 0.4,
+          phase: Math.random() * 6,
+        });
+      }
+      this.slot0.squash = 0.12;
+      if (this.slot1) this.slot1.squash = 0.12;
     }
   }
 
@@ -1265,6 +1332,28 @@ export class FrogScene {
     }
   }
 
+  /** Hati melayang ciuman (F6.8): naik + bergoyang + membesar lalu
+   * memudar, dihapus setelah umurnya habis (~1.2-1.6 detik). */
+  private syncHearts(dt: number): void {
+    for (let i = this.hearts.length - 1; i >= 0; i--) {
+      const h = this.hearts[i]!;
+      h.age += dt;
+      const p = h.age / h.life;
+      h.sprite.position.x +=
+        (h.vel.x + Math.sin(h.age * 3 + h.phase) * 0.25) * dt;
+      h.sprite.position.y += h.vel.y * dt;
+      h.sprite.position.z += h.vel.z * dt;
+      h.sprite.scale.setScalar(0.35 * (0.8 + 0.4 * Math.sin(Math.min(1, p) * Math.PI)));
+      const mat = h.sprite.material as THREE.SpriteMaterial;
+      mat.opacity = 0.95 * Math.max(0, 1 - p * p);
+      if (p >= 1) {
+        this.scene.remove(h.sprite);
+        mat.dispose();
+        this.hearts.splice(i, 1);
+      }
+    }
+  }
+
   /** Pintu meluncur ke bawah saat terbuka (3.2 m = tinggi pintu);
    * kubah tombol hijau saat ditekan, merah saat tidak. Dipakai solo
    * (state lokal) dan co-op (snapshot server). */
@@ -1319,6 +1408,7 @@ export class FrogScene {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
     this.syncShared(state.fliesGot, [], state.ringsHit, time, dt);
     this.syncSparks(dt);
+    this.syncHearts(dt);
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
@@ -1337,6 +1427,7 @@ export class FrogScene {
     }
     this.syncShared(view.fliesGot, view.usedAnchors, view.ringsHit, time, dt);
     this.syncSparks(dt);
+    this.syncHearts(dt);
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);

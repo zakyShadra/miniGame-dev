@@ -32,6 +32,7 @@ import {
   playDoorOpen,
   playEatFly,
   playJump,
+  playKiss,
   playLand,
   playRing,
   playTongueFire,
@@ -276,6 +277,7 @@ export class FrogRemoteGame {
       if (ev.type === "bounce") this.scene?.playEvent("bounce", ev.frog, ev.mushroomId);
       if (ev.type === "fly") this.scene?.playEvent("fly", ev.frog, ev.flyId);
       if (ev.type === "ring") this.scene?.playEvent("ring", ev.frog, ev.ringId);
+      if (ev.type === "kiss") this.scene?.playEvent("kiss", 0, undefined, ev.pos);
       this.playEventSound(ev.type, ev.frog);
     }
 
@@ -313,6 +315,7 @@ export class FrogRemoteGame {
     else if (type === "tongue-attach") playTongueStick(vol);
     else if (type === "fly") playEatFly(vol);
     else if (type === "ring") playRing(vol);
+    else if (type === "kiss") playKiss(1);
     else if (type === "bounce") playBounce(vol);
   }
 

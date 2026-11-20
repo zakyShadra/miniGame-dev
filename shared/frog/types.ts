@@ -178,6 +178,9 @@ export type FrogSimEvent =
   | { type: "tongue-release" }
   | { type: "fly"; flyId: string }
   | { type: "ring"; ringId: string }
+  /** Ciuman lidah (F6.8, co-op): dua ujung lidah bertemu. pos =
+   * titik tengah kedua ujung lidah (tempat hati melayang). */
+  | { type: "kiss"; pos: Vec3 }
   | { type: "respawn" }
   | { type: "bounce"; mushroomId: string }
   | { type: "win" };
@@ -203,6 +206,9 @@ export interface FrogCoopState {
   won: boolean;
   /** Waktu game (detik) sejak match mulai. */
   time: number;
+  /** Jam game saat ciuman lidah terakhir (F6.8, -99 = belum pernah).
+   * Ciuman punya cooldown supaya tidak berulang tiap tick. */
+  lastKissAt: number;
 }
 
 /** Event sim co-op: event solo + indeks katak penyebabnya. */

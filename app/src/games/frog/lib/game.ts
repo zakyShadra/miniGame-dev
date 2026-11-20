@@ -10,6 +10,7 @@ import {
   playDoorOpen,
   playEatFly,
   playJump,
+  playKiss,
   playLand,
   playRing,
   playTongueFire,
@@ -204,6 +205,10 @@ export class FrogGame {
     if (ev.type === "ring") {
       this.scene.playEvent("ring", 0, ev.ringId);
       playRing();
+    }
+    if (ev.type === "kiss") {
+      this.scene.playEvent("kiss", 0, undefined, ev.pos);
+      playKiss();
     }
     if (ev.type === "bounce") {
       this.scene.playEvent("bounce", 0, ev.mushroomId);
