@@ -1,15 +1,20 @@
 // Simulasi katak murni (tanpa Three.js): gerak platformer, lompat,
 // tabrakan AABB, lidah pegas, lalat, goal, respawn. Deterministik,
-// fixed timestep 60 Hz. Dirancang agar bisa dipakai ulang server
-// (PartyServer) di F2.
+// fixed timestep 60 Hz. Inti step digeneralisasi untuk 1-2 katak:
+// solo (F1) memakai wrapper stepFrog, co-op (F2) memakai stepCoop
+// dengan puzzle tombol-pintu dan lidah ke katak pasangan.
 
 import { getLevel } from "./levels";
 import type {
+  CoopSimEvent,
+  FrogCoopState,
   FrogGameState,
   FrogInput,
   FrogSimEvent,
+  FrogState,
   LevelDef,
   PlatformDef,
+  TongueState,
   Vec3,
 } from "./types";
 
@@ -32,33 +37,61 @@ export const TONGUE_FLY_TIME = 0.12;
 export const TONGUE_RAY_RADIUS = 1.5;
 export const SPRING_K = 30;
 export const SPRING_DAMP = 2.5;
+/** Lidah ke pasangan menggulung tali (m/detik) sampai panjang minimum. */
+export const TONGUE_REEL_SPEED = 4;
+export const TONGUE_MIN_REST = 1.5;
 /** Setengah lebar badan katak + tinggi badan (meter). */
 const HALF_X = 0.4;
 const HALF_Z = 0.4;
 const HEIGHT = 0.7;
 
+function freshFrog(spawn: Vec3): FrogState {
+  return {
+    pos: { ...spawn },
+    vel: { x: 0, y: 0, z: 0 },
+    prevPos: { ...spawn },
+    onGround: false,
+    facing: Math.PI,
+    checkpoint: { ...spawn },
+  };
+}
+
+function freshTongue(): TongueState {
+  return {
+    mode: "idle",
+    anchorId: null,
+    anchor: null,
+    anchorFrog: null,
+    length: 0,
+    restLength: 0,
+    timeLeft: 0,
+    flyTime: 0,
+  };
+}
+
 export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameState {
-  const spawn = { ...level.spawn };
   return {
     level,
-    frog: {
-      pos: { ...spawn },
-      vel: { x: 0, y: 0, z: 0 },
-      prevPos: { ...spawn },
-      onGround: false,
-      facing: Math.PI,
-      checkpoint: { ...spawn },
-    },
-    tongue: {
-      mode: "idle",
-      anchorId: null,
-      anchor: null,
-      length: 0,
-      restLength: 0,
-      timeLeft: 0,
-      flyTime: 0,
-    },
+    frog: freshFrog(level.spawn),
+    tongue: freshTongue(),
     fliesGot: [],
+    won: false,
+    time: 0,
+  };
+}
+
+export function createCoopGame(
+  level: LevelDef = getLevel("workshop-coop"),
+): FrogCoopState {
+  return {
+    level,
+    frogs: [freshFrog(level.spawn), freshFrog(level.spawn2 ?? level.spawn)],
+    tongues: [freshTongue(), freshTongue()],
+    fliesGot: [],
+    usedAnchors: [],
+    buttonDown: false,
+    doorOpen: false,
+    atGoal: [false, false],
     won: false,
     time: 0,
   };
@@ -67,6 +100,11 @@ export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameS
 /** Posisi mulut katak (pangkal lidah). */
 export function mouthPos(f: { pos: Vec3 }): Vec3 {
   return { x: f.pos.x, y: f.pos.y + 0.62, z: f.pos.z };
+}
+
+/** Pusat badan katak (target lidah pasangan + jarak makan lalat). */
+function centerPos(f: { pos: Vec3 }): Vec3 {
+  return { x: f.pos.x, y: f.pos.y + 0.5, z: f.pos.z };
 }
 
 function sub(a: Vec3, b: Vec3): Vec3 {
@@ -116,47 +154,101 @@ export function hasLineOfSight(platforms: PlatformDef[], a: Vec3, b: Vec3): bool
   return true;
 }
 
-/** Tembak lidah sepanjang sinar bidik (origin + aimDir, keduanya dari
- * kamera). Anchor kena bila: dalam jangkauan lidah dari mulut, sinar
- * lewat dalam TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke
- * anchor jelas. False bila tidak ada anchor yang kena. */
-export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  const t = state.tongue;
+/** Platform aktif: pintu hilang dari tabrakan saat terbuka. */
+function activePlatforms(level: LevelDef, doorOpen: boolean): PlatformDef[] {
+  if (!doorOpen || !level.door) return level.platforms;
+  return level.platforms.filter((p) => p.id !== level.door!.platformId);
+}
+
+/** Tembak lidah katak ke-i sepanjang sinar bidik (origin + aimDir,
+ * keduanya dari kamera). Target: anchor level (kecuali yang sekali
+ * pakai dan sedang habis) atau katak pasangan (co-op). Anchor kena
+ * bila: dalam jangkauan lidah dari mulut, sinar lewat dalam
+ * TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target jelas.
+ * False bila tidak ada target yang kena. */
+export function tryFireFrog(
+  level: LevelDef,
+  frogs: FrogState[],
+  tongues: TongueState[],
+  usedAnchors: string[],
+  i: number,
+  origin: Vec3,
+  aimDir: Vec3,
+): boolean {
+  const t = tongues[i]!;
   if (t.mode !== "idle") return false;
-  const mouth = mouthPos(state.frog);
-  let best: { id: string; pos: Vec3; rayDist: number } | null = null;
-  for (const a of state.level.anchors) {
-    const md = sub(a.pos, mouth);
+  const mouth = mouthPos(frogs[i]!);
+  const plats = activePlatforms(level, false);
+  type Candidate = { id: string; pos: Vec3; rayDist: number; frog: 0 | 1 | null };
+  let best: Candidate | null = null;
+  // Kandidat bila kena bidik, atau null (assignment best di badan loop,
+  // bukan di closure, supaya TS melacak tipenya).
+  const consider = (id: string, pos: Vec3, frog: 0 | 1 | null): Candidate | null => {
+    const md = sub(pos, mouth);
     const mouthDist = len(md);
-    if (mouthDist > TONGUE_RANGE || mouthDist < 0.5) continue;
-    // Jarak anchor ke sinar bidik (titik terdekat di sinar).
-    const od = sub(a.pos, origin);
+    if (mouthDist > TONGUE_RANGE || mouthDist < 0.5) return null;
+    const od = sub(pos, origin);
     const along = od.x * aimDir.x + od.y * aimDir.y + od.z * aimDir.z;
-    if (along < 0) continue;
+    if (along < 0) return null;
     const cx = origin.x + aimDir.x * along;
     const cy = origin.y + aimDir.y * along;
     const cz = origin.z + aimDir.z * along;
-    const rayDist = Math.hypot(a.pos.x - cx, a.pos.y - cy, a.pos.z - cz);
-    if (rayDist > TONGUE_RAY_RADIUS) continue;
-    if (!hasLineOfSight(state.level.platforms, mouth, a.pos)) continue;
-    if (!best || rayDist < best.rayDist) best = { id: a.id, pos: { ...a.pos }, rayDist };
+    const rayDist = Math.hypot(pos.x - cx, pos.y - cy, pos.z - cz);
+    if (rayDist > TONGUE_RAY_RADIUS) return null;
+    if (!hasLineOfSight(plats, mouth, pos)) return null;
+    return { id, pos: { ...pos }, rayDist, frog };
+  };
+  for (const a of level.anchors) {
+    if (a.oneUse && usedAnchors.includes(a.id)) continue;
+    const c = consider(a.id, a.pos, null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
+  // Katak pasangan adalah target lidah (tarik pasangan menyeberang).
+  const j = i === 0 ? 1 : 0;
+  if (frogs[j]) {
+    const c = consider(`frog:${j}`, centerPos(frogs[j]!), j as 0 | 1);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
   }
   if (!best) return false;
   t.mode = "flying";
   t.anchorId = best.id;
   t.anchor = best.pos;
+  t.anchorFrog = best.frog;
   t.length = len(sub(best.pos, mouth));
   t.flyTime = TONGUE_FLY_TIME;
   return true;
 }
 
+/** Tembak lidah (solo, F1). */
+export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], 0, origin, aimDir);
+}
+
+/** Tembak lidah katak ke-i (co-op). */
+export function tryFireCoop(
+  state: FrogCoopState,
+  i: 0 | 1,
+  origin: Vec3,
+  aimDir: Vec3,
+): boolean {
+  return tryFireFrog(
+    state.level,
+    state.frogs,
+    state.tongues,
+    state.usedAnchors,
+    i,
+    origin,
+    aimDir,
+  );
+}
+
 /** Lepas lidah (tombol lagi / lompat / timeout). */
-export function releaseTongue(state: FrogGameState): boolean {
-  const t = state.tongue;
+export function releaseTongueState(t: TongueState): boolean {
   if (t.mode === "idle") return false;
   t.mode = "idle";
   t.anchorId = null;
   t.anchor = null;
+  t.anchorFrog = null;
   t.length = 0;
   t.restLength = 0;
   t.timeLeft = 0;
@@ -164,30 +256,64 @@ export function releaseTongue(state: FrogGameState): boolean {
   return true;
 }
 
-function stepTongue(state: FrogGameState, dt: number, events: FrogSimEvent[]): void {
-  const t = state.tongue;
-  const f = state.frog;
+/** Lepas lidah (solo, F1). */
+export function releaseTongue(state: FrogGameState): boolean {
+  return releaseTongueState(state.tongue);
+}
+
+/** Lepas lidah katak ke-i (co-op). */
+export function releaseTongueCoop(state: FrogCoopState, i: 0 | 1): boolean {
+  return releaseTongueState(state.tongues[i]);
+}
+
+function stepTongue(
+  level: LevelDef,
+  frogs: FrogState[],
+  tongues: TongueState[],
+  usedAnchors: string[],
+  i: number,
+  dt: number,
+  events: CoopSimEvent[],
+): void {
+  const t = tongues[i]!;
+  const f = frogs[i]!;
   if (t.mode === "flying") {
     t.flyTime -= dt;
     if (t.flyTime <= 0 && t.anchor) {
       t.mode = "attached";
       const d = len(sub(t.anchor, mouthPos(f)));
       t.length = d;
-      t.restLength = d * 0.75;
+      // Lidah ke pasangan langsung lebih pendek (0.5x, bukan 0.75x):
+      // tali harus tegang sejak awal, kalau tidak pasangan jatuh
+      // meluncur ke bawah platform dan terjebak di kolongnya.
+      t.restLength = d * (t.anchorFrog !== null ? 0.5 : 0.75);
       t.timeLeft = TONGUE_TIMEOUT;
-      events.push({ type: "tongue-attach", anchorId: t.anchorId! });
+      // Anchor sekali pakai habis begitu ditempeli.
+      const def = level.anchors.find((a) => a.id === t.anchorId);
+      if (def?.oneUse && t.anchorId && !usedAnchors.includes(t.anchorId)) {
+        usedAnchors.push(t.anchorId);
+      }
+      events.push({ type: "tongue-attach", anchorId: t.anchorId!, frog: i as 0 | 1 });
     }
     return;
   }
   if (t.mode !== "attached" || !t.anchor) return;
+  // Anchor katak: posisi anchor ikut katak pasangan tiap tick.
+  const j = t.anchorFrog;
+  if (j !== null && frogs[j]) t.anchor = centerPos(frogs[j]!);
   t.timeLeft -= dt;
   if (t.timeLeft <= 0) {
-    releaseTongue(state);
-    events.push({ type: "tongue-release" });
+    releaseTongueState(t);
+    events.push({ type: "tongue-release", frog: i as 0 | 1 });
     return;
   }
+  // Lidah ke pasangan menggulung: kedua katak ditarik mendekat.
+  if (j !== null) {
+    t.restLength = Math.max(TONGUE_MIN_REST, t.restLength - TONGUE_REEL_SPEED * dt);
+  }
   // Pegas tali: hanya menarik saat tegang (tali tidak bisa mendorong).
-  const c = { x: f.pos.x, y: f.pos.y + 0.5, z: f.pos.z };
+  // Tarikan di-cap supaya tidak melontarkan katak (slingshot).
+  const c = centerPos(f);
   const d = sub(t.anchor, c);
   const dist = len(d);
   t.length = dist;
@@ -195,38 +321,51 @@ function stepTongue(state: FrogGameState, dt: number, events: FrogSimEvent[]): v
   const dir = { x: d.x / dist, y: d.y / dist, z: d.z / dist };
   const stretch = Math.max(0, dist - t.restLength);
   const vRad = f.vel.x * dir.x + f.vel.y * dir.y + f.vel.z * dir.z;
-  const pull = SPRING_K * stretch - SPRING_DAMP * vRad;
-  f.vel.x += dir.x * pull * dt;
-  f.vel.y += dir.y * pull * dt;
-  f.vel.z += dir.z * pull * dt;
+  const pull = Math.max(-60, Math.min(60, SPRING_K * stretch - SPRING_DAMP * vRad));
+  // Lidah ke pasangan: penembak menahan (cuma 25% gaya), pasangan yang
+  // ditarik penuh, supaya penyelamat tidak ikut terseret ke jurang.
+  const selfFactor = j !== null ? 0.25 : 1;
+  f.vel.x += dir.x * pull * selfFactor * dt;
+  f.vel.y += dir.y * pull * selfFactor * dt;
+  f.vel.z += dir.z * pull * selfFactor * dt;
+  if (j !== null && frogs[j]) {
+    const o = frogs[j]!;
+    o.vel.x -= dir.x * pull * dt;
+    o.vel.y -= dir.y * pull * dt;
+    o.vel.z -= dir.z * pull * dt;
+  }
 }
 
-/** Satu tick simulasi (dt tetap 1/60 dtk). Kembalikan event frame ini. */
-export function stepFrog(
-  state: FrogGameState,
+/** Satu tick untuk katak ke-i: gerak, lompat, lidah, tabrakan,
+ * checkpoint, respawn. Lalat + goal ditangani pemanggil (shared). */
+function stepOne(
+  level: LevelDef,
+  frogs: FrogState[],
+  tongues: TongueState[],
+  usedAnchors: string[],
+  i: number,
   input: FrogInput,
-  dt: number = TICK_DT,
-): FrogSimEvent[] {
-  const events: FrogSimEvent[] = [];
-  if (state.won) return events;
-  state.time += dt;
-  const f = state.frog;
+  plats: PlatformDef[],
+  dt: number,
+  events: CoopSimEvent[],
+): void {
+  const f = frogs[i]!;
   const wasGround = f.onGround;
   const fallSpeed = -f.vel.y;
   f.prevPos = { ...f.pos };
 
   // Lompat: dari tanah, atau lepas dari ayunan (lompat di udara).
   if (input.jump) {
-    if (state.tongue.mode !== "idle") {
-      releaseTongue(state);
-      events.push({ type: "tongue-release" });
+    if (tongues[i]!.mode !== "idle") {
+      releaseTongueState(tongues[i]!);
+      events.push({ type: "tongue-release", frog: i as 0 | 1 });
       f.vel.y = JUMP_VEL;
       f.onGround = false;
-      events.push({ type: "jump" });
+      events.push({ type: "jump", frog: i as 0 | 1 });
     } else if (f.onGround) {
       f.vel.y = JUMP_VEL;
       f.onGround = false;
-      events.push({ type: "jump" });
+      events.push({ type: "jump", frog: i as 0 | 1 });
     }
   }
 
@@ -252,19 +391,29 @@ export function stepFrog(
       f.vel.z *= (sp - dec) / sp;
     }
   }
-  const maxSp = state.tongue.mode === "attached" ? SWING_MAX_SPEED : MOVE_SPEED;
+  if (wl > 0.1) f.facing = Math.atan2(wx, wz);
+
+  stepTongue(level, frogs, tongues, usedAnchors, i, dt, events);
+
+  // Cap kecepatan horizontal SETELAH pegas (pegas tidak boleh
+  // melampaui batas ayun). Katak yang sedang ditarik lidah pasangan
+  // juga boleh melaju sampai batas ayun, kalau tidak ia keburu jatuh
+  // ke jurang sebelum sampai seberang.
+  const beingPulled = tongues.some(
+    (t, k) => k !== i && t.mode === "attached" && t.anchorFrog === i,
+  );
+  const maxSp =
+    tongues[i]!.mode === "attached" || beingPulled ? SWING_MAX_SPEED : MOVE_SPEED;
   const hSp = Math.hypot(f.vel.x, f.vel.z);
   if (hSp > maxSp) {
     f.vel.x *= maxSp / hSp;
     f.vel.z *= maxSp / hSp;
   }
-  if (wl > 0.1) f.facing = Math.atan2(wx, wz);
 
-  stepTongue(state, dt, events);
-
-  // Gravitasi + integrasi per sumbu dengan tabrakan AABB.
-  f.vel.y -= GRAVITY * dt;
-  const plats = state.level.platforms;
+  // Gravitasi + integrasi per sumbu dengan tabrakan AABB. Katak yang
+  // digantung lidah pasangan jatuh lebih pelan (lidah menahan berat
+  // badannya), kalau tidak ia keburu jatuh sebelum sampai seberang.
+  f.vel.y -= (beingPulled ? GRAVITY * 0.35 : GRAVITY) * dt;
   f.pos.x += f.vel.x * dt;
   for (const p of plats) {
     if (!overlaps(f, p)) continue;
@@ -290,10 +439,12 @@ export function stepFrog(
       f.vel.y = 0;
     }
   }
-  if (!wasGround && f.onGround && fallSpeed > 2) events.push({ type: "land" });
+  if (!wasGround && f.onGround && fallSpeed > 2) {
+    events.push({ type: "land", frog: i as 0 | 1 });
+  }
 
   // Batas arena: tahan di dalam (dinding bengkel).
-  const b = state.level.bounds;
+  const b = level.bounds;
   if (f.pos.x < b.minX) {
     f.pos.x = b.minX;
     f.vel.x = 0;
@@ -329,28 +480,140 @@ export function stepFrog(
     f.pos = { ...f.checkpoint };
     f.prevPos = { ...f.checkpoint };
     f.vel = { x: 0, y: 0, z: 0 };
-    releaseTongue(state);
-    events.push({ type: "respawn" });
+    releaseTongueState(tongues[i]!);
+    events.push({ type: "respawn", frog: i as 0 | 1 });
   }
+}
 
-  // Lalat: makan saat cukup dekat.
-  const c = { x: f.pos.x, y: f.pos.y + 0.5, z: f.pos.z };
-  for (const fly of state.level.flies) {
-    if (state.fliesGot.includes(fly.id)) continue;
+/** Lalat yang dimakan katak ke-i (shared, dipakai solo + co-op). */
+function eatFlies(
+  level: LevelDef,
+  frogs: FrogState[],
+  fliesGot: string[],
+  i: number,
+  events: CoopSimEvent[],
+): void {
+  const c = centerPos(frogs[i]!);
+  for (const fly of level.flies) {
+    if (fliesGot.includes(fly.id)) continue;
     if (len(sub(fly.pos, c)) < 1.3) {
-      state.fliesGot.push(fly.id);
-      events.push({ type: "fly", flyId: fly.id });
+      fliesGot.push(fly.id);
+      events.push({ type: "fly", flyId: fly.id, frog: i as 0 | 1 });
+    }
+  }
+}
+
+function atGoalPos(level: LevelDef, f: FrogState): boolean {
+  const g = level.goal;
+  return (
+    Math.hypot(f.pos.x - g.pos.x, f.pos.z - g.pos.z) < g.radius &&
+    Math.abs(f.pos.y - g.pos.y) < 2
+  );
+}
+
+/** Satu tick simulasi solo (dt tetap 1/60 dtk). */
+export function stepFrog(
+  state: FrogGameState,
+  input: FrogInput,
+  dt: number = TICK_DT,
+): FrogSimEvent[] {
+  if (state.won) return [];
+  state.time += dt;
+  const events: CoopSimEvent[] = [];
+  stepOne(
+    state.level,
+    [state.frog],
+    [state.tongue],
+    [],
+    0,
+    input,
+    state.level.platforms,
+    dt,
+    events,
+  );
+  eatFlies(state.level, [state.frog], state.fliesGot, 0, events);
+  if (atGoalPos(state.level, state.frog)) {
+    state.won = true;
+    events.push({ type: "win", frog: 0 });
+  }
+  // Solo tidak butuh indeks katak: kupas lagi jadi event F1.
+  return events.map(({ frog: _frog, ...e }) => e);
+}
+
+/** Satu tick simulasi co-op (dt tetap 1/60 dtk). */
+export function stepCoop(
+  state: FrogCoopState,
+  inputs: [FrogInput, FrogInput],
+  dt: number = TICK_DT,
+): CoopSimEvent[] {
+  const events: CoopSimEvent[] = [];
+  if (state.won) return events;
+  state.time += dt;
+
+  // Tombol: tertekan bila ada katak berdiri di atasnya. Pintu terbuka
+  // selama ada tombol yang tertekan (dari kedua sisi).
+  const level = state.level;
+  let pressed = false;
+  for (const b of level.buttons ?? []) {
+    for (const f of state.frogs) {
+      if (
+        f.onGround &&
+        Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < b.radius &&
+        Math.abs(f.pos.y - b.pos.y) < 1.5
+      ) {
+        pressed = true;
+      }
+    }
+  }
+  state.buttonDown = pressed;
+  state.doorOpen = !!level.door && pressed;
+
+  const plats = activePlatforms(level, state.doorOpen);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, dt, events);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, dt, events);
+
+  // Lidah yang nempel ke katak yang baru respawn ikut lepas (anchor
+  // melompat ke checkpoint, tarikan pegas akan menyentak).
+  for (const ev of events) {
+    if (ev.type !== "respawn") continue;
+    const j = ev.frog;
+    const other = (j === 0 ? 1 : 0) as 0 | 1;
+    if (state.tongues[other].anchorFrog === j) {
+      releaseTongueState(state.tongues[other]);
+      events.push({ type: "tongue-release", frog: other });
     }
   }
 
-  // Goal: dekat portal dan di ketinggian yang sama.
-  const g = state.level.goal;
-  if (
-    Math.hypot(f.pos.x - g.pos.x, f.pos.z - g.pos.z) < g.radius &&
-    Math.abs(f.pos.y - g.pos.y) < 2
-  ) {
+  // Anchor sekali pakai pulih bila SEMUA katak kembali ke sisi spawn
+  // (z lebih besar dari anchor) DAN tidak ada lidah yang sedang
+  // menempel ke anchor itu: yang mengayun jatuh sebelum sampai
+  // seberang tidak membuat level deadlock.
+  if (state.usedAnchors.length > 0) {
+    state.usedAnchors = state.usedAnchors.filter((id) => {
+      const a = level.anchors.find((x) => x.id === id);
+      if (!a) return false;
+      const inUse = state.tongues.some(
+        (t) => t.anchorId === id && t.mode !== "idle",
+      );
+      if (inUse) return true;
+      return !state.frogs.every((f) => f.pos.z > a.pos.z);
+    });
+  }
+
+  eatFlies(level, state.frogs, state.fliesGot, 0, events);
+  eatFlies(level, state.frogs, state.fliesGot, 1, events);
+
+  // Goal per katak (menempel); menang saat keduanya sudah sampai.
+  let justArrived: 0 | 1 = 0;
+  for (const i of [0, 1] as const) {
+    if (!state.atGoal[i] && atGoalPos(level, state.frogs[i])) {
+      state.atGoal[i] = true;
+      justArrived = i;
+    }
+  }
+  if (state.atGoal[0] && state.atGoal[1]) {
     state.won = true;
-    events.push({ type: "win" });
+    events.push({ type: "win", frog: justArrived });
   }
 
   return events;
