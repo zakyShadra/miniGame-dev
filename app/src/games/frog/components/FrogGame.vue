@@ -15,6 +15,8 @@ defineEmits<{ exit: [] }>();
 
 // Perangkat sentuh: sembunyikan hint keyboard, tampilkan joystick.
 const isTouch = ref(false);
+// Mode debug (F6.12): FPS + draw calls hanya tampil dengan ?debug.
+const debugMode = new URLSearchParams(location.search).has("debug");
 onMounted(() => {
   // Mulai unduh texture HD selagi pemain di layar setup, supaya
   // sudah tersimpan di cache saat game dimulai.
@@ -198,14 +200,31 @@ const tongueLabel = computed(() => {
       Kroak!
     </div>
 
-    <!-- HUD atas: lalat (kiri), lidah (tengah), timer + keluar (kanan). -->
+    <!-- HUD atas: kolektibel (kiri), lidah (tengah), timer + keluar (kanan).
+         F6.12: hanya counter lalat + orb + koin, tanpa FPS/draw calls. -->
     <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-      <div class="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-4 py-2 shadow-md">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-ink"><circle cx="12" cy="14" r="5" /><path d="M8 9 5 4l5 2M16 9l3-5-5 2" /><circle cx="10" cy="13" r="1" fill="currentColor" /><circle cx="14" cy="13" r="1" fill="currentColor" /></svg>
-        <span class="font-display text-sm font-bold text-ink tabular-nums">
-          {{ store.hud.fliesGot }} / {{ store.hud.fliesTotal }}
-        </span>
-        <span class="text-xs text-muted">lalat</span>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-4 py-2 shadow-md">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-ink"><circle cx="12" cy="14" r="5" /><path d="M8 9 5 4l5 2M16 9l3-5-5 2" /><circle cx="10" cy="13" r="1" fill="currentColor" /><circle cx="14" cy="13" r="1" fill="currentColor" /></svg>
+          <span class="font-display text-sm font-bold text-ink tabular-nums">
+            {{ store.hud.fliesGot }} / {{ store.hud.fliesTotal }}
+          </span>
+          <span class="text-xs text-muted">lalat</span>
+        </div>
+        <div v-if="store.hud.orbsTotal > 0" class="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-4 py-2 shadow-md">
+          <span class="h-3.5 w-3.5 rounded-full bg-[#39ff14] shadow-[0_0_8px_#39ff14]" />
+          <span class="font-display text-sm font-bold text-ink tabular-nums">
+            {{ store.hud.orbsGot }} / {{ store.hud.orbsTotal }}
+          </span>
+          <span class="text-xs text-muted">orb</span>
+        </div>
+        <div v-if="store.hud.coinsTotal > 0" class="flex items-center gap-2 rounded-full border border-hairline bg-surface-1 px-4 py-2 shadow-md">
+          <span class="h-3.5 w-3.5 rounded-full border-2 border-[#b89600] bg-[#ffd700]" />
+          <span class="font-display text-sm font-bold text-ink tabular-nums">
+            {{ store.hud.coinsGot }} / {{ store.hud.coinsTotal }}
+          </span>
+          <span class="text-xs text-muted">koin</span>
+        </div>
       </div>
 
       <div
@@ -223,7 +242,7 @@ const tongueLabel = computed(() => {
         <div class="rounded-full border border-hairline bg-surface-1 px-4 py-2 font-display text-sm font-bold text-ink shadow-md tabular-nums">
           {{ timerText }}
         </div>
-        <span class="hidden rounded-full border border-hairline bg-surface-1 px-3 py-2 text-xs font-semibold text-muted shadow-md md:inline">
+        <span v-if="debugMode" class="hidden rounded-full border border-hairline bg-surface-1 px-3 py-2 text-xs font-semibold text-muted shadow-md md:inline">
           {{ store.hud.fps }} FPS &middot; {{ store.hud.calls }} draw
         </span>
         <FrogMuteButton />
