@@ -4,7 +4,8 @@
 // Katak hijau (bintik kuning, mata merah) + katak oranye-merah
 // (bercak biru-ungu, mata kuning, kaki biru). Katak menghadap +z,
 // origin di kaki (y=0), lebar ~0.9m. buildFrogModel(color) dipakai
-// scene (slot0/slot1). Lidah pink panjang (Froggin).
+// scene (slot0/slot1). Lidah tebal berdaging + ujung cakram hijau
+// terang (F6.5, Froggin).
 import * as THREE from "three";
 import type { FrogColor } from "../../../../../shared/frog/types";
 import { getFrogSkinTexture } from "./textures";
@@ -19,7 +20,8 @@ export interface FrogModel {
   armR: THREE.Group;
   eyeL: THREE.Group;
   eyeR: THREE.Group;
-  setTongue(from: THREE.Vector3, to: THREE.Vector3): void;
+  /** Bulge radial saat tembak (1 = normal, >1 = membesar daging). */
+  setTongue(from: THREE.Vector3, to: THREE.Vector3, bulge?: number): void;
   hideTongue(): void;
 }
 
@@ -161,24 +163,49 @@ export function buildFrogModel(color: FrogColor): FrogModel {
   const armR = buildFrontLeg(1, legMat);
   body.add(legL, legR, armL, armR);
 
-  // Lidah pink panjang (Froggin): silinder + ujung cangkir hisap.
+  // Lidah TEBAL berdaging ala Froggin (F6.5): silinder meruncing
+  // (pangkal 0.15, ujung 0.12) + cangkir hisap cakram HIJAU TERANG
+  // ganda di ujung (referensi: f6-trailer-lidah-tebal.png).
   const tongue = new THREE.Group();
   const tongueMat = std("#ff7d9c", 0.35);
-  const tongueMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 1, 12), tongueMat);
-  const tongueTip = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), tongueMat);
-  tongueTip.scale.set(1, 0.6, 1);
-  tongue.add(tongueMesh, tongueTip);
+  const tongueMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1, 14), tongueMat);
+  const tipMat = new THREE.MeshStandardMaterial({
+    color: "#39ff14",
+    roughness: 0.3,
+    emissive: "#1fd41f",
+    emissiveIntensity: 0.6,
+  });
+  // Cakram luar (menghadap target) + cakram dalam (pangkal cangkir).
+  // Tebal 0.12/0.10 m: lidah ke anchor lentera hampir vertikal, jadi
+  // kamera melihat cakram dari samping (edge-on); cakram tipis 0.05 m
+  // tidak terlihat sama sekali dari sudut itu.
+  const tipOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 20), tipMat);
+  const tipInner = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 20), tipMat);
+  tongue.add(tongueMesh, tipOuter, tipInner);
   tongue.visible = false;
 
-  function setTongue(from: THREE.Vector3, to: THREE.Vector3): void {
-    tongue.visible = true;
+  function setTongue(from: THREE.Vector3, to: THREE.Vector3, bulge = 1): void {
     const dir = new THREE.Vector3().subVectors(to, from);
     const len = dir.length();
+    // Lidah belum keluar dari mulut: sembunyikan (hindari skala 1/0).
+    if (len < 0.05) {
+      tongue.visible = false;
+      return;
+    }
+    tongue.visible = true;
     tongue.position.copy(from).addScaledVector(dir, 0.5);
-    tongue.scale.set(1, len, 1);
+    tongue.scale.set(bulge, len, bulge);
     tongue.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-    tongueTip.position.y = 0.5;
-    tongueTip.scale.set(1 / 1, 0.6 / len, 1);
+    // Ujung di y=0.5 (ujung silinder satuan); skala y 1/len menjaga
+    // ketebalan cakram tetap dalam satuan dunia. Cakram ditarik mundur
+    // dari ujung: sangkar lentera anchor (0.42 m, berpusat di titik
+    // anchor, bawahnya 0.21 m di bawah anchor) menutupi cakram bila
+    // tepat di ujung. Cakram luar 0.26-0.38 m, dalam 0.39-0.49 m
+    // sebelum ujung.
+    tipOuter.position.y = 0.5 - 0.32 / len;
+    tipOuter.scale.set(1, 1 / len, 1);
+    tipInner.position.y = 0.5 - 0.44 / len;
+    tipInner.scale.set(1, 1 / len, 1);
   }
   function hideTongue(): void {
     tongue.visible = false;

@@ -1016,15 +1016,19 @@ export class FrogScene {
     m.eyeL.scale.y = eyeSy;
     m.eyeR.scale.y = eyeSy;
 
-    // Lidah: terbang (ujung merayap ke anchor) atau nempel.
+    // Lidah: terbang (ujung merayap ke anchor) atau nempel. Saat
+    // terbang lidah membesar lalu mengecil (F6.5, tembakan "daging").
     if ((t.mode === "flying" || t.mode === "attached") && t.anchor) {
       const mouth = new THREE.Vector3(x, y + 0.35, z);
       const target = new THREE.Vector3(t.anchor.x, t.anchor.y, t.anchor.z);
+      let bulge = 1;
       if (t.mode === "flying") {
         const p = 1 - t.flyTime / TONGUE_FLY_TIME;
-        target.lerpVectors(mouth, target, Math.max(0, Math.min(1, p)));
+        const pc = Math.max(0, Math.min(1, p));
+        target.lerpVectors(mouth, target, pc);
+        bulge = 1 + 0.45 * Math.sin(pc * Math.PI);
       }
-      slot.model.setTongue(mouth, target);
+      slot.model.setTongue(mouth, target, bulge);
     } else {
       slot.model.hideTongue();
     }
