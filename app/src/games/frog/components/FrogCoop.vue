@@ -177,6 +177,10 @@ const tongueLabel = computed(() => {
       </h2>
       <ul class="mt-2 space-y-1 text-sm text-body">
         <li>
+          <b class="text-ink">Pintu tarik:</b> dua katak menempelkan lidah
+          ke gagang pintu bundar, pintu bergeser membuka jalan.
+        </li>
+        <li>
           <b class="text-ink">Tombol + pintu:</b> satu katak menahan tombol,
           pasangannya lewat pintu, lalu gantian.
         </li>

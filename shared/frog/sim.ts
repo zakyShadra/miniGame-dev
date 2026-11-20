@@ -58,6 +58,12 @@ export const KISS_TIP_DIST = 1.0;
 export const KISS_FROG_DIST = 2.5;
 /** Jeda minimum antar ciuman (detik). */
 export const KISS_COOLDOWN = 3;
+/** Pintu tarik (F6.3): kecepatan geser saat 2 lidah menempel
+ * (progres/detik, terbuka penuh ~2.9 detik). 1 lidah tidak menggeser. */
+export const PULL_RATE = 0.35;
+/** Pintu tarik (F6.3): kecepatan kembali menggeser saat < 2 lidah
+ * menempel (progres/detik, "It goes back"). */
+export const PULL_DECAY = 0.2;
 /** Setengah lebar badan katak + tinggi badan (meter). */
 const HALF_X = 0.4;
 const HALF_Z = 0.4;
@@ -96,6 +102,7 @@ export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameS
     ringsHit: [],
     orbsGot: [],
     coinsGot: [],
+    pullProgress: {},
     doorOpen: false,
     buttonDown: false,
     pressedButtons: [],
@@ -115,6 +122,7 @@ export function createCoopGame(
     ringsHit: [],
     orbsGot: [],
     coinsGot: [],
+    pullProgress: {},
     usedAnchors: [],
     buttonDown: false,
     doorOpen: false,
@@ -218,24 +226,46 @@ export function moverOffset(m: MoverDef, t: number): number {
   return m.amplitude * Math.sin((2 * Math.PI * t) / m.period + (m.phase ?? 0));
 }
 
+/** Geser pintu tarik di progres p (meter, searah sumbu definisinya). */
+function pullShift(
+  def: { axis: "x" | "z"; slide: number },
+  progress: number,
+): { dx: number; dz: number } {
+  const o = def.slide * progress;
+  return { dx: def.axis === "x" ? o : 0, dz: def.axis === "z" ? o : 0 };
+}
+
+/** Posisi gagang pintu tarik saat ini (ikut bergeser dengan pintu). */
+export function pullTargetPos(
+  def: { axis: "x" | "z"; slide: number; target: Vec3 },
+  progress: number,
+): Vec3 {
+  const { dx, dz } = pullShift(def, progress);
+  return { x: def.target.x + dx, y: def.target.y, z: def.target.z + dz };
+}
+
 /** Platform di waktu t: posisi penggerak diterapkan + pintu difilter
  * bila terbuka + platform tersembunyi difilter bila cincinnya belum
- * kena lidah (F6.2). Dipakai sim (tabrakan) dan scene (render). */
+ * kena lidah (F6.2) + pintu tarik digeser sesuai progresnya (F6.3).
+ * Dipakai sim (tabrakan) dan scene (render). */
 export function platformsAt(
   level: LevelDef,
   t: number,
   doorOpen: boolean,
   ringsHit: string[] = [],
+  pullProgress: Record<string, number> = {},
 ): PlatformDef[] {
   const movers = new Map((level.movers ?? []).map((m) => [m.platformId, m]));
+  const pulls = new Map((level.pullDoors ?? []).map((d) => [d.platformId, d]));
   return activePlatforms(level, doorOpen)
     .filter((p) => !p.hiddenUntil || ringsHit.includes(p.hiddenUntil))
     .map((p) => {
       const m = movers.get(p.id);
-      if (!m) return p;
-      const o = moverOffset(m, t);
-      const dx = m.axis === "x" ? o : 0;
-      const dz = m.axis === "z" ? o : 0;
+      const pd = pulls.get(p.id);
+      const mo = m ? moverOffset(m, t) : 0;
+      const dx = (m?.axis === "x" ? mo : 0) + (pd ? pullShift(pd, pullProgress[pd.id] ?? 0).dx : 0);
+      const dz = (m?.axis === "z" ? mo : 0) + (pd ? pullShift(pd, pullProgress[pd.id] ?? 0).dz : 0);
+      if (dx === 0 && dz === 0) return p;
       return {
         id: p.id,
         min: { x: p.min.x + dx, y: p.min.y, z: p.min.z + dz },
@@ -266,10 +296,11 @@ export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
  * keduanya dari kamera). Target: anchor level (kecuali yang sekali
  * pakai dan sedang habis), lalat yang belum dimakan (F6.4: lalat
  * hanya bisa dimakan dengan lidah), cincin emas yang belum aktif
- * (F6.2), orb hijau + koin emas yang belum diambil (F6.11), katak
- * pasangan (co-op), atau permukaan platform/dinding padat pertama
- * yang dipotong sinar (F6.1, fallback bila tidak ada target titik
- * yang kena). Target kena bila: dalam jangkauan lidah dari mulut,
+ * (F6.2), orb hijau + koin emas yang belum diambil (F6.11), gagang
+ * pintu tarik yang belum terbuka penuh (F6.3), katak pasangan
+ * (co-op), atau permukaan platform/dinding padat pertama yang
+ * dipotong sinar (F6.1, fallback bila tidak ada target titik yang
+ * kena). Target kena bila: dalam jangkauan lidah dari mulut,
  * sinar lewat dalam TONGUE_RAY_RADIUS darinya, dan garis pandang
  * mulut ke target jelas. False bila tidak ada target yang kena. */
 export function tryFireFrog(
@@ -284,11 +315,23 @@ export function tryFireFrog(
   i: number,
   origin: Vec3,
   aimDir: Vec3,
+  pullProgress: Record<string, number> = {},
 ): boolean {
   const t = tongues[i]!;
   if (t.mode !== "idle") return false;
   const mouth = mouthPos(frogs[i]!);
-  const plats = activePlatforms(level, false);
+  // Garis pandang memakai posisi pintu tarik saat ini (bukan def
+  // statis): pintu yang sudah bergeser tidak lagi menghalangi.
+  const plats = activePlatforms(level, false).map((p) => {
+    const pd = (level.pullDoors ?? []).find((d) => d.platformId === p.id);
+    if (!pd) return p;
+    const { dx, dz } = pullShift(pd, pullProgress[pd.id] ?? 0);
+    return {
+      id: p.id,
+      min: { x: p.min.x + dx, y: p.min.y, z: p.min.z + dz },
+      max: { x: p.max.x + dx, y: p.max.y, z: p.max.z + dz },
+    };
+  });
   type Candidate = { id: string; pos: Vec3; rayDist: number; frog: 0 | 1 | null };
   let best: Candidate | null = null;
   // Kandidat bila kena bidik, atau null (assignment best di badan loop,
@@ -336,6 +379,14 @@ export function tryFireFrog(
     const c = consider(`coin:${cn.id}`, cn.pos, null);
     if (c && (!best || c.rayDist < best.rayDist)) best = c;
   }
+  // Gagang pintu tarik yang belum terbuka penuh adalah target lidah
+  // (F6.3). Gagang ikut bergeser dengan pintu; pintu yang sudah
+  // terbuka bukan target lagi.
+  for (const pd of level.pullDoors ?? []) {
+    if ((pullProgress[pd.id] ?? 0) >= 1) continue;
+    const c = consider(`pull:${pd.id}`, pullTargetPos(pd, pullProgress[pd.id] ?? 0), null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
   // Katak pasangan adalah target lidah (tarik pasangan menyeberang).
   const j = i === 0 ? 1 : 0;
   if (frogs[j]) {
@@ -346,10 +397,13 @@ export function tryFireFrog(
   // yang kena bidik, lidah nempel ke permukaan platform padat pertama
   // yang dipotong sinar (sisi tegak, atas, atau bawah). Platform
   // bergerak dikecualikan: posisi def-nya statis, posisi sim-nya
-  // bergeser, jadi titik tempel bisa melayang di udara. Langit/latar
-  // bukan target: sinar yang tidak memotong platform apa pun gagal.
+  // bergeser, jadi titik tempel bisa melayang di udara. Pintu tarik
+  // (F6.3) dikecualikan dengan alasan yang sama: tempel ke gagangnya,
+  // bukan ke badannya. Langit/latar bukan target: sinar yang tidak
+  // memotong platform apa pun gagal.
   if (!best) {
     const moverIds = new Set((level.movers ?? []).map((m) => m.platformId));
+    for (const pd of level.pullDoors ?? []) moverIds.add(pd.platformId);
     let wallT = Infinity;
     let wall: { id: string; pos: Vec3 } | null = null;
     for (const p of plats) {
@@ -383,7 +437,7 @@ export function tryFireFrog(
 
 /** Tembak lidah (solo, F1). */
 export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, state.orbsGot, state.coinsGot, 0, origin, aimDir);
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, state.orbsGot, state.coinsGot, 0, origin, aimDir, state.pullProgress);
 }
 
 /** Tembak lidah katak ke-i (co-op). */
@@ -405,6 +459,7 @@ export function tryFireCoop(
     i,
     origin,
     aimDir,
+    state.pullProgress,
   );
 }
 
@@ -440,6 +495,7 @@ function stepTongue(
   i: number,
   dt: number,
   events: CoopSimEvent[],
+  pullProgress: Record<string, number> = {},
 ): void {
   const t = tongues[i]!;
   const f = frogs[i]!;
@@ -478,6 +534,19 @@ function stepTongue(
   // Anchor katak: posisi anchor ikut katak pasangan tiap tick.
   const j = t.anchorFrog;
   if (j !== null && frogs[j]) t.anchor = centerPos(frogs[j]!);
+  // Anchor pintu tarik (F6.3): gagang ikut bergeser dengan pintu.
+  // Pintu berat: lidah TIDAK menarik katak (tidak ada pegas), yang
+  // bergerak adalah pintunya (stepPullDoors). Timeout tetap berlaku.
+  if (t.anchorId?.startsWith("pull:")) {
+    const pd = (level.pullDoors ?? []).find((d) => `pull:${d.id}` === t.anchorId);
+    if (pd) t.anchor = pullTargetPos(pd, pullProgress[pd.id] ?? 0);
+    t.timeLeft -= dt;
+    if (t.timeLeft <= 0) {
+      releaseTongueState(t);
+      events.push({ type: "tongue-release", frog: i as 0 | 1 });
+    }
+    return;
+  }
   t.timeLeft -= dt;
   if (t.timeLeft <= 0) {
     releaseTongueState(t);
@@ -528,6 +597,7 @@ function stepOne(
   prevPlats: PlatformDef[],
   dt: number,
   events: CoopSimEvent[],
+  pullProgress: Record<string, number> = {},
 ): void {
   const f = frogs[i]!;
   const wasGround = f.onGround;
@@ -594,7 +664,7 @@ function stepOne(
   }
   if (wl > 0.1) f.facing = Math.atan2(wx, wz);
 
-  stepTongue(level, frogs, tongues, usedAnchors, i, dt, events);
+  stepTongue(level, frogs, tongues, usedAnchors, i, dt, events, pullProgress);
 
   // Cap kecepatan horizontal SETELAH pegas (pegas tidak boleh
   // melampaui batas ayun). Katak yang sedang ditarik lidah pasangan
@@ -777,6 +847,33 @@ function collectTonguePickups(
   else events.push({ type: "coin", coinId: id, frog: i as 0 | 1 });
 }
 
+/** Pintu tarik (F6.3): geser maju hanya bila >= 2 lidah menempel
+ * ke gagangnya di tick ini (butuh 2 katak, seperti di Froggin);
+ * bila kurang, pintu kembali menggeser (PULL_DECAY). Terbuka penuh
+ * (progres 1) = latch permanen + event "pulldoor" sekali. */
+function stepPullDoors(
+  level: LevelDef,
+  tongues: TongueState[],
+  pullProgress: Record<string, number>,
+  dt: number,
+  events: CoopSimEvent[],
+): void {
+  for (const pd of level.pullDoors ?? []) {
+    const cur = pullProgress[pd.id] ?? 0;
+    if (cur >= 1) continue;
+    const attached = tongues.filter(
+      (t) => t.mode === "attached" && t.anchorId === `pull:${pd.id}`,
+    ).length;
+    if (attached >= 2) {
+      const next = Math.min(1, cur + PULL_RATE * dt);
+      pullProgress[pd.id] = next;
+      if (next >= 1) events.push({ type: "pulldoor", doorId: pd.id, frog: 0 });
+    } else if (cur > 0) {
+      pullProgress[pd.id] = Math.max(0, cur - PULL_DECAY * dt);
+    }
+  }
+}
+
 /** Ujung lidah katak ke-i saat ini: anchor bila menempel, titik di
  * antara mulut dan anchor bila masih terbang (F6.8). Null bila lidah
  * idle. */
@@ -850,8 +947,8 @@ export function stepFrog(
   state.pressedButtons = pressedButtons(state.level, [state.frog]);
   state.buttonDown = state.pressedButtons.length > 0;
   if (state.buttonDown) state.doorOpen = true;
-  const plats = platformsAt(state.level, state.time, state.doorOpen, state.ringsHit);
-  const prevPlats = platformsAt(state.level, state.time - dt, state.doorOpen, state.ringsHit);
+  const plats = platformsAt(state.level, state.time, state.doorOpen, state.ringsHit, state.pullProgress);
+  const prevPlats = platformsAt(state.level, state.time - dt, state.doorOpen, state.ringsHit, state.pullProgress);
   stepOne(
     state.level,
     [state.frog],
@@ -863,7 +960,9 @@ export function stepFrog(
     prevPlats,
     dt,
     events,
+    state.pullProgress,
   );
+  stepPullDoors(state.level, [state.tongue], state.pullProgress, dt, events);
   eatTongueFlies([state.tongue], state.fliesGot, 0, events);
   activateRings([state.tongue], state.ringsHit, 0, events);
   collectTonguePickups([state.tongue], state.orbsGot, state.coinsGot, 0, events);
@@ -892,10 +991,11 @@ export function stepCoop(
   state.buttonDown = pressed;
   state.doorOpen = !!level.door && pressed;
 
-  const plats = platformsAt(level, state.time, state.doorOpen, state.ringsHit);
-  const prevPlats = platformsAt(level, state.time - dt, state.doorOpen, state.ringsHit);
-  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, prevPlats, dt, events);
-  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, prevPlats, dt, events);
+  const plats = platformsAt(level, state.time, state.doorOpen, state.ringsHit, state.pullProgress);
+  const prevPlats = platformsAt(level, state.time - dt, state.doorOpen, state.ringsHit, state.pullProgress);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, prevPlats, dt, events, state.pullProgress);
+  stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, prevPlats, dt, events, state.pullProgress);
+  stepPullDoors(level, state.tongues, state.pullProgress, dt, events);
 
   // Lidah yang nempel ke katak yang baru respawn ikut lepas (anchor
   // melompat ke checkpoint, tarikan pegas akan menyentak).

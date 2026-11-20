@@ -91,7 +91,19 @@ export interface CoinDef {
   pos: Vec3;
 }
 
-/** Tombol lantai co-op: tertekan bila ada katak berdiri di atasnya. */
+/** Pintu tarik (F6.3): platform vertikal yang bergeser di rel saat
+ * DUA lidah menempel ke gagangnya sekaligus (1 lidah tidak cukup:
+ * pintu hanya bergerak bila >= 2 lidah menempel, dan kembali
+ * menggeser saat dilepas). target = titik tempel lidah (gagang di
+ * muka pintu), ikut bergeser dengan pintu. slide = jarak geser saat
+ * terbuka penuh (m, searah sumbu). Terbuka penuh = latch permanen. */
+export interface PullDoorDef {
+  id: string;
+  platformId: string;
+  axis: "x" | "z";
+  slide: number;
+  target: Vec3;
+}
 export interface ButtonDef {
   id: string;
   pos: Vec3;
@@ -145,6 +157,8 @@ export interface LevelDef {
   spawn: Vec3;
   /** Spawn katak ke-2 (co-op, hijau). Kosong = level solo. */
   spawn2?: Vec3;
+  /** Pintu tarik (F6.3): digeser lidah, bukan tombol. */
+  pullDoors?: PullDoorDef[];
   /** Tombol lantai (co-op). */
   buttons?: ButtonDef[];
   /** Pintu (co-op). */
@@ -171,6 +185,8 @@ export interface FrogGameState {
   orbsGot: string[];
   /** Id koin emas yang sudah diambil (F6.11). */
   coinsGot: string[];
+  /** Progres pintu tarik 0..1 per id (F6.3, latch di 1). */
+  pullProgress: Record<string, number>;
   /** Pintu sedang terbuka. Solo (F3): sekali ditekan tombolnya,
    * pintu terbuka permanen (latch) supaya 1 katak bisa lewat. */
   doorOpen: boolean;
@@ -207,6 +223,8 @@ export type FrogSimEvent =
   /** Ciuman lidah (F6.8, co-op): dua ujung lidah bertemu. pos =
    * titik tengah kedua ujung lidah (tempat hati melayang). */
   | { type: "kiss"; pos: Vec3 }
+  /** Pintu tarik terbuka penuh (F6.3): bunyi + sparkle di scene. */
+  | { type: "pulldoor"; doorId: string }
   | { type: "respawn" }
   | { type: "bounce"; mushroomId: string }
   | { type: "win" };
@@ -224,6 +242,8 @@ export interface FrogCoopState {
   orbsGot: string[];
   /** Id koin emas yang sudah diambil (bersama, F6.11). */
   coinsGot: string[];
+  /** Progres pintu tarik 0..1 per id (F6.3, latch di 1). */
+  pullProgress: Record<string, number>;
   /** Id anchor sekali pakai yang sedang habis. */
   usedAnchors: string[];
   /** Ada katak berdiri di salah satu tombol. */

@@ -226,6 +226,10 @@ export class FrogGame {
       this.scene.playEvent("kiss", 0, undefined, ev.pos);
       playKiss();
     }
+    if (ev.type === "pulldoor") {
+      this.scene.playEvent("pulldoor", 0, ev.doorId);
+      playDoorOpen();
+    }
     if (ev.type === "bounce") {
       this.scene.playEvent("bounce", 0, ev.mushroomId);
       playBounce();

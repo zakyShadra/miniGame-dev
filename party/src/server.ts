@@ -1827,6 +1827,7 @@ export class Room extends Server<Env> {
       usedAnchors: [...game.usedAnchors],
       buttonDown: game.buttonDown,
       doorOpen: game.doorOpen,
+      pullProgress: { ...game.pullProgress },
       atGoal: [...game.atGoal] as [boolean, boolean],
       won: game.won,
       croakUntil: [...this.frogCroakUntil] as [number, number],

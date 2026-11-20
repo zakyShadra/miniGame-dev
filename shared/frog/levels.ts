@@ -64,13 +64,15 @@ export const LEVEL_WORKSHOP: LevelDef = {
   bounds: { minX: -18, maxX: 18, minZ: -39, maxZ: 10, killY: -4 },
 };
 
-// Level co-op "Bengkel Penyihir (Co-op)": kerangka tutorial F1 + 2
+// Level co-op "Bengkel Penyihir (Co-op)": kerangka tutorial F1 + 3
 // puzzle yang wajib 2 katak:
-//  a. Tombol + pintu di z=-25: pintu besi menutup satu-satunya jalan
+//  a. Pintu tarik (F6.3) di z=-22: dua katak menempelkan lidah ke
+//     gagang pintu bundar, pintu bergeser membuka jalan ke tombol A.
+//  b. Tombol + pintu di z=-25: pintu besi menutup satu-satunya jalan
 //     dari p3 ke p4. Tombol A di sisi p3, tombol B di sisi p4; pintu
 //     terbuka selama ada tombol yang tertekan, jadi satu katak menahan
 //     tombol sementara pasangannya lewat, lalu gantian.
-//  b. Ayun pasangan di jurang ke-2 (z -30..-37, 7 m): lentera "rapuh"
+//  c. Ayun pasangan di jurang ke-2 (z -30..-37, 7 m): lentera "rapuh"
 //     di atas jurang hanya tahan sekali ayun, jadi hanya katak pertama
 //     yang bisa mengayun. Katak ke-2 harus ditarik lidah pasangannya
 //     dari seberang (lidah bisa nempel ke katak lain).
@@ -87,6 +89,14 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
     // kena lidah. Jurang ke-2 SENGAJA tanpa cincin: puzzle lentera
     // rapuh + tarik pasangan harus tetap wajib.
     { id: "step1", min: { x: -3.5, y: 0, z: -18 }, max: { x: -0.5, y: 1.2, z: -15 }, hiddenUntil: "r1" },
+    // Pintu tarik bundar (F6.3, puzzle baru): menutup jalan p3 di
+    // z=-22. Segmen statis pullwall (x 0..4) + pintu geser pulldoor
+    // (x -6..0, di depan dinding 0.6 m). Dua katak menempelkan lidah
+    // ke gagang (-3, 3.6, -21.2), pintu bergeser +x 4 m dan membuka
+    // celah x -6..-2 menuju tombol A. Atas pintu 5.6 m: tidak bisa
+    // dilompati (apex lompat 4.24 m dari p3).
+    { id: "pullwall", min: { x: 0, y: 2.4, z: -22.6 }, max: { x: 4, y: 5.6, z: -22 } },
+    { id: "pulldoor", min: { x: -6, y: 2.4, z: -21.9 }, max: { x: 0, y: 5.6, z: -21.3 } },
     // Pintu besi: menutup celah z=-25 (satu-satunya jalan p3 -> p4).
     { id: "door", min: { x: -4, y: 2.4, z: -25.6 }, max: { x: 6, y: 5.6, z: -25 } },
     { id: "p4", min: { x: -4, y: 0, z: -30 }, max: { x: 6, y: 3.6, z: -25 } },
@@ -128,6 +138,9 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
   ],
   spawn: { x: 0, y: 0, z: 5 },
   spawn2: { x: 2.5, y: 0, z: 5 },
+  pullDoors: [
+    { id: "pd1", platformId: "pulldoor", axis: "x", slide: 4, target: { x: -3, y: 3.6, z: -21.2 } },
+  ],
   buttons: [
     { id: "btn-a", pos: { x: -4.5, y: 2.4, z: -21.5 }, radius: 1.1 },
     { id: "btn-b", pos: { x: 4.5, y: 3.6, z: -28.5 }, radius: 1.1 },

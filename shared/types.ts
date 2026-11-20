@@ -186,6 +186,8 @@ export interface FrogSnapshot {
   usedAnchors: string[]
   buttonDown: boolean
   doorOpen: boolean
+  /** Progres pintu tarik 0..1 per id (F6.3, latch di 1). */
+  pullProgress: Record<string, number>
   atGoal: [boolean, boolean]
   won: boolean
   croakUntil: [number, number]

@@ -137,6 +137,7 @@ export class FrogRemoteGame {
     usedAnchors: [] as string[],
     doorOpen: false,
     buttonDown: false,
+    pullProgress: {} as Record<string, number>,
     atGoal: [false, false] as [boolean, boolean],
     croakUntil: [0, 0] as [number, number],
   };
@@ -211,6 +212,7 @@ export class FrogRemoteGame {
       usedAnchors: [],
       doorOpen: false,
       buttonDown: false,
+      pullProgress: {},
       atGoal: [false, false],
       croakUntil: [0, 0],
     };
@@ -242,6 +244,7 @@ export class FrogRemoteGame {
     this.shared.usedAnchors = [...snap.usedAnchors];
     this.shared.doorOpen = snap.doorOpen;
     this.shared.buttonDown = snap.buttonDown;
+    this.shared.pullProgress = { ...snap.pullProgress };
     this.shared.atGoal = [...snap.atGoal] as [boolean, boolean];
     this.shared.croakUntil = [...snap.croakUntil] as [number, number];
 
@@ -272,6 +275,9 @@ export class FrogRemoteGame {
       // Lidah server menimpa prediksi lokal (tembakan optimis yang
       // ditolak server langsung dikoreksi).
       pred.tongues[this.myIndex] = snapToTongue(me);
+      // Pintu tarik otoritatif server (prediksi lokal bisa melenceng
+      // saat lidah pasangan tidak terprediksi).
+      pred.pullProgress = { ...snap.pullProgress };
       // Posisi + lidah pasangan di sim prediksi ikut snapshot (target
       // pegas lidah ke pasangan tetap segar, dan tarikan lidah pasangan
       // ke saya ikut terprediksi lokal; tanpa ini pred tidak tahu
@@ -294,6 +300,7 @@ export class FrogRemoteGame {
       if (ev.type === "orb") this.scene?.playEvent("orb", ev.frog, ev.orbId);
       if (ev.type === "coin") this.scene?.playEvent("coin", ev.frog, ev.coinId);
       if (ev.type === "kiss") this.scene?.playEvent("kiss", 0, undefined, ev.pos);
+      if (ev.type === "pulldoor") this.scene?.playEvent("pulldoor", 0, ev.doorId);
       this.playEventSound(ev.type, ev.frog);
     }
 
@@ -334,6 +341,7 @@ export class FrogRemoteGame {
     else if (type === "orb") playOrb(vol);
     else if (type === "coin") playCoin(vol);
     else if (type === "kiss") playKiss(1);
+    else if (type === "pulldoor") playDoorOpen(vol);
     else if (type === "bounce") playBounce(vol);
   }
 
@@ -455,6 +463,7 @@ export class FrogRemoteGame {
       coinsGot: this.shared.coinsGot,
       usedAnchors: this.shared.usedAnchors,
       doorOpen: this.shared.doorOpen,
+      pullProgress: this.shared.pullProgress,
       pressedButtons: pressed,
     };
   }

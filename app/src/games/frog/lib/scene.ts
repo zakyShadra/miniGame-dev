@@ -55,6 +55,8 @@ export interface FrogRemoteView {
   coinsGot: string[];
   usedAnchors: string[];
   doorOpen: boolean;
+  /** Progres pintu tarik 0..1 per id (F6.3, dari snapshot server). */
+  pullProgress: Record<string, number>;
   /** Id tombol yang sedang tertekan (dihitung client dari posisi katak). */
   pressedButtons: string[];
 }
@@ -379,6 +381,9 @@ export class FrogScene {
   private buttonDomes: { id: string; mat: THREE.MeshStandardMaterial }[] = [];
   /** Mesh platform bergerak + posisi dasarnya (F3). */
   private moverMeshes: { id: string; box: THREE.Mesh; top: THREE.Mesh; baseX: number; baseZ: number }[] = [];
+  /** Pintu tarik (F6.3): tiap bagian + posisi dasarnya, digeser
+   * syncPullDoors sesuai progres (0 = tertutup, 1 = terbuka penuh). */
+  private pullDoorMeshes: { id: string; axis: "x" | "z"; slide: number; parts: { mesh: THREE.Object3D; baseX: number; baseZ: number }[] }[] = [];
   /** Jamur lompat (F3): grup + sisa waktu animasi gepeng. */
   private bounceShrooms: { id: string; group: THREE.Group; squash: number; phase: number }[] = [];
   /** Texture air selokan (offset digeser tiap frame, F4). */
@@ -612,20 +617,24 @@ export class FrogScene {
       metalness: 0.7,
     });
     const moverIds = new Set((level.movers ?? []).map((m) => m.platformId));
+    const pullDefs = new Map((level.pullDoors ?? []).map((d) => [d.platformId, d]));
     let bookIdx = 0;
     for (const p of level.platforms) {
       const w = p.max.x - p.min.x;
       const h = p.max.y - p.min.y;
       const d = p.max.z - p.min.z;
       const isDoor = level.door?.platformId === p.id;
+      const pullDef = pullDefs.get(p.id);
       // Bengkel (F6.9): lantai awal = meja kayu raksasa, platform lain
       // = buku raksasa (sampul warna + halaman kertas di atas).
       const useBook = theme.books && !(theme.tableFloor && p.id === "floor0");
       const side = isDoor
         ? doorMat
-        : useBook
-          ? bookMats[bookIdx++ % bookMats.length]!
-          : sideMat;
+        : pullDef
+          ? woodMat
+          : useBook
+            ? bookMats[bookIdx++ % bookMats.length]!
+            : sideMat;
       const boxGeo = new THREE.BoxGeometry(w, h, d);
       worldUVs(boxGeo, w, h, d, 1 / 3);
       const box = new THREE.Mesh(boxGeo, side);
@@ -641,6 +650,57 @@ export class FrogScene {
           top,
           baseX: (p.min.x + p.max.x) / 2,
           baseZ: (p.min.z + p.max.z) / 2,
+        });
+      }
+      // Pintu tarik bundar (F6.3, seperti referensi walkthrough 5:20):
+      // cakram kayu + bingkai cincin + gagang kuningan di muka pintu.
+      // Semua bagian ikut bergeser dengan platformnya.
+      if (pullDef) {
+        const cxp = (p.min.x + p.max.x) / 2;
+        const cyp = (p.min.y + p.max.y) / 2;
+        const frontZ = p.max.z + 0.08;
+        const disc = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.45, 1.45, 0.14, 28),
+          new THREE.MeshStandardMaterial({
+            map: wood,
+            bumpMap: wood,
+            bumpScale: 0.02,
+            color: 0xc9a06a,
+            roughness: 0.8,
+          }),
+        );
+        disc.rotation.x = Math.PI / 2;
+        disc.position.set(cxp, cyp, frontZ);
+        this.scene.add(disc);
+        const frame = new THREE.Mesh(
+          new THREE.TorusGeometry(1.5, 0.12, 8, 28),
+          new THREE.MeshStandardMaterial({ color: 0x8a6a42, roughness: 0.8 }),
+        );
+        frame.position.set(cxp, cyp, frontZ);
+        this.scene.add(frame);
+        const handle = new THREE.Mesh(
+          new THREE.SphereGeometry(0.2, 12, 10),
+          new THREE.MeshStandardMaterial({
+            color: 0xc9a227,
+            metalness: 0.85,
+            roughness: 0.3,
+            emissive: 0x8a6d00,
+            emissiveIntensity: 0.4,
+          }),
+        );
+        handle.position.set(pullDef.target.x, pullDef.target.y, pullDef.target.z);
+        this.scene.add(handle);
+        this.pullDoorMeshes.push({
+          id: pullDef.id,
+          axis: pullDef.axis,
+          slide: pullDef.slide,
+          parts: [
+            { mesh: box, baseX: box.position.x, baseZ: box.position.z },
+            { mesh: top, baseX: top.position.x, baseZ: top.position.z },
+            { mesh: disc, baseX: disc.position.x, baseZ: disc.position.z },
+            { mesh: frame, baseX: frame.position.x, baseZ: frame.position.z },
+            { mesh: handle, baseX: handle.position.x, baseZ: handle.position.z },
+          ],
         });
       }
       if (isDoor) {
@@ -865,6 +925,10 @@ export class FrogScene {
       // Platform tersembunyi (F6.2): lilin statis akan melayang di
       // udara sebelum platformnya muncul.
       ...level.platforms.filter((p) => p.hiddenUntil).map((p) => p.id),
+      // Pintu tarik + dindingnya (F6.3): lilin statis akan melayang
+      // saat pintu bergeser, dan dinding bukan tempat lilin.
+      ...(level.pullDoors ?? []).map((d) => d.platformId),
+      ...level.platforms.filter((p) => p.id.startsWith("pull")).map((p) => p.id),
     ]);
     for (const p of level.platforms) {
       if (skip.has(p.id)) continue;
@@ -1402,6 +1466,11 @@ export class FrogScene {
       if (c) this.burstAt(c.pos, 0xffd700);
       return;
     }
+    if (type === "pulldoor" && id) {
+      const pd = (this.level.pullDoors ?? []).find((x) => x.id === id);
+      if (pd) this.burstAt(pd.target, 0xffd700);
+      return;
+    }
     if (type === "kiss") {
       // Ciuman lidah (F6.8): 6 hati pink melayang naik dari titik
       // tengah kedua ujung lidah + kedua katak mengembang senang.
@@ -1767,6 +1836,20 @@ export class FrogScene {
     }
   }
 
+  /** Pintu tarik mengikuti progres sim (F6.3): semua bagiannya
+   * bergeser searah sumbu definisinya. */
+  private syncPullDoors(pullProgress: Record<string, number>): void {
+    for (const d of this.pullDoorMeshes) {
+      const o = d.slide * (pullProgress[d.id] ?? 0);
+      const dx = d.axis === "x" ? o : 0;
+      const dz = d.axis === "z" ? o : 0;
+      for (const part of d.parts) {
+        part.mesh.position.x = part.baseX + dx;
+        part.mesh.position.z = part.baseZ + dz;
+      }
+    }
+  }
+
   /** Platform bergerak mengikuti posisi sim di waktu t (F3). */
   private syncMovers(time: number): void {
     for (const m of this.level.movers ?? []) {
@@ -1825,6 +1908,7 @@ export class FrogScene {
     this.syncHearts(dt);
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
     this.syncMovers(time);
+    this.syncPullDoors(state.pullProgress);
     this.syncMushrooms(time, dt);
     this.syncWater(dt);
     this.syncSparkles(time);
@@ -1845,6 +1929,7 @@ export class FrogScene {
     this.syncHearts(dt);
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);
     this.syncMovers(time);
+    this.syncPullDoors(view.pullProgress);
     this.syncMushrooms(time, dt);
     this.syncWater(dt);
     this.syncSparkles(time);
