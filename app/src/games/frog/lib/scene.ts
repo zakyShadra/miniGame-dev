@@ -1214,12 +1214,15 @@ export class FrogScene {
       s.age += dt;
       const attr = s.points.geometry.attributes.position as THREE.BufferAttribute;
       for (let j = 0; j < s.vel.length / 3; j++) {
-        s.vel[j * 3 + 1] -= 3 * dt;
+        const vx = s.vel[j * 3] ?? 0;
+        const vz = s.vel[j * 3 + 2] ?? 0;
+        const vy = (s.vel[j * 3 + 1] ?? 0) - 3 * dt;
+        s.vel[j * 3 + 1] = vy;
         attr.setXYZ(
           j,
-          attr.getX(j) + s.vel[j * 3] * dt,
-          attr.getY(j) + s.vel[j * 3 + 1] * dt,
-          attr.getZ(j) + s.vel[j * 3 + 2] * dt,
+          attr.getX(j) + vx * dt,
+          attr.getY(j) + vy * dt,
+          attr.getZ(j) + vz * dt,
         );
       }
       attr.needsUpdate = true;
