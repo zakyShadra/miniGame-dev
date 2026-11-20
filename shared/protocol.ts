@@ -94,12 +94,14 @@ export type ClientMessage =
   | { type: "naval-rematch" }
   // Katak co-op (2 pemain, server authoritative, tick 20 Hz, sim 60 Hz
   // dengan 3 substep per tick). p1 = katak oranye (spawn A), p2 = katak
-  // ungu (spawn B). Level selalu workshop-coop (F2).
+  // ungu (spawn B). Level dipilih host saat buat room (F3); tamu ikut.
   | {
       type: "create-frog"
       name: string
       color: string
       playerKey: string
+      /** Id definisi level co-op (default workshop-coop). */
+      levelId?: string
     }
   | {
       type: "join-frog"
@@ -132,7 +134,10 @@ export type ClientMessage =
   | { type: "frog-release" }
   | { type: "frog-croak" }
   // Rematch: dua pemain setuju -> match baru, kursi + warna tetap.
-  | { type: "frog-rematch" };
+  | { type: "frog-rematch" }
+  // Level berikutnya (F3): hanya host (p1), dari layar menang. Room
+  // pindah ke level berikutnya di pack, match baru langsung mulai.
+  | { type: "frog-next-level" };
 
 export type ServerMessage =
   | { type: "hello"; id: string }

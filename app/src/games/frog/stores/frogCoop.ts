@@ -6,6 +6,12 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import type PartySocket from "partysocket";
+import {
+  getLevel,
+  getLevelMeta,
+  LEVEL_PACK,
+  packIdOfDef,
+} from "../../../../../shared/frog/levels";
 import type { FrogInput, Vec3 } from "../../../../../shared/frog/types";
 import type { ClientMessage, ServerMessage } from "../../../../../shared/protocol";
 import type { FrogRoomState, PlayerState } from "../../../../../shared/types";
@@ -14,6 +20,7 @@ import {
   generateRoomCode,
   getPlayerKey,
 } from "../../../lib/party";
+import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
 import { FrogRemoteGame, type FrogCoopHud } from "../lib/remote";
 
 export type FrogCoopPhase = "form" | "waiting" | "playing" | "over";
@@ -53,6 +60,12 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
   const winner = ref<FrogCoopWinner | null>(null);
   const winTime = ref(0);
   const winFlies = ref(0);
+  const winFliesTotal = ref(7);
+  /** Id pack level pilihan host di form (F3). */
+  const selectedLevel = ref("bengkel");
+  /** Progresi (localStorage, sama dengan solo). */
+  const unlocked = ref(readUnlocked());
+  const completed = ref<string[]>(readCompleted());
   /** Naik tiap match baru (termasuk rematch): komponen me-remount game. */
   const gameKey = ref(0);
 
@@ -81,12 +94,30 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
       room.value?.status === "paused" &&
       players.value.some((p) => p.key !== myKey.value && !p.connected),
   );
+  /** Nama level room saat ini (buat layar waiting + menang). */
+  const roomLevelName = computed(() =>
+    room.value ? getLevel(room.value.levelId).name : "",
+  );
+  /** Saya host (p1): yang memilih level berikutnya. */
+  const isHost = computed(() => mySeat.value?.seatKey === "p1");
+  /** Ada level berikutnya setelah level room saat ini. */
+  const hasNext = computed(() => {
+    if (!room.value) return false;
+    const idx = LEVEL_PACK.findIndex((m) => m.coopId === room.value!.levelId);
+    return idx >= 0 && idx + 1 < LEVEL_PACK.length;
+  });
+
+  /** Pilih level di form (hanya yang sudah terbuka). */
+  function selectLevel(id: string): void {
+    const idx = LEVEL_PACK.findIndex((m) => m.id === id);
+    if (idx >= 0 && idx < unlocked.value) selectedLevel.value = id;
+  }
 
   let socket: PartySocket | null = null;
   let remote: FrogRemoteGame | null = null;
   let mode: "create" | "join" = "join";
   let joined = false;
-  let pending: { name: string; color: string } | null = null;
+  let pending: { name: string; color: string; levelId: string } | null = null;
   let lastInputSent = 0;
   let inputSeq = 0;
   let seenGameNumber = 0;
@@ -105,6 +136,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
         name: pending.name,
         color: pending.color,
         playerKey: myKey.value,
+        levelId: pending.levelId,
       });
     } else {
       // Join (atau rejoin setelah reconnect otomatis).
@@ -120,6 +152,13 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
   function finishMatch(w: FrogCoopWinner): void {
     if (phase.value === "over") return;
     winner.value = w;
+    // Menang = level selesai: simpan progresi (buka level berikutnya).
+    if (w === "players" && room.value) {
+      winFliesTotal.value = getLevel(room.value.levelId).flies.length;
+      const p = markCompleted(packIdOfDef(room.value.levelId));
+      unlocked.value = p.unlocked;
+      completed.value = p.completed;
+    }
     phase.value = "over";
   }
 
@@ -191,7 +230,11 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
   ) {
     disconnect();
     mode = opts.mode;
-    pending = { name: opts.name, color: opts.color };
+    pending = {
+      name: opts.name,
+      color: opts.color,
+      levelId: getLevelMeta(selectedLevel.value).coopId,
+    };
     code.value = roomCode.toUpperCase();
     hud.value = freshHud();
     status.value = "connecting";
@@ -266,6 +309,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
       myIndex: myIdx,
       myColor: seat.color,
       partnerColor: seat.color === "orange" ? "purple" : "orange",
+      levelId: r.levelId,
     });
   }
 
@@ -313,6 +357,11 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     send({ type: "frog-rematch" });
   }
 
+  /** Minta level berikutnya (hanya host, server yang memvalidasi). */
+  function sendNextLevel(): void {
+    send({ type: "frog-next-level" });
+  }
+
   return {
     status,
     phase,
@@ -329,14 +378,23 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     winner,
     winTime,
     winFlies,
+    winFliesTotal,
+    selectedLevel,
+    unlocked,
+    completed,
+    roomLevelName,
+    isHost,
+    hasNext,
     gameKey,
     rematchWaiting,
     rematchOffered,
     partnerGone,
+    selectLevel,
     connectCreate,
     connectJoin,
     attachGame,
     disconnect,
     sendRematch,
+    sendNextLevel,
   };
 });

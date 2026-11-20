@@ -5,6 +5,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { CURSOR_COLORS } from "../../../lib/party";
 import { useFrogCoopStore } from "../stores/frogCoop";
 import ThemeToggle from "../../../components/ThemeToggle.vue";
+import FrogLevelSelect from "./FrogLevelSelect.vue";
 
 const store = useFrogCoopStore();
 defineEmits<{ exit: [] }>();
@@ -123,13 +124,28 @@ const tongueLabel = computed(() => {
         <div>
           <h1 class="font-display text-2xl font-bold text-ink">Katak Co-op</h1>
           <p class="mt-0.5 text-sm text-muted">
-            Mabar 2 katak lewat bengkel penyihir. Buat room, bagikan kodenya
-            ke temanmu, dan selesaikan puzzle berdua.
+            Mabar 2 katak lewat 4 level. Buat room, bagikan kodenya ke
+            temanmu, dan selesaikan puzzle berdua.
           </p>
         </div>
       </div>
 
       <h2 class="mt-6 text-xs font-bold tracking-widest text-muted uppercase">
+        Pilih level
+      </h2>
+      <div class="mt-2">
+        <FrogLevelSelect
+          :selected="store.selectedLevel"
+          :unlocked="store.unlocked"
+          :completed="store.completed"
+          @select="store.selectLevel"
+        />
+      </div>
+      <p class="mt-2 text-xs text-subtle">
+        Level dipilih pembuat room; yang gabung mengikuti level room.
+      </p>
+
+      <h2 class="mt-5 text-xs font-bold tracking-widest text-muted uppercase">
         Namamu
       </h2>
       <input
@@ -155,8 +171,12 @@ const tongueLabel = computed(() => {
           pasangannya lewat pintu, lalu gantian.
         </li>
         <li>
-          <b class="text-ink">Ayun pasangan:</b> lentera di jurang ke-2 hanya
-          tahan sekali ayun, katak ke-2 harus ditarik lidah pasangannya.
+          <b class="text-ink">Ayun pasangan:</b> lentera rapuh hanya tahan
+          sekali ayun, katak ke-2 harus ditarik lidah pasangannya.
+        </li>
+        <li>
+          <b class="text-ink">Jamur lompat + buku terbang:</b> melenting dan
+          menumpang platform bergerak di level lanjutan.
         </li>
         <li>
           <b class="text-ink">Menang:</b> kedua katak harus sampai portal.
@@ -223,7 +243,8 @@ const tongueLabel = computed(() => {
     <div class="w-full max-w-lg rounded-2xl border border-hairline bg-surface-1 p-6 text-center shadow-md">
       <h1 class="font-display text-2xl font-bold text-ink">Menunggu partner...</h1>
       <p class="mt-1 text-sm text-muted">
-        Bagikan kode ini ke temanmu, atau kirim linknya.
+        Level: <b class="text-ink">{{ store.roomLevelName }}</b>. Bagikan kode
+        ini ke temanmu, atau kirim linknya.
       </p>
       <div class="mt-4 rounded-xl border border-hairline bg-surface-2 px-4 py-3">
         <div class="text-xs font-bold tracking-widest text-muted uppercase">Kode room</div>
@@ -390,7 +411,21 @@ const tongueLabel = computed(() => {
           <h2 class="font-display text-2xl font-bold text-ink">Kalian menang!</h2>
           <p class="mt-2 text-sm text-muted">
             Kedua katak sampai portal dalam {{ winTimeText }} dan makan
-            {{ store.winFlies }} dari 7 lalat.
+            {{ store.winFlies }} dari {{ store.winFliesTotal }} lalat.
+          </p>
+          <button
+            v-if="store.isHost && store.hasNext"
+            type="button"
+            class="mt-5 w-full rounded-full bg-primary py-3 font-display text-base font-bold text-white transition hover:bg-primary-hover"
+            @click="store.sendNextLevel()"
+          >
+            Level Berikutnya &rarr;
+          </button>
+          <p v-else-if="store.isHost && !store.hasNext" class="mt-5 text-sm font-semibold text-success">
+            Semua level selesai, hebat!
+          </p>
+          <p v-else-if="store.hasNext" class="mt-5 text-sm font-semibold text-muted">
+            Host yang memilih level berikutnya...
           </p>
           <button
             v-if="!store.rematchWaiting"

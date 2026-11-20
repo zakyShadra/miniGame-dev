@@ -60,6 +60,8 @@ export interface FrogRemoteStart {
   myIndex: 0 | 1;
   myColor: "orange" | "purple";
   partnerColor: "orange" | "purple";
+  /** Id definisi level co-op (F3, dari room). */
+  levelId: string;
 }
 
 /** Delay render interpolasi (ms): pasangan digambar 100 ms di masa lalu. */
@@ -163,7 +165,7 @@ export class FrogRemoteGame {
     this.scene?.dispose();
     this.myIndex = cfg.myIndex;
     this.partnerIndex = cfg.myIndex === 0 ? 1 : 0;
-    const level = getLevel("workshop-coop");
+    const level = getLevel(cfg.levelId);
     this.scene = new FrogScene(this.container, level, cfg.myColor);
     this.scene.addPartner(cfg.partnerColor);
     this.scene.orbitYaw = 0;

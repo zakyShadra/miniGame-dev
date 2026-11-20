@@ -25,6 +25,7 @@ import {
   TICK_DT as FROG_TICK_DT,
   tryFireCoop,
 } from "../../shared/frog/sim";
+import { getLevel, LEVEL_PACK } from "../../shared/frog/levels";
 import type {
   CoopSimEvent,
   FrogCoopState,
@@ -325,6 +326,9 @@ export class Room extends Server<Env> {
         break;
       case "frog-rematch":
         this.handleFrogRematch(conn);
+        break;
+      case "frog-next-level":
+        this.handleFrogNextLevel(conn);
         break;
       default:
         break;
@@ -1556,6 +1560,10 @@ export class Room extends Server<Env> {
       return;
     }
     const name = msg.name.trim().slice(0, 20) || "Pemain";
+    // Level dipilih host; id tidak dikenal / bukan level co-op (tanpa
+    // spawn2) jatuh ke workshop-coop.
+    const def = getLevel(msg.levelId ?? "");
+    const levelId = def.spawn2 ? def.id : FROG_LEVEL_ID;
     const player: PlayerState = {
       id: conn.id,
       name,
@@ -1571,7 +1579,7 @@ export class Room extends Server<Env> {
       chess: null,
       naval: null,
       frog: {
-        levelId: FROG_LEVEL_ID,
+        levelId,
         status: "waiting",
         seats: [
           { key: msg.playerKey, name, seatKey: "p1", color: "orange" },
@@ -1698,12 +1706,12 @@ export class Room extends Server<Env> {
 
   // Buat game baru dari kursi yang ada dan mulai tick. Dipakai saat
   // match pertama dan tiap rematch. p1 = oranye (spawn A), p2 = ungu
-  // (spawn B).
+  // (spawn B). Level dari room (dipilih host, F3).
   private startFrogMatch(): void {
     const frog = this.state?.frog;
     if (!frog) return;
     if (frog.seats.length < 2) return;
-    this.frogGame = createCoopGame();
+    this.frogGame = createCoopGame(getLevel(frog.levelId));
     this.frogInputs.clear();
     this.frogPendingEvents = [];
     this.frogCroakUntil = [0, 0];
@@ -1925,6 +1933,24 @@ export class Room extends Server<Env> {
     this.persist();
     this.sendAll(this.frogRoomMessage());
     this.sendSystem(`${seat.name} minta rematch.`);
+  }
+
+  // Level berikutnya (F3): hanya host (p1), hanya dari layar menang.
+  // Room pindah ke level berikutnya di pack, match baru langsung mulai
+  // (tamu mengikuti, tanpa persetujuan).
+  private handleFrogNextLevel(conn: Connection) {
+    const frog = this.state?.frog;
+    if (!frog || frog.status !== "over") return;
+    const seat = this.frogSeatOf(conn);
+    if (!seat || seat.seatKey !== "p1") return;
+    const idx = LEVEL_PACK.findIndex((m) => m.coopId === frog.levelId);
+    if (idx < 0 || idx + 1 >= LEVEL_PACK.length) return;
+    const next = LEVEL_PACK[idx + 1]!;
+    frog.levelId = next.coopId;
+    frog.gameNumber += 1;
+    this.startFrogMatch();
+    this.sendAll(this.frogRoomMessage());
+    this.sendSystem(`Level berikutnya: ${next.name}!`);
   }
 
   // Timer bubar: bila ada kursi yang masih putus setelah tenggang,
