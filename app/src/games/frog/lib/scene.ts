@@ -6,11 +6,27 @@
 // panjang dari level solo). Co-op (F2): katak ke-2, pintu geser, dan
 // tombol lantai dirender lewat renderRemote. F3: tema per level
 // (sewer/library/garden), platform bergerak, dan jamur lompat.
+// F4 HD: texture CC0 nyata (bata, kayu, paving, lumut, kertas, kulit)
+// + normal map, UV skala dunia, fog + fill light per tema, air animasi.
 
 import * as THREE from "three";
 import { mulberry32 } from "../../../../../shared/game/prng";
 import { TONGUE_FLY_TIME, moverOffset } from "../../../../../shared/frog/sim";
 import { buildFrogModel, type FrogModel } from "./frogModel";
+import {
+  getBrickNormalTexture,
+  getBrickTexture,
+  getGrassTexture,
+  getLeatherNormalTexture,
+  getMetalTexture,
+  getMossTexture,
+  getPaperTexture,
+  getPavingNormalTexture,
+  getPavingTexture,
+  getWaterTexture,
+  getWoodDarkTexture,
+  getWoodTexture,
+} from "./textures";
 import type {
   FrogColor,
   FrogGameState,
@@ -56,49 +72,30 @@ function std(color: number, roughness = 0.9): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
 
-/** Tekstur papan kayu digambar di canvas (tanpa file eksternal). */
-function woodTexture(base: string, dark: string): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
-  const g = c.getContext("2d")!;
-  g.fillStyle = base;
-  g.fillRect(0, 0, 256, 256);
-  const rng = mulberry32(7);
-  for (let row = 0; row < 4; row++) {
-    const y = row * 64;
-    g.fillStyle = `rgba(0,0,0,${0.05 + rng() * 0.08})`;
-    g.fillRect(0, y, 256, 64);
-    g.strokeStyle = dark;
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(0, y);
-    g.lineTo(256, y);
-    g.stroke();
-    // Serat kayu: garis bergelombang samar.
-    g.strokeStyle = "rgba(0,0,0,0.08)";
-    g.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
-      const gy = y + 8 + rng() * 48;
-      g.beginPath();
-      g.moveTo(0, gy);
-      g.bezierCurveTo(80, gy + 4, 170, gy - 4, 256, gy);
-      g.stroke();
+/** Skala UV kotak ke ukuran dunia: texture mengulang tiap 1/scale
+ * meter, jadi kepadatan texel konsisten di semua ukuran platform
+ * tanpa perlu instance texture per mesh. Urutan face BoxGeometry:
+ * +x, -x, +y, -y, +z, -z, masing-masing 4 vertex. */
+function worldUVs(geo: THREE.BoxGeometry, w: number, h: number, d: number, scale: number): void {
+  const dims: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  for (let f = 0; f < 6; f++) {
+    const [fw, fh] = dims[f]!;
+    for (let v = 0; v < 4; v++) {
+      const i = f * 4 + v;
+      uv.setXY(i, uv.getX(i) * fw * scale, uv.getY(i) * fh * scale);
     }
-    // Sambungan papan (staggered).
-    const jx = ((row * 97) % 256) + 30;
-    g.strokeStyle = dark;
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(jx, y);
-    g.lineTo(jx, y + 64);
-    g.stroke();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  uv.needsUpdate = true;
+}
+
+/** Skala UV bidang datar (lantai) ke ukuran dunia. */
+function worldUVsPlane(geo: THREE.PlaneGeometry, w: number, d: number, scale: number): void {
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) * w * scale, uv.getY(i) * d * scale);
+  }
+  uv.needsUpdate = true;
 }
 
 /** Kaca patri: petak warna-warni dengan bingkai timah gelap. */
@@ -145,21 +142,31 @@ interface FlyMesh {
 
 const BOOK_COLORS = [0xc0392b, 0x2e7d6f, 0xe8b94a, 0x5b7db1, 0x8b5cf6, 0xd97b4f, 0x3f9e4d];
 const BOTTLE_COLORS = [0xff5c85, 0x4da6ff, 0x57d98a, 0xf2a541, 0xb8a4ed];
+/** Variasi warna tudung jamur dekor (F4, instanceColor). */
+const CAP_COLORS = [0xc0392b, 0xd35400, 0xe74c3c, 0x8e44ad, 0xb03a2e];
 
-/** Palet + dekor per tema level (F3). */
+/** Palet + dekor per tema level (F3, F4: fog + exposure + fill light
+ * + texture per tema). */
 interface FrogThemeCfg {
   bg: number;
   hemiSky: number;
   hemiGround: number;
   sun: number;
   sunInt: number;
-  wall: number;
-  panel: number;
+  /** Kabut + exposure ACES per tema (selokan gelap + pekat). */
+  fogNear: number;
+  fogFar: number;
+  exposure: number;
+  /** Fill light tengah ruangan (warna + intensitas). */
+  fillColor: number;
+  fillInt: number;
+  /** Tint di atas texture bata dinding (putih = bata asli). */
+  wallTint: number;
   /** Lantai bawah: kayu, air (selokan), rumput (taman). */
   floor: "wood" | "water" | "grass";
-  /** Warna sisi platform (null = tekstur kayu). */
-  platSide: number | null;
-  platTop: number;
+  /** Texture sisi + puncak platform (buku pakai leather + warna). */
+  sideTex: "wood" | "paving";
+  topTex: "wood" | "moss" | "paper";
   /** Platform = buku raksasa (warna sampul bersiklus). */
   books: boolean;
   shelves: boolean;
@@ -170,10 +177,10 @@ interface FrogThemeCfg {
 }
 
 const THEMES: Record<FrogTheme, FrogThemeCfg> = {
-  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 1.9, wall: 0x8a6a45, panel: 0x5a3a20, floor: "wood", platSide: null, platTop: 0xa67c4a, books: false, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
-  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, wall: 0x2a3a34, panel: 0x1a2a24, floor: "water", platSide: 0x3a4a42, platTop: 0x5a7a5a, books: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
-  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, wall: 0x3a3350, panel: 0x2a2438, floor: "wood", platSide: null, platTop: 0xf5ead0, books: true, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
-  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, wall: 0x2a3a22, panel: 0x1a2a16, floor: "grass", platSide: 0x4a3520, platTop: 0x5a8a3a, books: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
+  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 1.9, fogNear: 30, fogFar: 85, exposure: 1.1, fillColor: 0xff9a3d, fillInt: 8, wallTint: 0xffffff, floor: "wood", sideTex: "wood", topTex: "wood", books: false, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
+  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, fogNear: 16, fogFar: 55, exposure: 1.05, fillColor: 0x2ee6a8, fillInt: 10, wallTint: 0x7a9a8a, floor: "water", sideTex: "paving", topTex: "moss", books: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
+  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, fogNear: 30, fogFar: 80, exposure: 1.15, fillColor: 0xffe8c8, fillInt: 9, wallTint: 0xa89ac8, floor: "wood", sideTex: "wood", topTex: "paper", books: true, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
+  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, fogNear: 35, fogFar: 90, exposure: 1.15, fillColor: 0xd8ffb8, fillInt: 9, wallTint: 0x93b184, floor: "grass", sideTex: "wood", topTex: "moss", books: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
 };
 
 export class FrogScene {
@@ -194,6 +201,8 @@ export class FrogScene {
   private moverMeshes: { id: string; box: THREE.Mesh; top: THREE.Mesh; baseX: number; baseZ: number }[] = [];
   /** Jamur lompat (F3): grup + sisa waktu animasi gepeng. */
   private bounceShrooms: { id: string; group: THREE.Group; squash: number; phase: number }[] = [];
+  /** Texture air selokan (offset digeser tiap frame, F4). */
+  private waterTex: THREE.Texture | null = null;
   private raycaster = new THREE.Raycaster();
   private camPos = new THREE.Vector3();
   private camInit = false;
@@ -210,11 +219,11 @@ export class FrogScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = theme.exposure;
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(theme.bg);
-    this.scene.fog = new THREE.Fog(theme.bg, 30, 85);
+    this.scene.fog = new THREE.Fog(theme.bg, theme.fogNear, theme.fogFar);
     this.camera = new THREE.PerspectiveCamera(
       55,
       container.clientWidth / Math.max(1, container.clientHeight),
@@ -223,7 +232,8 @@ export class FrogScene {
     );
     this.camera.position.set(0, 6, 14);
 
-    // Cahaya tema: 1 hemisphere + 1 directional + 2 point.
+    // Cahaya tema: 1 hemisphere + 1 directional + 3 point (lilin,
+    // goal, fill tengah ruangan). Tanpa shadow map (laptop kentang).
     this.scene.add(new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 1.25));
     const sun = new THREE.DirectionalLight(theme.sun, theme.sunInt);
     sun.position.set(10, 18, 8);
@@ -234,6 +244,13 @@ export class FrogScene {
     const goalGlow = new THREE.PointLight(0x7dffc8, 10, 14, 2);
     goalGlow.position.set(level.goal.pos.x, level.goal.pos.y + 2, level.goal.pos.z);
     this.scene.add(goalGlow);
+    const fill = new THREE.PointLight(theme.fillColor, theme.fillInt, 34, 1.6);
+    fill.position.set(
+      (level.bounds.minX + level.bounds.maxX) / 2,
+      6,
+      (level.bounds.minZ + level.bounds.maxZ) / 2,
+    );
+    this.scene.add(fill);
 
     // Lantai bawah (dekoratif, di bawah jurang). Ukuran dari bounds
     // level. Air selokan di y=-3 (katak tenggelam sedikit sebelum
@@ -246,39 +263,76 @@ export class FrogScene {
     let lowMat: THREE.Material;
     let lowY = -5;
     if (theme.floor === "water") {
+      // Air selokan: texture riak prosedural (map + bump), mengkilap.
+      const water = getWaterTexture();
+      this.waterTex = water;
       lowMat = new THREE.MeshStandardMaterial({
-        color: 0x1a5a4a,
+        map: water,
+        bumpMap: water,
+        bumpScale: 0.06,
         emissive: 0x0a3a2a,
         emissiveIntensity: 0.6,
-        roughness: 0.25,
-        metalness: 0.1,
+        roughness: 0.18,
+        metalness: 0.05,
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.94,
       });
       lowY = -3;
     } else if (theme.floor === "grass") {
-      lowMat = std(0x2a4a22, 1);
+      const grass = getGrassTexture();
+      lowMat = new THREE.MeshStandardMaterial({
+        map: grass,
+        bumpMap: grass,
+        bumpScale: 0.03,
+        roughness: 1,
+      });
     } else {
-      const woodTex = woodTexture("#7a5230", "#5a3a20");
-      woodTex.repeat.set(10, 12);
-      lowMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.95 });
+      const wood = getWoodTexture();
+      lowMat = new THREE.MeshStandardMaterial({
+        map: wood,
+        bumpMap: wood,
+        bumpScale: 0.02,
+        roughness: 0.85,
+      });
     }
-    const lowFloor = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomD), lowMat);
+    const lowGeo = new THREE.PlaneGeometry(roomW, roomD);
+    worldUVsPlane(lowGeo, roomW, roomD, 1 / 4);
+    const lowFloor = new THREE.Mesh(lowGeo, lowMat);
     lowFloor.rotation.x = -Math.PI / 2;
     lowFloor.position.set(cx, lowY, cz);
     this.scene.add(lowFloor);
 
-    // Dinding: belakang + kiri + kanan.
-    const wallMat = std(theme.wall, 0.95);
-    const panelMat = std(theme.panel, 0.9);
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, 10, 0.6), wallMat);
+    // Dinding bata HD (map + normal) + panel kayu gelap.
+    const brick = getBrickTexture();
+    const brickN = getBrickNormalTexture();
+    const wallMat = new THREE.MeshStandardMaterial({
+      map: brick,
+      normalMap: brickN,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      color: theme.wallTint,
+      roughness: 0.95,
+    });
+    const woodDark = getWoodDarkTexture();
+    const panelMat = new THREE.MeshStandardMaterial({
+      map: woodDark,
+      bumpMap: woodDark,
+      bumpScale: 0.02,
+      roughness: 0.9,
+    });
+    const backGeo = new THREE.BoxGeometry(roomW, 10, 0.6);
+    worldUVs(backGeo, roomW, 10, 0.6, 1 / 6);
+    const backWall = new THREE.Mesh(backGeo, wallMat);
     backWall.position.set(cx, 5, b.minZ - 0.5);
     this.scene.add(backWall);
     for (const side of [-1, 1]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.6, 10, roomD - 4), wallMat);
+      const wallGeo = new THREE.BoxGeometry(0.6, 10, roomD - 4);
+      worldUVs(wallGeo, 0.6, 10, roomD - 4, 1 / 6);
+      const wall = new THREE.Mesh(wallGeo, wallMat);
       wall.position.set(side < 0 ? b.minX - 0.3 : b.maxX + 0.3, 5, cz);
       this.scene.add(wall);
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.4, roomD - 4), panelMat);
+      const panelGeo = new THREE.BoxGeometry(0.2, 2.4, roomD - 4);
+      worldUVs(panelGeo, 0.2, 2.4, roomD - 4, 1 / 4);
+      const panel = new THREE.Mesh(panelGeo, panelMat);
       panel.position.set(side < 0 ? b.minX + 0.1 : b.maxX - 0.1, 1.2, cz);
       this.scene.add(panel);
     }
@@ -301,11 +355,59 @@ export class FrogScene {
     // dirender sebagai gerbang besi dalam grup sendiri (bisa meluncur
     // ke bawah saat terbuka). Library: platform = buku raksasa
     // (sampul berwarna bersiklus + halaman krem).
-    const platTex = woodTexture("#8a5f36", "#6a4526");
-    const platMat = new THREE.MeshStandardMaterial({ map: platTex, roughness: 0.9 });
-    const topMat = std(theme.platTop, 0.85);
-    const sideMat = theme.platSide !== null ? std(theme.platSide, 0.9) : platMat;
-    const doorMat = new THREE.MeshStandardMaterial({ color: 0x6a7a8a, roughness: 0.45, metalness: 0.6 });
+    // Platform: sisi + puncak pakai texture tema (kayu / paving /
+    // lumut / kertas). Buku raksasa: sampul warna + normal kulit.
+    const wood = getWoodTexture();
+    const woodMat = new THREE.MeshStandardMaterial({
+      map: wood,
+      bumpMap: wood,
+      bumpScale: 0.02,
+      roughness: 0.85,
+    });
+    const paving = getPavingTexture();
+    const pavingMat = new THREE.MeshStandardMaterial({
+      map: paving,
+      normalMap: getPavingNormalTexture(),
+      normalScale: new THREE.Vector2(0.7, 0.7),
+      roughness: 0.95,
+    });
+    const moss = getMossTexture();
+    const mossMat = new THREE.MeshStandardMaterial({
+      map: moss,
+      bumpMap: moss,
+      bumpScale: 0.03,
+      roughness: 1,
+    });
+    const paper = getPaperTexture();
+    const paperMat = new THREE.MeshStandardMaterial({
+      map: paper,
+      bumpMap: paper,
+      bumpScale: 0.01,
+      color: 0xfff2d8,
+      roughness: 0.9,
+    });
+    const leatherN = getLeatherNormalTexture();
+    const bookMats = BOOK_COLORS.map(
+      (c) =>
+        new THREE.MeshStandardMaterial({
+          color: c,
+          normalMap: leatherN,
+          normalScale: new THREE.Vector2(0.4, 0.4),
+          roughness: 0.8,
+        }),
+    );
+    const sideMat = theme.sideTex === "paving" ? pavingMat : woodMat;
+    const topMat =
+      theme.topTex === "moss" ? mossMat : theme.topTex === "paper" ? paperMat : woodMat;
+    const metal = getMetalTexture();
+    const doorMat = new THREE.MeshStandardMaterial({
+      map: metal,
+      bumpMap: metal,
+      bumpScale: 0.02,
+      color: 0xb8c8d8,
+      roughness: 0.4,
+      metalness: 0.7,
+    });
     const moverIds = new Set((level.movers ?? []).map((m) => m.platformId));
     let bookIdx = 0;
     for (const p of level.platforms) {
@@ -316,14 +418,15 @@ export class FrogScene {
       const side = isDoor
         ? doorMat
         : theme.books
-          ? std(BOOK_COLORS[bookIdx++ % BOOK_COLORS.length]!, 0.85)
+          ? bookMats[bookIdx++ % bookMats.length]!
           : sideMat;
-      const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), side);
+      const boxGeo = new THREE.BoxGeometry(w, h, d);
+      worldUVs(boxGeo, w, h, d, 1 / 3);
+      const box = new THREE.Mesh(boxGeo, side);
       box.position.set((p.min.x + p.max.x) / 2, (p.min.y + p.max.y) / 2, (p.min.z + p.max.z) / 2);
-      const top = new THREE.Mesh(
-        new THREE.BoxGeometry(w + 0.3, 0.14, d + 0.3),
-        isDoor ? doorMat : topMat,
-      );
+      const topGeo = new THREE.BoxGeometry(w + 0.3, 0.14, d + 0.3);
+      worldUVs(topGeo, w + 0.3, 0.14, d + 0.3, 1 / 3);
+      const top = new THREE.Mesh(topGeo, isDoor ? doorMat : topMat);
       top.position.set((p.min.x + p.max.x) / 2, p.max.y + 0.02, (p.min.z + p.max.z) / 2);
       if (moverIds.has(p.id)) {
         this.moverMeshes.push({
@@ -356,11 +459,17 @@ export class FrogScene {
       }
     }
 
-    // Tombol lantai co-op: alas + kubah yang menyala hijau saat ditekan.
+    // Tombol lantai co-op: alas logam + kubah yang menyala hijau saat ditekan.
+    const buttonBaseMat = new THREE.MeshStandardMaterial({
+      map: metal,
+      color: 0x8a9aa8,
+      roughness: 0.45,
+      metalness: 0.7,
+    });
     for (const btn of level.buttons ?? []) {
       const base = new THREE.Mesh(
         new THREE.CylinderGeometry(btn.radius, btn.radius + 0.15, 0.12, 20),
-        std(0x3a3a3a, 0.6),
+        buttonBaseMat,
       );
       base.position.set(btn.pos.x, btn.pos.y + 0.06, btn.pos.z);
       this.scene.add(base);
@@ -378,7 +487,18 @@ export class FrogScene {
     }
 
     // Balok langit-langit di atas jurang + kait anchor.
-    const beamMat = std(0x4a3220, 0.9);
+    const beamMat = new THREE.MeshStandardMaterial({
+      map: woodDark,
+      bumpMap: woodDark,
+      bumpScale: 0.02,
+      roughness: 0.9,
+    });
+    const cageMat = new THREE.MeshStandardMaterial({
+      map: metal,
+      color: 0x6a7a8a,
+      roughness: 0.5,
+      metalness: 0.7,
+    });
     for (const a of level.anchors) {
       const beam = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 0.6), beamMat);
       beam.position.set(a.pos.x, 8.6, a.pos.z);
@@ -386,8 +506,8 @@ export class FrogScene {
       const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 8.6 - a.pos.y, 6), std(0x9a7a4a));
       rope.position.set(a.pos.x, (8.6 + a.pos.y) / 2, a.pos.z);
       this.scene.add(rope);
-      // Lentera gantung: sangkar + bola cahaya.
-      const cage = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.34), std(0x2a2a2e, 0.6));
+      // Lentera gantung: sangkar logam + bola cahaya.
+      const cage = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.34), cageMat);
       cage.position.copy(a.pos);
       this.scene.add(cage);
       const bulb = new THREE.Mesh(
@@ -440,7 +560,13 @@ export class FrogScene {
    * Posisi rak dari bounds level (F3: level baru lebih panjang). */
   private buildShelves(level: LevelDef): void {
     const rng = mulberry32(99);
-    const shelfMat = std(0x4a3220, 0.9);
+    const woodDark = getWoodDarkTexture();
+    const shelfMat = new THREE.MeshStandardMaterial({
+      map: woodDark,
+      bumpMap: woodDark,
+      bumpScale: 0.02,
+      roughness: 0.9,
+    });
     const b = level.bounds;
     const shelfSpots: { x: number; z: number; ry: number }[] = [];
     for (let z = b.minZ + 9; z < b.maxZ - 2; z += 14) {
@@ -481,7 +607,11 @@ export class FrogScene {
     }
     const books = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({
+        roughness: 0.85,
+        normalMap: getLeatherNormalTexture(),
+        normalScale: new THREE.Vector2(0.4, 0.4),
+      }),
       bookMats.length,
     );
     bookMats.forEach((mat, i) => {
@@ -537,11 +667,18 @@ export class FrogScene {
   /** Botol ramuan di meja samping spawn (1 draw call instanced). */
   private buildBottles(): void {
     const rng = mulberry32(55);
-    const table = new THREE.Mesh(new THREE.BoxGeometry(3, 0.18, 1.4), std(0x4a3220, 0.9));
+    const woodDark = getWoodDarkTexture();
+    const tableMat = new THREE.MeshStandardMaterial({
+      map: woodDark,
+      bumpMap: woodDark,
+      bumpScale: 0.02,
+      roughness: 0.9,
+    });
+    const table = new THREE.Mesh(new THREE.BoxGeometry(3, 0.18, 1.4), tableMat);
     table.position.set(-5.5, 1.05, 6.5);
     this.scene.add(table);
     for (const [dx, dz] of [[-1.3, -0.5], [1.3, -0.5], [-1.3, 0.5], [1.3, 0.5]] as const) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), std(0x4a3220, 0.9));
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), tableMat);
       leg.position.set(-5.5 + dx, 0.52, 6.5 + dz);
       this.scene.add(leg);
     }
@@ -585,7 +722,11 @@ export class FrogScene {
     );
     const caps = new THREE.InstancedMesh(
       new THREE.SphereGeometry(0.32, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-      std(0xc0392b, 0.7),
+      new THREE.MeshStandardMaterial({
+        roughness: 0.6,
+        normalMap: getLeatherNormalTexture(),
+        normalScale: new THREE.Vector2(0.3, 0.3),
+      }),
       spots.length,
     );
     const m = new THREE.Matrix4();
@@ -597,9 +738,11 @@ export class FrogScene {
       m.makeScale(s.s, s.s * 0.8, s.s);
       m.setPosition(s.x, -5 + 0.5 * s.s, s.z);
       caps.setMatrixAt(i, m);
+      caps.setColorAt(i, new THREE.Color(CAP_COLORS[i % CAP_COLORS.length]!));
     });
     stems.instanceMatrix.needsUpdate = true;
     caps.instanceMatrix.needsUpdate = true;
+    if (caps.instanceColor) caps.instanceColor.needsUpdate = true;
     this.scene.add(stems);
     this.scene.add(caps);
   }
@@ -641,7 +784,9 @@ export class FrogScene {
       color: 0xc0392b,
       emissive: 0xc0392b,
       emissiveIntensity: 0.25,
-      roughness: 0.7,
+      roughness: 0.6,
+      normalMap: getLeatherNormalTexture(),
+      normalScale: new THREE.Vector2(0.4, 0.4),
     });
     for (const m of level.mushrooms ?? []) {
       const group = new THREE.Group();
@@ -663,12 +808,19 @@ export class FrogScene {
     }
   }
 
-  /** Goal: lily pad + portal bercahaya + berkas cahaya. */
+  /** Goal: lily pad lumut + portal bercahaya + berkas cahaya. */
   private buildGoal(level: LevelDef): void {
     const g = level.goal.pos;
+    const moss = getMossTexture();
     const pad = new THREE.Mesh(
       new THREE.CylinderGeometry(2.1, 2.1, 0.16, 24),
-      std(0x3f9e4d, 0.8),
+      new THREE.MeshStandardMaterial({
+        map: moss,
+        bumpMap: moss,
+        bumpScale: 0.02,
+        color: 0x9ac89a,
+        roughness: 0.9,
+      }),
     );
     pad.position.set(g.x, g.y + 0.12, g.z);
     this.scene.add(pad);
@@ -923,6 +1075,13 @@ export class FrogScene {
     }
   }
 
+  /** Air selokan mengalir pelan (geser offset texture). */
+  private syncWater(dt: number): void {
+    if (!this.waterTex) return;
+    this.waterTex.offset.x += dt * 0.008;
+    this.waterTex.offset.y += dt * 0.005;
+  }
+
   /** Render satu frame solo: sinkron state sim + gambar. */
   render(state: FrogGameState, alpha: number, time: number, dt: number): void {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
@@ -930,6 +1089,7 @@ export class FrogScene {
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
+    this.syncWater(dt);
     const f = state.frog;
     this.syncCamera(dt, new THREE.Vector3(f.pos.x, f.pos.y, f.pos.z));
     this.renderer.render(this.scene, this.camera);
@@ -946,6 +1106,7 @@ export class FrogScene {
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
+    this.syncWater(dt);
     const f = view.me.frog;
     this.syncCamera(dt, new THREE.Vector3(f.pos.x, f.pos.y, f.pos.z));
     this.renderer.render(this.scene, this.camera);
