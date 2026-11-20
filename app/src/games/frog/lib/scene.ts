@@ -1064,7 +1064,9 @@ export class FrogScene {
       coin.position.set(x, y, z);
       this.scene.add(coin);
     };
-    coinFlat(-6.5, 0.06, 0.5, 1.1);
+    // Koin di lantai awal di z=2.5 (bukan 0.5): pintu tarik co-op
+    // (F6.3) menempati z 0.1..0.7 dan akan menelan koin di sana.
+    coinFlat(-6.5, 0.06, 2.5, 1.1);
     coinFlat(level.goal.pos.x + 5.8, level.goal.pos.y + 0.06, level.goal.pos.z + 1, 1.0);
     const coinStand = new THREE.Mesh(
       new THREE.CylinderGeometry(1.1, 1.1, 0.12, 24),

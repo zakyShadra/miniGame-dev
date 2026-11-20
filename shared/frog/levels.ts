@@ -66,8 +66,11 @@ export const LEVEL_WORKSHOP: LevelDef = {
 
 // Level co-op "Bengkel Penyihir (Co-op)": kerangka tutorial F1 + 3
 // puzzle yang wajib 2 katak:
-//  a. Pintu tarik (F6.3) di z=-22: dua katak menempelkan lidah ke
-//     gagang pintu bundar, pintu bergeser membuka jalan ke tombol A.
+//  a. Pintu tarik (F6.3) di z=0: DUA katak menempelkan lidah ke
+//     gagang pintu bundar, pintu bergeser membuka jalan ke p1.
+//     Di awal level (bukan tengah): ayunan jurang bisa mendarat
+//     melewati pintu bila di p3, jadi puzzle bisa dilewati; di sini
+//     pintu tidak bisa dilewati tanpa dibuka.
 //  b. Tombol + pintu di z=-25: pintu besi menutup satu-satunya jalan
 //     dari p3 ke p4. Tombol A di sisi p3, tombol B di sisi p4; pintu
 //     terbuka selama ada tombol yang tertekan, jadi satu katak menahan
@@ -82,6 +85,14 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
   name: "Bengkel Penyihir (Co-op)",
   platforms: [
     { id: "floor0", min: { x: -8, y: -1, z: -3 }, max: { x: 8, y: 0, z: 8 } },
+    // Pintu tarik bundar (F6.3, puzzle baru): menutup jalan floor0
+    // ke p1 di z=0. Segmen statis pullwall (x -2..8) + pintu geser
+    // pulldoor (x -8..-2, di depan dinding 0.1 m). Dua katak
+    // menempelkan lidah ke gagang (-5, 1.6, 0.8), pintu bergeser +x
+    // 6 m dan membuka celah x -8..-2 menuju p1. Atas pintu 3.2 m:
+    // tidak bisa dilompati (apex lompat 1.84 m dari floor0).
+    { id: "pullwall", min: { x: -2, y: 0, z: -0.6 }, max: { x: 8, y: 3.2, z: 0 } },
+    { id: "pulldoor", min: { x: -8, y: 0, z: 0.1 }, max: { x: -2, y: 3.2, z: 0.7 } },
     { id: "p1", min: { x: -6, y: 0, z: -8 }, max: { x: 2, y: 1.2, z: -3 } },
     { id: "p2", min: { x: 0, y: 0, z: -13 }, max: { x: 8, y: 2.4, z: -8 } },
     { id: "p3", min: { x: -6, y: 0, z: -25 }, max: { x: 4, y: 2.4, z: -20 } },
@@ -89,14 +100,6 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
     // kena lidah. Jurang ke-2 SENGAJA tanpa cincin: puzzle lentera
     // rapuh + tarik pasangan harus tetap wajib.
     { id: "step1", min: { x: -3.5, y: 0, z: -18 }, max: { x: -0.5, y: 1.2, z: -15 }, hiddenUntil: "r1" },
-    // Pintu tarik bundar (F6.3, puzzle baru): menutup jalan p3 di
-    // z=-22. Segmen statis pullwall (x 0..4) + pintu geser pulldoor
-    // (x -6..0, di depan dinding 0.6 m). Dua katak menempelkan lidah
-    // ke gagang (-3, 3.6, -21.2), pintu bergeser +x 4 m dan membuka
-    // celah x -6..-2 menuju tombol A. Atas pintu 5.6 m: tidak bisa
-    // dilompati (apex lompat 4.24 m dari p3).
-    { id: "pullwall", min: { x: 0, y: 2.4, z: -22.6 }, max: { x: 4, y: 5.6, z: -22 } },
-    { id: "pulldoor", min: { x: -6, y: 2.4, z: -21.9 }, max: { x: 0, y: 5.6, z: -21.3 } },
     // Pintu besi: menutup celah z=-25 (satu-satunya jalan p3 -> p4).
     { id: "door", min: { x: -4, y: 2.4, z: -25.6 }, max: { x: 6, y: 5.6, z: -25 } },
     { id: "p4", min: { x: -4, y: 0, z: -30 }, max: { x: 6, y: 3.6, z: -25 } },
@@ -139,7 +142,7 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
   spawn: { x: 0, y: 0, z: 5 },
   spawn2: { x: 2.5, y: 0, z: 5 },
   pullDoors: [
-    { id: "pd1", platformId: "pulldoor", axis: "x", slide: 4, target: { x: -3, y: 3.6, z: -21.2 } },
+    { id: "pd1", platformId: "pulldoor", axis: "x", slide: 6, target: { x: -5, y: 1.6, z: 0.8 } },
   ],
   buttons: [
     { id: "btn-a", pos: { x: -4.5, y: 2.4, z: -21.5 }, radius: 1.1 },
