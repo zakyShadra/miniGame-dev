@@ -395,6 +395,10 @@ export class FrogScene {
   /** Orbit kamera (radian, 0 = kamera di +z katak). */
   orbitYaw = 0;
   distance = 8.5;
+  /** Kamera sudut tinggi (F6.13): pitch ~54 derajat + jarak 11 m,
+   * feel shared-screen Froggin (kedua katak + ruangan terlihat).
+   * Default false (orbit third-person). */
+  highCam = false;
 
   constructor(container: HTMLElement, level: LevelDef, myColor: FrogColor = "orange") {
     this.container = container;
@@ -1657,15 +1661,19 @@ export class FrogScene {
 
   private syncCamera(dt: number, target: THREE.Vector3): void {
     // Kamera di belakang katak relatif orbitYaw (0 = dari +z).
+    // Sudut tinggi (F6.13): pitch 0.95 rad (~54 derajat, rentang
+    // Froggin 45-60) + jarak min 11 m, supaya kedua katak + ruangan
+    // terlihat sekaligus. Orbit yaw tetap berfungsi.
     const yaw = this.orbitYaw;
-    const pitch = 0.42;
+    const pitch = this.highCam ? 0.95 : 0.42;
+    const dist = this.highCam ? Math.max(this.distance, 11) : this.distance;
     const dx = Math.sin(yaw) * Math.cos(pitch);
     const dz = Math.cos(yaw) * Math.cos(pitch);
     const dy = Math.sin(pitch);
     const desired = new THREE.Vector3(
-      target.x + dx * this.distance,
-      target.y + 1 + dy * this.distance,
-      target.z + dz * this.distance,
+      target.x + dx * dist,
+      target.y + 1 + dy * dist,
+      target.z + dz * dist,
     );
     desired.y = Math.max(0.8, desired.y);
     if (!this.camInit) {

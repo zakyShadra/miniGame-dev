@@ -25,6 +25,7 @@ import type {
 import type { FrogSnap, FrogSnapshot } from "../../../../../shared/types";
 import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene, type FrogRemoteView } from "./scene";
+import { HIGH_CAM_KEY, readPref, writePref } from "./preferences";
 import {
   attenByDistance,
   playBounce,
@@ -163,6 +164,8 @@ export class FrogRemoteGame {
   private frames = 0;
   private fpsT = 0;
   private fps = 0;
+  /** Kamera sudut tinggi (F6.13, dari localStorage). */
+  highCam = readPref(HIGH_CAM_KEY);
 
   constructor(container: HTMLElement, opts: FrogRemoteOptions) {
     this.container = container;
@@ -200,6 +203,7 @@ export class FrogRemoteGame {
     this.scene = new FrogScene(this.container, level, cfg.myColor);
     this.scene.addPartner(cfg.partnerColor);
     this.scene.orbitYaw = 0;
+    this.scene.highCam = this.highCam;
     this.pred = createCoopGame(level);
     this.prevSnap = null;
     this.curSnap = null;
@@ -387,6 +391,13 @@ export class FrogRemoteGame {
   /** Orbit kamera dari drag sentuh (dx piksel, skala sama seperti drag mouse). */
   orbitBy(dx: number): void {
     this.scene?.addOrbit(dx * 0.005);
+  }
+
+  /** Toggle kamera sudut tinggi (F6.13, tombol HUD / tombol C). */
+  toggleHighCam(): void {
+    this.highCam = !this.highCam;
+    if (this.scene) this.scene.highCam = this.highCam;
+    writePref(HIGH_CAM_KEY, this.highCam);
   }
 
   /** Alpha interpolasi pasangan (0..1, render 100 ms di masa lalu). */
@@ -597,6 +608,8 @@ export class FrogRemoteGame {
       this.toggleTongue();
     } else if (e.code === "KeyK") {
       this.croak();
+    } else if (e.code === "KeyC") {
+      this.toggleHighCam();
     }
   };
 

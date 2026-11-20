@@ -7,6 +7,7 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { getLevel, getLevelMeta, LEVEL_PACK } from "../../../../../shared/frog/levels";
 import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
+import { HIGH_CAM_KEY, readPref } from "../lib/preferences";
 import { FrogGame, type FrogHud } from "../lib/game";
 
 export type FrogPhase = "setup" | "playing" | "won";
@@ -39,6 +40,8 @@ export const useFrogStore = defineStore("frog", () => {
   /** Id pack level yang sudah selesai. */
   const completed = ref<string[]>(readCompleted());
   const hud = ref<FrogHud>(freshHud());
+  /** Kamera sudut tinggi aktif (F6.13, cermin state game). */
+  const highCam = ref(readPref(HIGH_CAM_KEY));
   const winTime = ref(0);
   const winFlies = ref(0);
   const winFliesTotal = ref(5);
@@ -139,6 +142,12 @@ export const useFrogStore = defineStore("frog", () => {
     game?.orbitBy(dx);
   }
 
+  /** Toggle kamera sudut tinggi (F6.13, tombol HUD). */
+  function toggleCamera(): void {
+    game?.toggleHighCam();
+    highCam.value = game?.highCam ?? highCam.value;
+  }
+
   function toSetup(): void {
     disposeGame();
     croakPos.value = null;
@@ -159,6 +168,7 @@ export const useFrogStore = defineStore("frog", () => {
     winFlies,
     winFliesTotal,
     croakPos,
+    highCam,
     selectLevel,
     begin,
     attachGame,
@@ -170,5 +180,6 @@ export const useFrogStore = defineStore("frog", () => {
     touchTongue,
     touchCroak,
     touchOrbit,
+    toggleCamera,
   };
 });

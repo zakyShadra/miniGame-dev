@@ -26,6 +26,7 @@ import {
   stepFrog,
   tryFire,
 } from "../../../../../shared/frog/sim";
+import { HIGH_CAM_KEY, readPref, writePref } from "./preferences";
 import type { FrogGameState, FrogSimEvent } from "../../../../../shared/frog/types";
 
 export interface FrogHud {
@@ -80,6 +81,8 @@ export class FrogGame {
   private frames = 0;
   private fpsT = 0;
   private fps = 0;
+  /** Kamera sudut tinggi (F6.13, dari localStorage). */
+  highCam = readPref(HIGH_CAM_KEY);
 
   constructor(container: HTMLElement, opts: FrogGameOptions) {
     this.container = container;
@@ -87,6 +90,7 @@ export class FrogGame {
     const level = getLevel(opts.levelId ?? "bengkel");
     this.state = createFrogGame(level);
     this.scene = new FrogScene(container, level);
+    this.scene.highCam = this.highCam;
     // Kamera awal di belakang spawn (katak menghadap -z, ke arah level).
     this.scene.orbitYaw = 0;
     this.drag = new DragOrbit(
@@ -185,6 +189,13 @@ export class FrogGame {
   /** Orbit kamera dari drag sentuh (dx piksel, skala sama seperti drag mouse). */
   orbitBy(dx: number): void {
     this.scene.addOrbit(dx * 0.005);
+  }
+
+  /** Toggle kamera sudut tinggi (F6.13, tombol HUD / tombol C). */
+  toggleHighCam(): void {
+    this.highCam = !this.highCam;
+    this.scene.highCam = this.highCam;
+    writePref(HIGH_CAM_KEY, this.highCam);
   }
 
   private syncCroak(): void {
@@ -294,6 +305,8 @@ export class FrogGame {
       this.toggleTongue();
     } else if (e.code === "KeyK") {
       this.croak();
+    } else if (e.code === "KeyC") {
+      this.toggleHighCam();
     }
   };
 
