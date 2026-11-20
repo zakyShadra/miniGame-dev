@@ -49,6 +49,10 @@ export interface FrogRemoteView {
   fliesGot: string[];
   /** Id cincin emas yang sudah diaktifkan (F6.2). */
   ringsHit: string[];
+  /** Id orb hijau yang sudah diambil (F6.11). */
+  orbsGot: string[];
+  /** Id koin emas yang sudah diambil (F6.11). */
+  coinsGot: string[];
   usedAnchors: string[];
   doorOpen: boolean;
   /** Id tombol yang sedang tertekan (dihitung client dari posisi katak). */
@@ -358,6 +362,10 @@ export class FrogScene {
   private anchorVisuals: { id: string; ring: THREE.Mesh; bulb: THREE.Mesh }[] = [];
   /** Target cincin emas (F6.2): mesh + material (meredup saat aktif). */
   private ringVisuals: { id: string; ring: THREE.Mesh; mat: THREE.MeshStandardMaterial }[] = [];
+  /** Orb hijau bercahaya (F6.11): mesh + posisi dasar + fase denyut. */
+  private orbVisuals: { id: string; mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
+  /** Koin emas (F6.11): mesh berputar di atas meja. */
+  private coinVisuals: { id: string; mesh: THREE.Mesh }[] = [];
   /** Mesh platform tersembunyi (F6.2): tak terlihat sampai cincinnya aktif. */
   private hiddenMeshes: { ringId: string; meshes: THREE.Mesh[] }[] = [];
   /** Ledakan sparkle biru aktif (F6.2): titik + kecepatan + umur. */
@@ -758,6 +766,9 @@ export class FrogScene {
     this.buildFlies(level);
     // Sparkle melayang di udara (F6.10, semua tema, 1 draw call).
     this.buildSparkles(level);
+    // Kolektibel orb + koin (F6.11, Level 1 saja saat ini).
+    this.buildOrbs(level);
+    this.buildCoins(level);
 
     // Katak pemain (oranye solo / sesuai kursi di co-op). Lidah
     // dipindah ke scene supaya koordinat dunia-nya tidak ikut rotasi
@@ -1236,6 +1247,45 @@ export class FrogScene {
     }
   }
 
+  /** Orb hijau bercahaya (F6.11): bola emissive hijau terang (#39ff14,
+   * warna yang sama dengan ujung lidah F6.5), berdenyut + melayang
+   * naik-turun (syncShared). Hilang saat diambil lidah. */
+  private buildOrbs(level: LevelDef): void {
+    const mat = new THREE.MeshStandardMaterial({
+      color: "#7dff6a",
+      emissive: "#39ff14",
+      emissiveIntensity: 2.2,
+      roughness: 0.3,
+    });
+    const geo = new THREE.SphereGeometry(0.28, 14, 12);
+    for (const o of level.orbs ?? []) {
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(o.pos);
+      this.scene.add(mesh);
+      this.orbVisuals.push({ id: o.id, mesh, baseY: o.pos.y, phase: Math.random() * 6 });
+    }
+  }
+
+  /** Koin emas (F6.11): silinder emas berdiri tegak, berputar
+   * (syncShared). Hilang saat diambil lidah. */
+  private buildCoins(level: LevelDef): void {
+    const mat = new THREE.MeshStandardMaterial({
+      color: "#ffd700",
+      emissive: "#8a6d00",
+      emissiveIntensity: 0.5,
+      metalness: 0.85,
+      roughness: 0.3,
+    });
+    const geo = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 20);
+    for (const c of level.coins ?? []) {
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(c.pos);
+      mesh.rotation.x = Math.PI / 2;
+      this.scene.add(mesh);
+      this.coinVisuals.push({ id: c.id, mesh });
+    }
+  }
+
   /** Partikel debu ajaib melayang di udara (F6.10): 90 titik emas,
    * additive blending, bergoyang pelan (syncSparkles tiap frame). */
   private buildSparkles(level: LevelDef): void {
@@ -1339,36 +1389,18 @@ export class FrogScene {
     }
     if (type === "ring" && id) {
       const r = (this.level.rings ?? []).find((x) => x.id === id);
-      if (!r) return;
-      // Ledakan sparkle biru: 24 titik menyebar dari cincin, naik
-      // lalu jatuh, memudar dalam 0.9 detik.
-      const n = 24;
-      const pos = new Float32Array(n * 3);
-      const vel = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) {
-        pos[i * 3] = r.pos.x + (Math.random() - 0.5) * 0.6;
-        pos[i * 3 + 1] = r.pos.y + (Math.random() - 0.5) * 0.6;
-        pos[i * 3 + 2] = r.pos.z + (Math.random() - 0.5) * 0.6;
-        const a = Math.random() * Math.PI * 2;
-        const sp = 1 + Math.random() * 2;
-        vel[i * 3] = Math.cos(a) * sp;
-        vel[i * 3 + 1] = 1.5 + Math.random() * 2;
-        vel[i * 3 + 2] = Math.sin(a) * sp;
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-      const points = new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          color: 0x66ccff,
-          size: 0.14,
-          transparent: true,
-          opacity: 0.95,
-          depthWrite: false,
-        }),
-      );
-      this.scene.add(points);
-      this.sparks.push({ points, vel, age: 0 });
+      if (r) this.burstAt(r.pos, 0x66ccff);
+      return;
+    }
+    if (type === "orb" && id) {
+      const o = (this.level.orbs ?? []).find((x) => x.id === id);
+      if (o) this.burstAt(o.pos, 0x39ff14);
+      return;
+    }
+    if (type === "coin" && id) {
+      const c = (this.level.coins ?? []).find((x) => x.id === id);
+      if (c) this.burstAt(c.pos, 0xffd700);
+      return;
     }
     if (type === "kiss") {
       // Ciuman lidah (F6.8): 6 hati pink melayang naik dari titik
@@ -1406,6 +1438,39 @@ export class FrogScene {
       this.slot0.squash = 0.12;
       if (this.slot1) this.slot1.squash = 0.12;
     }
+  }
+
+  /** Ledakan sparkle di satu titik (cincin biru F6.2, orb hijau +
+   * koin emas F6.11): 24 titik menyebar, naik lalu jatuh, memudar
+   * dalam 0.9 detik (syncSparks). */
+  private burstAt(at: { x: number; y: number; z: number }, color: number): void {
+    const n = 24;
+    const pos = new Float32Array(n * 3);
+    const vel = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = at.x + (Math.random() - 0.5) * 0.6;
+      pos[i * 3 + 1] = at.y + (Math.random() - 0.5) * 0.6;
+      pos[i * 3 + 2] = at.z + (Math.random() - 0.5) * 0.6;
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1 + Math.random() * 2;
+      vel[i * 3] = Math.cos(a) * sp;
+      vel[i * 3 + 1] = 1.5 + Math.random() * 2;
+      vel[i * 3 + 2] = Math.sin(a) * sp;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const points = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        color,
+        size: 0.14,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      }),
+    );
+    this.scene.add(points);
+    this.sparks.push({ points, vel, age: 0 });
   }
 
   resize(): void {
@@ -1544,11 +1609,14 @@ export class FrogScene {
     this.camera.lookAt(target.x, target.y + 1.1, target.z);
   }
 
-  /** Lalat + cincin anchor + cincin emas + portal (dipakai solo dan co-op). */
+  /** Lalat + cincin anchor + cincin emas + orb + koin + portal
+   * (dipakai solo dan co-op). */
   private syncShared(
     fliesGot: string[],
     usedAnchors: string[],
     ringsHit: string[],
+    orbsGot: string[],
+    coinsGot: string[],
     time: number,
     dt: number,
   ): void {
@@ -1610,6 +1678,22 @@ export class FrogScene {
     for (const h of this.hiddenMeshes) {
       const show = ringsHit.includes(h.ringId);
       for (const m of h.meshes) m.visible = show;
+    }
+
+    // Orb hijau (F6.11): berdenyut + melayang, hilang saat diambil.
+    for (const o of this.orbVisuals) {
+      const got = orbsGot.includes(o.id);
+      o.mesh.visible = !got;
+      if (got) continue;
+      o.mesh.position.y = o.baseY + Math.sin(time * 2 + o.phase) * 0.15;
+      o.mesh.scale.setScalar(1 + Math.sin(time * 3 + o.phase) * 0.12);
+    }
+    // Koin emas (F6.11): berputar tegak, hilang saat diambil.
+    for (const c of this.coinVisuals) {
+      const got = coinsGot.includes(c.id);
+      c.mesh.visible = !got;
+      if (got) continue;
+      c.mesh.rotation.set(Math.PI / 2, 0, time * 2);
     }
   }
 
@@ -1736,7 +1820,7 @@ export class FrogScene {
   /** Render satu frame solo: sinkron state sim + gambar. */
   render(state: FrogGameState, alpha: number, time: number, dt: number): void {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
-    this.syncShared(state.fliesGot, [], state.ringsHit, time, dt);
+    this.syncShared(state.fliesGot, [], state.ringsHit, state.orbsGot, state.coinsGot, time, dt);
     this.syncSparks(dt);
     this.syncHearts(dt);
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
@@ -1756,7 +1840,7 @@ export class FrogScene {
     if (this.slot1 && view.partner) {
       this.syncSlot(this.slot1, view.partner.frog, view.partner.tongue, 1, dt);
     }
-    this.syncShared(view.fliesGot, view.usedAnchors, view.ringsHit, time, dt);
+    this.syncShared(view.fliesGot, view.usedAnchors, view.ringsHit, view.orbsGot, view.coinsGot, time, dt);
     this.syncSparks(dt);
     this.syncHearts(dt);
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);

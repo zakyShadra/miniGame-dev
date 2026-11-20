@@ -30,6 +30,8 @@ const THROTTLE_MS: Record<string, number> = {
   land: 150,
   ring: 300,
   kiss: 1000,
+  orb: 200,
+  coin: 150,
 };
 const lastPlayed: Record<string, number> = {};
 
@@ -239,6 +241,34 @@ export function playRing(vol = 1): void {
     tone(ac, "sine", now, 0.25, 880, 880, 0.2 * v);
     tone(ac, "sine", now + 0.09, 0.3, 1318.5, 1318.5, 0.18 * v);
     noise(ac, now, 0.3, "highpass", 6000, 9000, 0.05 * v);
+  } catch {
+    // Audio gagal: abaikan.
+  }
+}
+
+/** Orb hijau diambil (F6.11): lonceng ajaib 2 nada naik. */
+export function playOrb(vol = 1): void {
+  try {
+    const ac = ready("orb");
+    if (!ac) return;
+    const now = ac.currentTime;
+    const v = clampVol(vol);
+    tone(ac, "sine", now, 0.2, 1046.5, 1046.5, 0.18 * v);
+    tone(ac, "sine", now + 0.08, 0.25, 1568, 1568, 0.16 * v);
+  } catch {
+    // Audio gagal: abaikan.
+  }
+}
+
+/** Koin emas diambil (F6.11): "ding" 2 nada klasik (E5 -> B5). */
+export function playCoin(vol = 1): void {
+  try {
+    const ac = ready("coin");
+    if (!ac) return;
+    const now = ac.currentTime;
+    const v = clampVol(vol);
+    tone(ac, "square", now, 0.08, 987.77, 987.77, 0.08 * v);
+    tone(ac, "square", now + 0.08, 0.22, 1318.5, 1318.5, 0.08 * v);
   } catch {
     // Audio gagal: abaikan.
   }

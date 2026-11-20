@@ -16,6 +16,10 @@ function freshHud(): FrogHud {
   return {
     fliesGot: 0,
     fliesTotal: 5,
+    orbsGot: 0,
+    orbsTotal: 0,
+    coinsGot: 0,
+    coinsTotal: 0,
     tongueMode: "idle",
     time: 0,
     fps: 0,

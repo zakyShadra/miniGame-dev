@@ -6,12 +6,14 @@ import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene } from "./scene";
 import {
   playBounce,
+  playCoin,
   playCroak,
   playDoorOpen,
   playEatFly,
   playJump,
   playKiss,
   playLand,
+  playOrb,
   playRing,
   playTongueFire,
   playTongueStick,
@@ -29,6 +31,12 @@ import type { FrogGameState, FrogSimEvent } from "../../../../../shared/frog/typ
 export interface FrogHud {
   fliesGot: number;
   fliesTotal: number;
+  /** Orb hijau yang sudah diambil / total (F6.11). */
+  orbsGot: number;
+  orbsTotal: number;
+  /** Koin emas yang sudah diambil / total (F6.11). */
+  coinsGot: number;
+  coinsTotal: number;
   tongueMode: "idle" | "flying" | "attached";
   /** Waktu level (detik). */
   time: number;
@@ -206,6 +214,14 @@ export class FrogGame {
       this.scene.playEvent("ring", 0, ev.ringId);
       playRing();
     }
+    if (ev.type === "orb") {
+      this.scene.playEvent("orb", 0, ev.orbId);
+      playOrb();
+    }
+    if (ev.type === "coin") {
+      this.scene.playEvent("coin", 0, ev.coinId);
+      playCoin();
+    }
     if (ev.type === "kiss") {
       this.scene.playEvent("kiss", 0, undefined, ev.pos);
       playKiss();
@@ -252,6 +268,10 @@ export class FrogGame {
     return {
       fliesGot: this.state.fliesGot.length,
       fliesTotal: this.state.level.flies.length,
+      orbsGot: this.state.orbsGot.length,
+      orbsTotal: this.state.level.orbs?.length ?? 0,
+      coinsGot: this.state.coinsGot.length,
+      coinsTotal: this.state.level.coins?.length ?? 0,
       tongueMode: this.state.tongue.mode,
       time: this.state.time,
       fps: this.fps,

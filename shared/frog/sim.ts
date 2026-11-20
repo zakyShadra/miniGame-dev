@@ -94,6 +94,8 @@ export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameS
     tongue: freshTongue(),
     fliesGot: [],
     ringsHit: [],
+    orbsGot: [],
+    coinsGot: [],
     doorOpen: false,
     buttonDown: false,
     pressedButtons: [],
@@ -111,6 +113,8 @@ export function createCoopGame(
     tongues: [freshTongue(), freshTongue()],
     fliesGot: [],
     ringsHit: [],
+    orbsGot: [],
+    coinsGot: [],
     usedAnchors: [],
     buttonDown: false,
     doorOpen: false,
@@ -262,11 +266,12 @@ export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
  * keduanya dari kamera). Target: anchor level (kecuali yang sekali
  * pakai dan sedang habis), lalat yang belum dimakan (F6.4: lalat
  * hanya bisa dimakan dengan lidah), cincin emas yang belum aktif
- * (F6.2), katak pasangan (co-op), atau permukaan platform/dinding
- * padat pertama yang dipotong sinar (F6.1, fallback bila tidak ada
- * target titik yang kena). Target kena bila: dalam jangkauan lidah
- * dari mulut, sinar lewat dalam TONGUE_RAY_RADIUS darinya, dan garis
- * pandang mulut ke target jelas. False bila tidak ada target yang kena. */
+ * (F6.2), orb hijau + koin emas yang belum diambil (F6.11), katak
+ * pasangan (co-op), atau permukaan platform/dinding padat pertama
+ * yang dipotong sinar (F6.1, fallback bila tidak ada target titik
+ * yang kena). Target kena bila: dalam jangkauan lidah dari mulut,
+ * sinar lewat dalam TONGUE_RAY_RADIUS darinya, dan garis pandang
+ * mulut ke target jelas. False bila tidak ada target yang kena. */
 export function tryFireFrog(
   level: LevelDef,
   frogs: FrogState[],
@@ -274,6 +279,8 @@ export function tryFireFrog(
   usedAnchors: string[],
   fliesGot: string[],
   ringsHit: string[],
+  orbsGot: string[],
+  coinsGot: string[],
   i: number,
   origin: Vec3,
   aimDir: Vec3,
@@ -316,6 +323,17 @@ export function tryFireFrog(
   for (const r of level.rings ?? []) {
     if (ringsHit.includes(r.id)) continue;
     const c = consider(`ring:${r.id}`, r.pos, null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
+  // Orb hijau + koin emas yang belum diambil adalah target lidah (F6.11).
+  for (const o of level.orbs ?? []) {
+    if (orbsGot.includes(o.id)) continue;
+    const c = consider(`orb:${o.id}`, o.pos, null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
+  for (const cn of level.coins ?? []) {
+    if (coinsGot.includes(cn.id)) continue;
+    const c = consider(`coin:${cn.id}`, cn.pos, null);
     if (c && (!best || c.rayDist < best.rayDist)) best = c;
   }
   // Katak pasangan adalah target lidah (tarik pasangan menyeberang).
@@ -365,7 +383,7 @@ export function tryFireFrog(
 
 /** Tembak lidah (solo, F1). */
 export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, 0, origin, aimDir);
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, state.orbsGot, state.coinsGot, 0, origin, aimDir);
 }
 
 /** Tembak lidah katak ke-i (co-op). */
@@ -382,6 +400,8 @@ export function tryFireCoop(
     state.usedAnchors,
     state.fliesGot,
     state.ringsHit,
+    state.orbsGot,
+    state.coinsGot,
     i,
     origin,
     aimDir,
@@ -439,13 +459,16 @@ function stepTongue(
       if (def?.oneUse && t.anchorId && !usedAnchors.includes(t.anchorId)) {
         usedAnchors.push(t.anchorId);
       }
-      // Lalat: tidak ada bunyi nempel, langsung dimakan di tick yang
-      // sama (eatTongueFlies); bunyi makan dari event "fly". Cincin
-      // sama: langsung aktif di tick yang sama (activateRings); bunyi
-      // + sparkle dari event "ring". anchorId bisa null di sim
-      // prediksi co-op (snapToTongue tidak membawa id): pakai ?.
-      // supaya step pred tidak crash saat lidah snapshot menempel.
-      if (!t.anchorId?.startsWith("fly:") && !t.anchorId?.startsWith("ring:")) {
+      // Lalat/cincin/orb/koin: tidak ada bunyi nempel, langsung
+      // dimakan/diaktifkan/diambil di tick yang sama (eatTongueFlies,
+      // activateRings, collectTonguePickups); bunyi + efek dari
+      // eventnya masing-masing. anchorId bisa null di sim prediksi
+      // co-op (snapToTongue tidak membawa id): pakai ?. supaya step
+      // pred tidak crash saat lidah snapshot menempel.
+      const isPickup = ["fly:", "ring:", "orb:", "coin:"].some((p) =>
+        t.anchorId?.startsWith(p),
+      );
+      if (!isPickup) {
         events.push({ type: "tongue-attach", anchorId: t.anchorId ?? "", frog: i as 0 | 1 });
       }
     }
@@ -726,6 +749,34 @@ function activateRings(
   events.push({ type: "ring", ringId, frog: i as 0 | 1 });
 }
 
+/** Orb hijau / koin emas yang kena lidah katak ke-i diambil (F6.11,
+ * shared, dipakai solo + co-op). Pola sama seperti lalat (F6.4):
+ * lidah yang menempel ke orb/koin langsung dilepas di tick yang
+ * sama, item masuk orbsGot/coinsGot + event "orb"/"coin" (bunyi +
+ * sparkle di scene). */
+function collectTonguePickups(
+  tongues: TongueState[],
+  orbsGot: string[],
+  coinsGot: string[],
+  i: number,
+  events: CoopSimEvent[],
+): void {
+  const t = tongues[i]!;
+  if (t.mode !== "attached" || !t.anchorId) return;
+  const isOrb = t.anchorId.startsWith("orb:");
+  const isCoin = t.anchorId.startsWith("coin:");
+  if (!isOrb && !isCoin) return;
+  const id = t.anchorId.slice(isOrb ? 4 : 5);
+  const got = isOrb ? orbsGot : coinsGot;
+  releaseTongueState(t);
+  // Dua katak menembak item yang sama di tick yang sama: yang kedua
+  // tidak memicu event ganda.
+  if (got.includes(id)) return;
+  got.push(id);
+  if (isOrb) events.push({ type: "orb", orbId: id, frog: i as 0 | 1 });
+  else events.push({ type: "coin", coinId: id, frog: i as 0 | 1 });
+}
+
 /** Ujung lidah katak ke-i saat ini: anchor bila menempel, titik di
  * antara mulut dan anchor bila masih terbang (F6.8). Null bila lidah
  * idle. */
@@ -815,6 +866,7 @@ export function stepFrog(
   );
   eatTongueFlies([state.tongue], state.fliesGot, 0, events);
   activateRings([state.tongue], state.ringsHit, 0, events);
+  collectTonguePickups([state.tongue], state.orbsGot, state.coinsGot, 0, events);
   if (atGoalPos(state.level, state.frog)) {
     state.won = true;
     events.push({ type: "win", frog: 0 });
@@ -877,9 +929,12 @@ export function stepCoop(
   eatTongueFlies(state.tongues, state.fliesGot, 1, events);
   activateRings(state.tongues, state.ringsHit, 0, events);
   activateRings(state.tongues, state.ringsHit, 1, events);
+  collectTonguePickups(state.tongues, state.orbsGot, state.coinsGot, 0, events);
+  collectTonguePickups(state.tongues, state.orbsGot, state.coinsGot, 1, events);
 
-  // Ciuman lidah (F6.8): dicek SETELAH lidah lalat/cincin dilepas,
-  // supaya lidah yang baru saja makan/aktivasi tidak ikut dihitung.
+  // Ciuman lidah (F6.8): dicek SETELAH lidah lalat/cincin/orb/koin
+  // dilepas, supaya lidah yang baru saja makan/aktivasi/mengambil
+  // tidak ikut dihitung.
   checkKiss(state, events);
 
   // Goal per katak (menempel); menang saat keduanya sudah sampai.

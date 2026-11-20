@@ -179,6 +179,10 @@ export interface FrogSnapshot {
   fliesGot: string[]
   /** Id cincin emas yang sudah diaktifkan (F6.2). */
   ringsHit: string[]
+  /** Id orb hijau yang sudah diambil (F6.11). */
+  orbsGot: string[]
+  /** Id koin emas yang sudah diambil (F6.11). */
+  coinsGot: string[]
   usedAnchors: string[]
   buttonDown: boolean
   doorOpen: boolean

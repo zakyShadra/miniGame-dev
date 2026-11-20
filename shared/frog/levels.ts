@@ -36,6 +36,22 @@ export const LEVEL_WORKSHOP: LevelDef = {
     // lalat f4): kena lidah = step1 muncul + sparkle biru.
     { id: "r1", pos: { x: -2, y: 4.5, z: -16.5 } },
   ],
+  // Orb hijau (F6.11): tersembunyi di luar jalur utama, diambil
+  // dengan lidah. Masing-masing >= 2,5 m dari lalat/anchor/cincin
+  // terdekat supaya tidak mencuri bidikan.
+  orbs: [
+    { id: "o1", pos: { x: -5.5, y: 2.6, z: 6.5 } },
+    { id: "o2", pos: { x: 5.5, y: 3.2, z: -5.5 } },
+    { id: "o3", pos: { x: 5.5, y: 5.8, z: -16.5 } },
+    { id: "o4", pos: { x: -6.5, y: 4.6, z: -27.5 } },
+    { id: "o5", pos: { x: -6.5, y: 2.2, z: -10.5 } },
+  ],
+  // Koin emas (F6.11): di atas meja, dekat puzzle, diambil lidah.
+  coins: [
+    { id: "c1", pos: { x: 3, y: 0.4, z: 6 } },
+    { id: "c2", pos: { x: 6.5, y: 2.8, z: -10.5 } },
+    { id: "c3", pos: { x: 4.5, y: 4.0, z: -27.5 } },
+  ],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
     { id: "f2", pos: { x: -2, y: 2.8, z: -5.5 } },
@@ -85,6 +101,22 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
     { id: "fragile", pos: { x: 1, y: 7.5, z: -33.5 }, oneUse: true },
   ],
   rings: [{ id: "r1", pos: { x: -2, y: 4.5, z: -16.5 } }],
+  // Orb + koin (F6.11): sama seperti solo, ditambah o6 di atas jurang
+  // ke-2 dan c4 di platform goal.
+  orbs: [
+    { id: "o1", pos: { x: -5.5, y: 2.6, z: 6.5 } },
+    { id: "o2", pos: { x: 5.5, y: 3.2, z: -5.5 } },
+    { id: "o3", pos: { x: 5.5, y: 5.8, z: -16.5 } },
+    { id: "o4", pos: { x: -6.5, y: 4.6, z: -27.5 } },
+    { id: "o5", pos: { x: -6.5, y: 2.2, z: -10.5 } },
+    { id: "o6", pos: { x: 4.5, y: 6.0, z: -33.5 } },
+  ],
+  coins: [
+    { id: "c1", pos: { x: 3, y: 0.4, z: 6 } },
+    { id: "c2", pos: { x: 6.5, y: 2.8, z: -10.5 } },
+    { id: "c3", pos: { x: 4.5, y: 4.0, z: -27.5 } },
+    { id: "c4", pos: { x: -5, y: 4.0, z: -41 } },
+  ],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
     { id: "f2", pos: { x: -2, y: 2.8, z: -5.5 } },

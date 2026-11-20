@@ -77,6 +77,20 @@ export interface RingDef {
   pos: Vec3;
 }
 
+/** Orb hijau bercahaya (F6.11): kolektibel tersembunyi, diambil
+ * dengan lidah (pola sama seperti lalat F6.4). */
+export interface OrbDef {
+  id: string;
+  pos: Vec3;
+}
+
+/** Koin emas (F6.11): kolektibel di atas meja / dekat puzzle,
+ * diambil dengan lidah (pola sama seperti lalat F6.4). */
+export interface CoinDef {
+  id: string;
+  pos: Vec3;
+}
+
 /** Tombol lantai co-op: tertekan bila ada katak berdiri di atasnya. */
 export interface ButtonDef {
   id: string;
@@ -124,6 +138,10 @@ export interface LevelDef {
   flies: FlyDef[];
   /** Target cincin emas (F6.2). */
   rings?: RingDef[];
+  /** Orb hijau bercahaya (F6.11). */
+  orbs?: OrbDef[];
+  /** Koin emas (F6.11). */
+  coins?: CoinDef[];
   spawn: Vec3;
   /** Spawn katak ke-2 (co-op, hijau). Kosong = level solo. */
   spawn2?: Vec3;
@@ -149,6 +167,10 @@ export interface FrogGameState {
   fliesGot: string[];
   /** Id cincin emas yang sudah diaktifkan (F6.2). */
   ringsHit: string[];
+  /** Id orb hijau yang sudah diambil (F6.11). */
+  orbsGot: string[];
+  /** Id koin emas yang sudah diambil (F6.11). */
+  coinsGot: string[];
   /** Pintu sedang terbuka. Solo (F3): sekali ditekan tombolnya,
    * pintu terbuka permanen (latch) supaya 1 katak bisa lewat. */
   doorOpen: boolean;
@@ -178,6 +200,10 @@ export type FrogSimEvent =
   | { type: "tongue-release" }
   | { type: "fly"; flyId: string }
   | { type: "ring"; ringId: string }
+  /** Orb hijau diambil lidah (F6.11). */
+  | { type: "orb"; orbId: string }
+  /** Koin emas diambil lidah (F6.11). */
+  | { type: "coin"; coinId: string }
   /** Ciuman lidah (F6.8, co-op): dua ujung lidah bertemu. pos =
    * titik tengah kedua ujung lidah (tempat hati melayang). */
   | { type: "kiss"; pos: Vec3 }
@@ -194,6 +220,10 @@ export interface FrogCoopState {
   fliesGot: string[];
   /** Id cincin emas yang sudah diaktifkan (bersama, F6.2). */
   ringsHit: string[];
+  /** Id orb hijau yang sudah diambil (bersama, F6.11). */
+  orbsGot: string[];
+  /** Id koin emas yang sudah diambil (bersama, F6.11). */
+  coinsGot: string[];
   /** Id anchor sekali pakai yang sedang habis. */
   usedAnchors: string[];
   /** Ada katak berdiri di salah satu tombol. */

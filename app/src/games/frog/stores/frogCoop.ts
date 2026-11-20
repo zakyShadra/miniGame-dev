@@ -31,6 +31,10 @@ function freshHud(): FrogCoopHud {
   return {
     fliesGot: 0,
     fliesTotal: 7,
+    orbsGot: 0,
+    orbsTotal: 0,
+    coinsGot: 0,
+    coinsTotal: 0,
     tongueMode: "idle",
     partnerTongueMode: "idle",
     time: 0,

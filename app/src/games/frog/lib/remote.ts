@@ -28,12 +28,14 @@ import { FrogScene, type FrogRemoteView } from "./scene";
 import {
   attenByDistance,
   playBounce,
+  playCoin,
   playCroak,
   playDoorOpen,
   playEatFly,
   playJump,
   playKiss,
   playLand,
+  playOrb,
   playRing,
   playTongueFire,
   playTongueStick,
@@ -43,6 +45,12 @@ import {
 export interface FrogCoopHud {
   fliesGot: number;
   fliesTotal: number;
+  /** Orb hijau yang sudah diambil / total (F6.11). */
+  orbsGot: number;
+  orbsTotal: number;
+  /** Koin emas yang sudah diambil / total (F6.11). */
+  coinsGot: number;
+  coinsTotal: number;
   tongueMode: "idle" | "flying" | "attached";
   partnerTongueMode: "idle" | "flying" | "attached";
   /** Waktu match (detik, jam server). */
@@ -124,6 +132,8 @@ export class FrogRemoteGame {
     t: 0,
     fliesGot: [] as string[],
     ringsHit: [] as string[],
+    orbsGot: [] as string[],
+    coinsGot: [] as string[],
     usedAnchors: [] as string[],
     doorOpen: false,
     buttonDown: false,
@@ -196,6 +206,8 @@ export class FrogRemoteGame {
       t: 0,
       fliesGot: [],
       ringsHit: [],
+      orbsGot: [],
+      coinsGot: [],
       usedAnchors: [],
       doorOpen: false,
       buttonDown: false,
@@ -225,6 +237,8 @@ export class FrogRemoteGame {
     this.shared.t = snap.t;
     this.shared.fliesGot = [...snap.fliesGot];
     this.shared.ringsHit = [...snap.ringsHit];
+    this.shared.orbsGot = [...snap.orbsGot];
+    this.shared.coinsGot = [...snap.coinsGot];
     this.shared.usedAnchors = [...snap.usedAnchors];
     this.shared.doorOpen = snap.doorOpen;
     this.shared.buttonDown = snap.buttonDown;
@@ -277,6 +291,8 @@ export class FrogRemoteGame {
       if (ev.type === "bounce") this.scene?.playEvent("bounce", ev.frog, ev.mushroomId);
       if (ev.type === "fly") this.scene?.playEvent("fly", ev.frog, ev.flyId);
       if (ev.type === "ring") this.scene?.playEvent("ring", ev.frog, ev.ringId);
+      if (ev.type === "orb") this.scene?.playEvent("orb", ev.frog, ev.orbId);
+      if (ev.type === "coin") this.scene?.playEvent("coin", ev.frog, ev.coinId);
       if (ev.type === "kiss") this.scene?.playEvent("kiss", 0, undefined, ev.pos);
       this.playEventSound(ev.type, ev.frog);
     }
@@ -315,6 +331,8 @@ export class FrogRemoteGame {
     else if (type === "tongue-attach") playTongueStick(vol);
     else if (type === "fly") playEatFly(vol);
     else if (type === "ring") playRing(vol);
+    else if (type === "orb") playOrb(vol);
+    else if (type === "coin") playCoin(vol);
     else if (type === "kiss") playKiss(1);
     else if (type === "bounce") playBounce(vol);
   }
@@ -433,6 +451,8 @@ export class FrogRemoteGame {
       partner,
       fliesGot: this.shared.fliesGot,
       ringsHit: this.shared.ringsHit,
+      orbsGot: this.shared.orbsGot,
+      coinsGot: this.shared.coinsGot,
       usedAnchors: this.shared.usedAnchors,
       doorOpen: this.shared.doorOpen,
       pressedButtons: pressed,
@@ -538,6 +558,10 @@ export class FrogRemoteGame {
     return {
       fliesGot: this.shared.fliesGot.length,
       fliesTotal: pred?.level.flies.length ?? 7,
+      orbsGot: this.shared.orbsGot.length,
+      orbsTotal: pred?.level.orbs?.length ?? 0,
+      coinsGot: this.shared.coinsGot.length,
+      coinsTotal: pred?.level.coins?.length ?? 0,
       tongueMode: pred?.tongues[this.myIndex].mode ?? "idle",
       partnerTongueMode: this.curSnap?.frogs[this.partnerIndex].tongue.mode ?? "idle",
       time: t,
