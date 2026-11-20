@@ -160,6 +160,102 @@ function stainedGlassTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** Muka koin perunggu raksasa (F6.9): gradasi perunggu + bintang +
+ * cincin timbul. Dipakai sisi atas/bawah silinder koin dekor. */
+function coinTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  grad.addColorStop(0, "#e8b06a");
+  grad.addColorStop(0.7, "#b87333");
+  grad.addColorStop(1, "#7a4a1e");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = "#e8c88a";
+  g.lineWidth = 5;
+  g.beginPath();
+  g.arc(64, 64, 54, 0, Math.PI * 2);
+  g.stroke();
+  // Bintang 5 sudut di tengah.
+  g.fillStyle = "#f2d49a";
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? 30 : 13;
+    const a = (i * Math.PI) / 5 - Math.PI / 2;
+    const x = 64 + Math.cos(a) * r;
+    const y = 64 + Math.sin(a) * r;
+    if (i === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Kertas sketsa anatomi katak (F6.9): kertas krem + gambar garis
+ * katak (badan, mata, kaki) + coretan tulisan tangan. */
+function sketchTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 192;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f5ead0";
+  g.fillRect(0, 0, 256, 192);
+  g.strokeStyle = "#7a5a3a";
+  g.lineWidth = 3;
+  // Badan katak (elips) + kepala + mata menonjol.
+  g.beginPath();
+  g.ellipse(100, 110, 55, 38, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath();
+  g.ellipse(78, 78, 16, 14, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath();
+  g.ellipse(122, 78, 16, 14, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath();
+  g.arc(78, 78, 5, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath();
+  g.arc(122, 78, 5, 0, Math.PI * 2);
+  g.stroke();
+  // Kaki belakang merentang + kaki depan.
+  g.beginPath();
+  g.moveTo(55, 130);
+  g.quadraticCurveTo(20, 150, 30, 168);
+  g.moveTo(145, 130);
+  g.quadraticCurveTo(180, 150, 170, 168);
+  g.moveTo(80, 145);
+  g.lineTo(72, 170);
+  g.moveTo(120, 145);
+  g.lineTo(128, 170);
+  g.stroke();
+  // Garis ukur + coretan tulisan tangan di kanan.
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.moveTo(45, 40);
+  g.lineTo(155, 40);
+  g.moveTo(45, 34);
+  g.lineTo(45, 46);
+  g.moveTo(155, 34);
+  g.lineTo(155, 46);
+  g.stroke();
+  g.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const y = 70 + i * 16;
+    g.moveTo(185, y);
+    g.bezierCurveTo(205, y - 4, 215, y + 4, 235, y - 2);
+  }
+  g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 let heartTex: THREE.CanvasTexture | null = null;
 
 /** Texture hati pink (F6.8, ciuman lidah): digambar sekali di canvas,
@@ -226,6 +322,10 @@ interface FrogThemeCfg {
   topTex: "wood" | "moss" | "paper";
   /** Platform = buku raksasa (warna sampul bersiklus). */
   books: boolean;
+  /** Lantai awal tetap meja kayu (bukan buku) meski books aktif. */
+  tableFloor: boolean;
+  /** Props ruangan penyihir padat (F6.9): koin, kertas, bola kristal. */
+  workshopProps: boolean;
   shelves: boolean;
   candles: boolean;
   bottles: boolean;
@@ -234,10 +334,10 @@ interface FrogThemeCfg {
 }
 
 const THEMES: Record<FrogTheme, FrogThemeCfg> = {
-  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 1.9, fogNear: 30, fogFar: 85, exposure: 1.1, fillColor: 0xff9a3d, fillInt: 8, wallTint: 0xffffff, floor: "wood", sideTex: "wood", topTex: "wood", books: false, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
-  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, fogNear: 16, fogFar: 55, exposure: 1.05, fillColor: 0x2ee6a8, fillInt: 10, wallTint: 0x7a9a8a, floor: "water", sideTex: "paving", topTex: "moss", books: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
-  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, fogNear: 30, fogFar: 80, exposure: 1.15, fillColor: 0xffe8c8, fillInt: 9, wallTint: 0xa89ac8, floor: "wood", sideTex: "wood", topTex: "paper", books: true, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
-  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, fogNear: 35, fogFar: 90, exposure: 1.15, fillColor: 0xd8ffb8, fillInt: 9, wallTint: 0x93b184, floor: "grass", sideTex: "wood", topTex: "moss", books: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
+  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 1.9, fogNear: 30, fogFar: 85, exposure: 1.1, fillColor: 0xff9a3d, fillInt: 8, wallTint: 0xffffff, floor: "wood", sideTex: "wood", topTex: "wood", books: true, tableFloor: true, workshopProps: true, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
+  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, fogNear: 16, fogFar: 55, exposure: 1.05, fillColor: 0x2ee6a8, fillInt: 10, wallTint: 0x7a9a8a, floor: "water", sideTex: "paving", topTex: "moss", books: false, tableFloor: false, workshopProps: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
+  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, fogNear: 30, fogFar: 80, exposure: 1.15, fillColor: 0xffe8c8, fillInt: 9, wallTint: 0xa89ac8, floor: "wood", sideTex: "wood", topTex: "paper", books: true, tableFloor: false, workshopProps: false, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
+  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, fogNear: 35, fogFar: 90, exposure: 1.15, fillColor: 0xd8ffb8, fillInt: 9, wallTint: 0x93b184, floor: "grass", sideTex: "wood", topTex: "moss", books: false, tableFloor: false, workshopProps: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
 };
 
 export class FrogScene {
@@ -483,9 +583,12 @@ export class FrogScene {
       const h = p.max.y - p.min.y;
       const d = p.max.z - p.min.z;
       const isDoor = level.door?.platformId === p.id;
+      // Bengkel (F6.9): lantai awal = meja kayu raksasa, platform lain
+      // = buku raksasa (sampul warna + halaman kertas di atas).
+      const useBook = theme.books && !(theme.tableFloor && p.id === "floor0");
       const side = isDoor
         ? doorMat
-        : theme.books
+        : useBook
           ? bookMats[bookIdx++ % bookMats.length]!
           : sideMat;
       const boxGeo = new THREE.BoxGeometry(w, h, d);
@@ -494,7 +597,7 @@ export class FrogScene {
       box.position.set((p.min.x + p.max.x) / 2, (p.min.y + p.max.y) / 2, (p.min.z + p.max.z) / 2);
       const topGeo = new THREE.BoxGeometry(w + 0.3, 0.14, d + 0.3);
       worldUVs(topGeo, w + 0.3, 0.14, d + 0.3, 1 / 3);
-      const top = new THREE.Mesh(topGeo, isDoor ? doorMat : topMat);
+      const top = new THREE.Mesh(topGeo, isDoor ? doorMat : useBook ? paperMat : topMat);
       top.position.set((p.min.x + p.max.x) / 2, p.max.y + 0.02, (p.min.z + p.max.z) / 2);
       if (moverIds.has(p.id)) {
         this.moverMeshes.push({
@@ -620,6 +723,7 @@ export class FrogScene {
     if (theme.shelves) this.buildShelves(level);
     if (theme.candles) this.buildCandles(level);
     if (theme.bottles) this.buildBottles();
+    if (theme.workshopProps) this.buildWorkshopProps(level);
     if (theme.mushrooms) this.buildMushrooms(level, level.theme === "garden");
     if (theme.orbs) this.buildGlowOrbs(level);
     this.buildBounceShrooms(level);
@@ -787,6 +891,154 @@ export class FrogScene {
     bottles.instanceMatrix.needsUpdate = true;
     if (bottles.instanceColor) bottles.instanceColor.needsUpdate = true;
     this.scene.add(bottles);
+  }
+
+  /** Ruangan penyihir padat (F6.9, tema bengkel saja): meja kayu
+   * raksasa (kaki + laci di bawah lantai awal), koin perunggu besar,
+   * kertas sketsa anatomi katak, bola kristal biru, buku mantra
+   * terbuka, dan kaca patri di dinding samping. Semua props VISUAL
+   * (tanpa tabrakan) dan ditaruh di luar jalur utama, jadi gameplay
+   * + puzzle tidak berubah. Posisi koin goal diturunkan dari
+   * level.goal.pos supaya benar di solo maupun co-op. */
+  private buildWorkshopProps(level: LevelDef): void {
+    const woodDark = getWoodDarkTexture();
+    const darkMat = new THREE.MeshStandardMaterial({
+      map: woodDark,
+      bumpMap: woodDark,
+      bumpScale: 0.02,
+      roughness: 0.9,
+    });
+    const floor0 = level.platforms.find((p) => p.id === "floor0");
+    if (floor0) {
+      // Kaki meja raksasa (4, dari lantai bawah y=-5 ke lantai awal).
+      const legGeo = new THREE.BoxGeometry(0.9, 5, 0.9);
+      for (const [lx, lz] of [
+        [floor0.min.x + 0.7, floor0.max.z - 0.7],
+        [floor0.max.x - 0.7, floor0.max.z - 0.7],
+        [floor0.min.x + 0.7, floor0.min.z + 0.7],
+        [floor0.max.x - 0.7, floor0.min.z + 0.7],
+      ] as const) {
+        const leg = new THREE.Mesh(legGeo, darkMat);
+        leg.position.set(lx, -2.5, lz);
+        this.scene.add(leg);
+      }
+      // Laci depan meja (panel + gagang kuningan) di muka z=8.
+      const drawer = new THREE.Mesh(new THREE.BoxGeometry(7, 0.85, 0.12), darkMat);
+      drawer.position.set(0, -0.5, floor0.max.z + 0.06);
+      this.scene.add(drawer);
+      const handle = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32, 0.06, 8, 20, Math.PI),
+        new THREE.MeshStandardMaterial({
+          color: 0xc9a227,
+          metalness: 0.85,
+          roughness: 0.3,
+        }),
+      );
+      handle.position.set(0, -0.42, floor0.max.z + 0.14);
+      handle.rotation.x = Math.PI;
+      this.scene.add(handle);
+    }
+
+    // Koin perunggu raksasa (dekor, 2-3x katak): 2 tergeletak di meja,
+    // 1 berdiri di lantai bawah dekat jurang. Beda dari koin emas
+    // kolektibel F6.11 (kecil, berputar, bisa diambil lidah).
+    const coinFace = coinTexture();
+    const coinSideMat = std(0x8a5a24, 0.4);
+    coinSideMat.metalness = 0.8;
+    const coinFaceMat = new THREE.MeshStandardMaterial({
+      map: coinFace,
+      metalness: 0.75,
+      roughness: 0.35,
+    });
+    const coinMats = [coinSideMat, coinFaceMat, coinFaceMat];
+    const coinFlat = (x: number, y: number, z: number, r: number): void => {
+      const coin = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.12, 24), coinMats);
+      coin.position.set(x, y, z);
+      this.scene.add(coin);
+    };
+    coinFlat(-6.5, 0.06, 0.5, 1.1);
+    coinFlat(level.goal.pos.x + 5.8, level.goal.pos.y + 0.06, level.goal.pos.z + 1, 1.0);
+    const coinStand = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 1.1, 0.12, 24),
+      coinMats,
+    );
+    coinStand.rotation.x = Math.PI / 2;
+    coinStand.position.set(10, -3.9, -16.5);
+    this.scene.add(coinStand);
+
+    // Kertas sketsa anatomi katak: di lantai awal + di atas p4.
+    const sketchMat = new THREE.MeshStandardMaterial({
+      map: sketchTexture(),
+      roughness: 0.9,
+    });
+    const sketch1 = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), sketchMat);
+    sketch1.rotation.x = -Math.PI / 2;
+    sketch1.rotation.z = 0.2;
+    sketch1.position.set(5.2, 0.03, 5.2);
+    this.scene.add(sketch1);
+    const p4 = level.platforms.find((p) => p.id === "p4");
+    if (p4) {
+      const sketch2 = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.8), sketchMat);
+      sketch2.rotation.x = -Math.PI / 2;
+      sketch2.rotation.z = -0.3;
+      sketch2.position.set(-2, p4.max.y + 0.03, -27.5);
+      this.scene.add(sketch2);
+    }
+
+    // Bola kristal biru bercahaya di atas dudukan kayu (sudut kiri).
+    const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.5, 12), darkMat);
+    stand.position.set(-7.2, 0.25, 3.5);
+    this.scene.add(stand);
+    const crystal = new THREE.Mesh(
+      new THREE.SphereGeometry(0.7, 20, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0x4da6ff,
+        emissive: 0x2e7dd8,
+        emissiveIntensity: 1.1,
+        roughness: 0.15,
+        metalness: 0.1,
+      }),
+    );
+    crystal.position.set(-7.2, 1.15, 3.5);
+    this.scene.add(crystal);
+
+    // Buku mantra terbuka di lantai awal (sampul + 2 halaman miring).
+    const bookGroup = new THREE.Group();
+    const cover = new THREE.Mesh(
+      new THREE.BoxGeometry(2.6, 0.14, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0x8b2e2e, roughness: 0.8 }),
+    );
+    bookGroup.add(cover);
+    const pageMat = new THREE.MeshStandardMaterial({
+      map: getPaperTexture(),
+      color: 0xfff2d8,
+      roughness: 0.9,
+    });
+    for (const s of [-1, 1]) {
+      const page = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.05, 1.66), pageMat);
+      page.position.set(s * 0.63, 0.12, 0);
+      page.rotation.z = s * -0.16;
+      bookGroup.add(page);
+    }
+    bookGroup.position.set(6.3, 0.07, 1.5);
+    bookGroup.rotation.y = -0.25;
+    this.scene.add(bookGroup);
+
+    // Kaca patri di dinding samping (emissive, pasangan jendela belakang).
+    const glassTex = stainedGlassTexture();
+    const glassMat = new THREE.MeshStandardMaterial({
+      map: glassTex,
+      emissive: 0xffffff,
+      emissiveMap: glassTex,
+      emissiveIntensity: 0.55,
+      roughness: 0.4,
+    });
+    for (const s of [-1, 1]) {
+      const win = new THREE.Mesh(new THREE.PlaneGeometry(4, 6), glassMat);
+      win.position.set(s * (level.bounds.maxX - 0.1), 5, -15);
+      win.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
+      this.scene.add(win);
+    }
   }
 
   /** Jamur di sudut lantai (batang + tudung instanced, 2 draw call).
