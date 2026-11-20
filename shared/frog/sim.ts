@@ -64,6 +64,9 @@ export const PULL_RATE = 0.35;
 /** Pintu tarik (F6.3): kecepatan kembali menggeser saat < 2 lidah
  * menempel (progres/detik, "It goes back"). */
 export const PULL_DECAY = 0.2;
+/** Jilat iseng (F6.15): lidah "jilat saja" lepas sendiri setelah
+ * ini (detik), tanpa menarik pasangan. */
+export const LICK_TIME = 0.6;
 /** Setengah lebar badan katak + tinggi badan (meter). */
 const HALF_X = 0.4;
 const HALF_Z = 0.4;
@@ -86,6 +89,7 @@ function freshTongue(): TongueState {
     anchorId: null,
     anchor: null,
     anchorFrog: null,
+    lick: false,
     length: 0,
     restLength: 0,
     timeLeft: 0,
@@ -316,6 +320,9 @@ export function tryFireFrog(
   origin: Vec3,
   aimDir: Vec3,
   pullProgress: Record<string, number> = {},
+  /** Mode jilat saja (F6.15): bila targetnya katak pasangan, lidah
+   * hanya menjilat (tanpa tarik). Target lain tidak terpengaruh. */
+  lickOnly = false,
 ): boolean {
   const t = tongues[i]!;
   if (t.mode !== "idle") return false;
@@ -430,14 +437,16 @@ export function tryFireFrog(
   t.anchorId = best.id;
   t.anchor = best.pos;
   t.anchorFrog = best.frog;
+  // Jilat saja hanya berlaku ke katak pasangan (F6.15).
+  t.lick = lickOnly && best.frog !== null;
   t.length = len(sub(best.pos, mouth));
   t.flyTime = TONGUE_FLY_TIME;
   return true;
 }
 
 /** Tembak lidah (solo, F1). */
-export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, state.orbsGot, state.coinsGot, 0, origin, aimDir, state.pullProgress);
+export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3, lickOnly = false): boolean {
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, state.orbsGot, state.coinsGot, 0, origin, aimDir, state.pullProgress, lickOnly);
 }
 
 /** Tembak lidah katak ke-i (co-op). */
@@ -446,6 +455,7 @@ export function tryFireCoop(
   i: 0 | 1,
   origin: Vec3,
   aimDir: Vec3,
+  lickOnly = false,
 ): boolean {
   return tryFireFrog(
     state.level,
@@ -460,6 +470,7 @@ export function tryFireCoop(
     origin,
     aimDir,
     state.pullProgress,
+    lickOnly,
   );
 }
 
@@ -470,6 +481,7 @@ export function releaseTongueState(t: TongueState): boolean {
   t.anchorId = null;
   t.anchor = null;
   t.anchorFrog = null;
+  t.lick = false;
   t.length = 0;
   t.restLength = 0;
   t.timeLeft = 0;
@@ -524,8 +536,14 @@ function stepTongue(
       const isPickup = ["fly:", "ring:", "orb:", "coin:"].some((p) =>
         t.anchorId?.startsWith(p),
       );
-      if (!isPickup) {
+      if (!isPickup && !t.lick) {
         events.push({ type: "tongue-attach", anchorId: t.anchorId ?? "", frog: i as 0 | 1 });
+      }
+      // Jilat saja (F6.15): lepas sendiri setelah 0.6 detik, tanpa
+      // bunyi nempel; event "lick" membawa efek + bunyi jilatan.
+      if (t.lick) {
+        t.timeLeft = LICK_TIME;
+        events.push({ type: "lick", pos: { ...t.anchor }, frog: i as 0 | 1 });
       }
     }
     return;
@@ -553,6 +571,9 @@ function stepTongue(
     events.push({ type: "tongue-release", frog: i as 0 | 1 });
     return;
   }
+  // Jilat saja (F6.15): tidak menggulung, tidak ada pegas, pasangan
+  // tidak ditarik sama sekali.
+  if (t.lick) return;
   // Lidah ke pasangan menggulung: kedua katak ditarik mendekat.
   if (j !== null) {
     t.restLength = Math.max(TONGUE_MIN_REST, t.restLength - TONGUE_REEL_SPEED * dt);
@@ -669,9 +690,10 @@ function stepOne(
   // Cap kecepatan horizontal SETELAH pegas (pegas tidak boleh
   // melampaui batas ayun). Katak yang sedang ditarik lidah pasangan
   // juga boleh melaju sampai batas ayun, kalau tidak ia keburu jatuh
-  // ke jurang sebelum sampai seberang.
+  // ke jurang sebelum sampai seberang. Jilatan (F6.15) tidak menarik,
+  // jadi tidak dihitung sebagai ditarik.
   const beingPulled = tongues.some(
-    (t, k) => k !== i && t.mode === "attached" && t.anchorFrog === i,
+    (t, k) => k !== i && t.mode === "attached" && t.anchorFrog === i && !t.lick,
   );
   const maxSp =
     tongues[i]!.mode === "attached" || beingPulled ? SWING_MAX_SPEED : MOVE_SPEED;

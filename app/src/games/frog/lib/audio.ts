@@ -30,6 +30,7 @@ const THROTTLE_MS: Record<string, number> = {
   land: 150,
   ring: 300,
   kiss: 1000,
+  lick: 300,
   orb: 200,
   coin: 150,
 };
@@ -289,7 +290,19 @@ export function playKiss(vol = 1): void {
   }
 }
 
-/** Atenuasi jarak: 1 di dekat katak, turun ke 0.1 di 40 m. */
+/** Jilat iseng (F6.15): "slurp" basah pendek (desis + cicit turun). */
+export function playLick(vol = 1): void {
+  try {
+    const ac = ready("lick");
+    if (!ac) return;
+    const now = ac.currentTime;
+    const v = clampVol(vol);
+    noise(ac, now, 0.09, "lowpass", 1500, 400, 0.25 * v);
+    tone(ac, "sine", now, 0.12, 900, 350, 0.14 * v);
+  } catch {
+    // Audio gagal: abaikan.
+  }
+}
 export function attenByDistance(distMeters: number): number {
   return Math.max(0.1, Math.min(1, 1 - distMeters / 40));
 }

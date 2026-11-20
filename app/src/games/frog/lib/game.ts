@@ -13,6 +13,7 @@ import {
   playJump,
   playKiss,
   playLand,
+  playLick,
   playOrb,
   playRing,
   playTongueFire,
@@ -265,6 +266,10 @@ export class FrogGame {
     if (ev.type === "pulldoor") {
       this.scene.playEvent("pulldoor", 0, ev.doorId);
       playDoorOpen();
+    }
+    if (ev.type === "lick") {
+      this.scene.playEvent("lick", 0, undefined, ev.pos);
+      playLick();
     }
     if (ev.type === "bounce") {
       this.scene.playEvent("bounce", 0, ev.mushroomId);

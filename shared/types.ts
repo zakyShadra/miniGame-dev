@@ -166,6 +166,8 @@ export interface FrogSnap {
     az: number
     /** Indeks katak yang ditempeli (null = anchor statis / idle). */
     anchorFrog: 0 | 1 | null
+    /** Jilat saja (F6.15): lidah ke pasangan tanpa menarik. */
+    lick: boolean
   }
 }
 

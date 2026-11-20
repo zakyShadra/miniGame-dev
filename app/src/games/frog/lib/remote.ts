@@ -26,7 +26,7 @@ import type {
 import type { FrogSnap, FrogSnapshot } from "../../../../../shared/types";
 import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene, type FrogRemoteView } from "./scene";
-import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref, writePref } from "./preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, LICK_KEY, readPref, writePref } from "./preferences";
 import {
   attenByDistance,
   playBounce,
@@ -37,6 +37,7 @@ import {
   playJump,
   playKiss,
   playLand,
+  playLick,
   playOrb,
   playRing,
   playTongueFire,
@@ -73,7 +74,7 @@ export interface FrogCoopHud {
 
 export interface FrogRemoteOptions {
   onInput: (input: FrogInput) => void;
-  onFire: (origin: Vec3, dir: Vec3) => void;
+  onFire: (origin: Vec3, dir: Vec3, lick: boolean) => void;
   onRelease: () => void;
   onCroak: () => void;
   onHud: (hud: FrogCoopHud) => void;
@@ -110,6 +111,10 @@ function snapToTongue(s: FrogSnap): TongueState {
         ? null
         : { x: s.tongue.ax, y: s.tongue.ay, z: s.tongue.az },
     anchorFrog: s.tongue.anchorFrog,
+    // Flag jilat ikut snapshot: sim prediksi harus tahu lidah ini
+    // tidak menarik (kalau tidak, pred menarik pasangan sampai
+    // server melepasnya 0.6 detik kemudian).
+    lick: s.tongue.lick,
     length: 0,
     restLength: 0,
     timeLeft: s.tongue.mode === "attached" ? TONGUE_TIMEOUT : 0,
@@ -169,6 +174,9 @@ export class FrogRemoteGame {
   highCam = readPref(HIGH_CAM_KEY);
   /** Bidik lidah ke arah hadap katak (F6.14, dari localStorage). */
   aimFacing = readPref(AIM_FACING_KEY);
+  /** Mode jilat saja (F6.15, dari localStorage): lidah ke pasangan
+   * hanya menjilat, tanpa menarik. */
+  lickMode = readPref(LICK_KEY);
 
   constructor(container: HTMLElement, opts: FrogRemoteOptions) {
     this.container = container;
@@ -308,6 +316,7 @@ export class FrogRemoteGame {
       if (ev.type === "coin") this.scene?.playEvent("coin", ev.frog, ev.coinId);
       if (ev.type === "kiss") this.scene?.playEvent("kiss", 0, undefined, ev.pos);
       if (ev.type === "pulldoor") this.scene?.playEvent("pulldoor", 0, ev.doorId);
+      if (ev.type === "lick") this.scene?.playEvent("lick", 0, undefined, ev.pos);
       this.playEventSound(ev.type, ev.frog);
     }
 
@@ -349,6 +358,7 @@ export class FrogRemoteGame {
     else if (type === "coin") playCoin(vol);
     else if (type === "kiss") playKiss(1);
     else if (type === "pulldoor") playDoorOpen(vol);
+    else if (type === "lick") playLick(vol);
     else if (type === "bounce") playBounce(vol);
   }
 
@@ -371,8 +381,8 @@ export class FrogRemoteGame {
       const l = Math.hypot(dir.x, dir.y, dir.z);
       const origin = mouthPos(this.pred.frogs[this.myIndex]);
       const d = { x: dir.x / l, y: dir.y / l, z: dir.z / l };
-      tryFireCoop(this.pred, this.myIndex, origin, d);
-      this.opts.onFire(origin, d);
+      tryFireCoop(this.pred, this.myIndex, origin, d, this.lickMode);
+      this.opts.onFire(origin, d, this.lickMode);
       return;
     }
     const rect = this.container.getBoundingClientRect();
@@ -382,8 +392,8 @@ export class FrogRemoteGame {
     const origin = { x: cam.x, y: cam.y, z: cam.z };
     const dirV = this.scene.screenToAimDir(mx, my);
     const dir = { x: dirV.x, y: dirV.y, z: dirV.z };
-    tryFireCoop(this.pred, this.myIndex, origin, dir);
-    this.opts.onFire(origin, dir);
+    tryFireCoop(this.pred, this.myIndex, origin, dir, this.lickMode);
+    this.opts.onFire(origin, dir, this.lickMode);
   }
 
   /** Kroak: bubble lokal langsung + kirim ke server (buat pasangan). */
@@ -420,6 +430,12 @@ export class FrogRemoteGame {
   toggleAimFacing(): void {
     this.aimFacing = !this.aimFacing;
     writePref(AIM_FACING_KEY, this.aimFacing);
+  }
+
+  /** Toggle mode jilat saja (F6.15, tombol HUD / tombol L). */
+  toggleLickMode(): void {
+    this.lickMode = !this.lickMode;
+    writePref(LICK_KEY, this.lickMode);
   }
 
   /** Alpha interpolasi pasangan (0..1, render 100 ms di masa lalu). */
@@ -634,6 +650,8 @@ export class FrogRemoteGame {
       this.toggleHighCam();
     } else if (e.code === "KeyB") {
       this.toggleAimFacing();
+    } else if (e.code === "KeyL") {
+      this.toggleLickMode();
     }
   };
 

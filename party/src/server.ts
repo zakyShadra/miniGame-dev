@@ -1817,6 +1817,7 @@ export class Room extends Server<Env> {
             ay: t.anchor?.y ?? 0,
             az: t.anchor?.z ?? 0,
             anchorFrog: t.anchorFrog,
+            lick: t.lick,
           },
         };
       }) as FrogSnapshot["frogs"],
@@ -1886,6 +1887,7 @@ export class Room extends Server<Env> {
       idx,
       { x: msg.ox, y: msg.oy, z: msg.oz },
       { x: msg.dx / dl, y: msg.dy / dl, z: msg.dz / dl },
+      msg.lick === true,
     );
     if (ok) {
       this.frogPendingEvents.push({

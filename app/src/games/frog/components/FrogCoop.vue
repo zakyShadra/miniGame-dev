@@ -243,7 +243,7 @@ const tongueLabel = computed(() => {
       <ul class="mt-2 space-y-1 text-sm text-body">
         <li><b class="text-ink">WASD</b> gerak &middot; <b class="text-ink">Spasi</b> lompat</li>
         <li><b class="text-ink">Klik kiri / J</b> tembak lidah (lentera atau pasangan), tekan lagi untuk lepas</li>
-        <li><b class="text-ink">K</b> kroak &middot; <b class="text-ink">Drag mouse</b> putar kamera &middot; <b class="text-ink">Scroll</b> zoom &middot; <b class="text-ink">C</b> kamera tinggi &middot; <b class="text-ink">B</b> bidik hadap</li>
+        <li><b class="text-ink">K</b> kroak &middot; <b class="text-ink">Drag mouse</b> putar kamera &middot; <b class="text-ink">Scroll</b> zoom &middot; <b class="text-ink">C</b> kamera tinggi &middot; <b class="text-ink">B</b> bidik hadap &middot; <b class="text-ink">L</b> jilat saja</li>
       </ul>
     </div>
   </div>
@@ -411,6 +411,14 @@ const tongueLabel = computed(() => {
         >
           Bidik: {{ store.aimFacing ? "Hadap" : "Klik" }}
         </button>
+        <button
+          type="button"
+          class="pointer-events-auto rounded-full border px-3 py-2 text-xs font-semibold shadow-md transition hover:bg-surface-2"
+          :class="store.lickMode ? 'border-primary bg-surface-1 text-primary' : 'border-hairline-strong bg-surface-1 text-ink'"
+          @click="store.toggleLick()"
+        >
+          Jilat: {{ store.lickMode ? "Nyala" : "Mati" }}
+        </button>
         <FrogMuteButton />
         <span class="pointer-events-auto rounded-full border border-hairline bg-surface-1 shadow-md">
           <ThemeToggle />
@@ -443,7 +451,7 @@ const tongueLabel = computed(() => {
       class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3"
     >
       <div class="rounded-full border border-hairline bg-surface-1 px-4 py-2 text-center text-xs font-medium text-muted shadow-md">
-        WASD gerak &middot; Spasi lompat &middot; Klik kiri / J lidah (lentera atau pasangan) &middot; K kroak &middot; Drag orbit &middot; Scroll zoom &middot; C kamera tinggi &middot; B bidik hadap
+        WASD gerak &middot; Spasi lompat &middot; Klik kiri / J lidah (lentera atau pasangan) &middot; K kroak &middot; Drag orbit &middot; Scroll zoom &middot; C kamera tinggi &middot; B bidik hadap &middot; L jilat saja
       </div>
     </div>
 

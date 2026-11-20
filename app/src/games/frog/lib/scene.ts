@@ -1475,6 +1475,11 @@ export class FrogScene {
       if (pd) this.burstAt(pd.target, 0xffd700);
       return;
     }
+    if (type === "lick" && pos) {
+      // Jilat iseng (F6.15): semburan pink kecil di titik jilatan.
+      this.burstAt(pos, 0xff8fab);
+      return;
+    }
     if (type === "kiss") {
       // Ciuman lidah (F6.8): 6 hati pink melayang naik dari titik
       // tengah kedua ujung lidah + kedua katak mengembang senang.

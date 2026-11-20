@@ -130,6 +130,8 @@ export type ClientMessage =
       dx: number
       dy: number
       dz: number
+      /** Mode jilat saja (F6.15): lidah ke pasangan tanpa menarik. */
+      lick?: boolean
     }
   | { type: "frog-release" }
   | { type: "frog-croak" }

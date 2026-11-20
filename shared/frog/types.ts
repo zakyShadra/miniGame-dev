@@ -34,6 +34,9 @@ export interface TongueState {
   /** Indeks katak yang ditempeli lidah (co-op): null = anchor statis,
    * 0/1 = lidah nempel ke katak lain, posisi anchor ikut katak itu. */
   anchorFrog: 0 | 1 | null;
+  /** Jilat saja (F6.15): lidah ke pasangan tanpa menarik (lepas
+   * sendiri setelah 0.6 detik, hanya efek + bunyi). */
+  lick: boolean;
   /** Jarak katak ke anchor saat ini (m). */
   length: number;
   /** Panjang tali istirahat pegas (m), 75% jarak saat attach. */
@@ -225,6 +228,9 @@ export type FrogSimEvent =
   | { type: "kiss"; pos: Vec3 }
   /** Pintu tarik terbuka penuh (F6.3): bunyi + sparkle di scene. */
   | { type: "pulldoor"; doorId: string }
+  /** Jilat iseng (F6.15, co-op): lidah mengenai pasangan tanpa
+   * menarik. pos = titik jilatan (pusat badan pasangan). */
+  | { type: "lick"; pos: Vec3 }
   | { type: "respawn" }
   | { type: "bounce"; mushroomId: string }
   | { type: "win" };

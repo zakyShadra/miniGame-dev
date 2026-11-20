@@ -21,7 +21,7 @@ import {
   getPlayerKey,
 } from "../../../lib/party";
 import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
-import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref } from "../lib/preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, LICK_KEY, readPref } from "../lib/preferences";
 import { FrogRemoteGame, type FrogCoopHud } from "../lib/remote";
 
 export type FrogCoopPhase = "form" | "waiting" | "playing" | "over";
@@ -66,6 +66,8 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
   const highCam = ref(readPref(HIGH_CAM_KEY));
   /** Bidik arah hadap aktif (F6.14, cermin state game). */
   const aimFacing = ref(readPref(AIM_FACING_KEY));
+  /** Mode jilat saja aktif (F6.15, cermin state game). */
+  const lickMode = ref(readPref(LICK_KEY));
   const winner = ref<FrogCoopWinner | null>(null);
   const winTime = ref(0);
   const winFlies = ref(0);
@@ -293,7 +295,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     const myIdx = (seat.seatKey === "p2" ? 1 : 0) as 0 | 1;
     remote = new FrogRemoteGame(container, {
       onInput: (input: FrogInput) => sendInput(input),
-      onFire: (origin: Vec3, dir: Vec3) =>
+      onFire: (origin: Vec3, dir: Vec3, lick: boolean) =>
         send({
           type: "frog-fire",
           ox: origin.x,
@@ -302,6 +304,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
           dx: dir.x,
           dy: dir.y,
           dz: dir.z,
+          lick,
         }),
       onRelease: () => send({ type: "frog-release" }),
       onCroak: () => send({ type: "frog-croak" }),
@@ -404,6 +407,12 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     aimFacing.value = remote?.aimFacing ?? aimFacing.value;
   }
 
+  /** Toggle mode jilat saja (F6.15, tombol HUD). */
+  function toggleLick(): void {
+    remote?.toggleLickMode();
+    lickMode.value = remote?.lickMode ?? lickMode.value;
+  }
+
   return {
     status,
     phase,
@@ -423,6 +432,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     winFliesTotal,
     highCam,
     aimFacing,
+    lickMode,
     selectedLevel,
     unlocked,
     completed,
@@ -447,5 +457,6 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     touchOrbit,
     toggleCamera,
     toggleAim,
+    toggleLick,
   };
 });
