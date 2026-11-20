@@ -27,6 +27,8 @@ export interface FrogHud {
 }
 
 export interface FrogGameOptions {
+  /** Id definisi level (F3, default bengkel). */
+  levelId?: string;
   onHud: (hud: FrogHud) => void;
   onWin: (time: number, fliesGot: number) => void;
   onCroak: (pos: { x: number; y: number } | null) => void;
@@ -57,7 +59,7 @@ export class FrogGame {
   constructor(container: HTMLElement, opts: FrogGameOptions) {
     this.container = container;
     this.opts = opts;
-    const level = getLevel("bengkel");
+    const level = getLevel(opts.levelId ?? "bengkel");
     this.state = createFrogGame(level);
     this.scene = new FrogScene(container, level);
     // Kamera awal di belakang spawn (katak menghadap -z, ke arah level).

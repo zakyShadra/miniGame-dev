@@ -5,6 +5,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useFrogStore, type FrogColorChoice } from "../stores/frog";
 import ThemeToggle from "../../../components/ThemeToggle.vue";
 import FrogCoop from "./FrogCoop.vue";
+import FrogLevelSelect from "./FrogLevelSelect.vue";
 
 const store = useFrogStore();
 defineEmits<{ exit: [] }>();
@@ -78,13 +79,25 @@ const tongueLabel = computed(() => {
         <div>
           <h1 class="font-display text-2xl font-bold text-ink">Katak Penyihir</h1>
           <p class="mt-0.5 text-sm text-muted">
-            Lompat dan ayunkan lidahmu melewati bengkel penyihir. Kumpulkan 5
-            lalat, capai portal di ujung.
+            Lompat dan ayunkan lidahmu melewati 4 level. Kumpulkan
+            {{ store.selectedFliesTotal }} lalat, capai portal di ujung.
           </p>
         </div>
       </div>
 
       <h2 class="mt-6 text-xs font-bold tracking-widest text-muted uppercase">
+        Pilih level
+      </h2>
+      <div class="mt-2">
+        <FrogLevelSelect
+          :selected="store.selectedLevel"
+          :unlocked="store.unlocked"
+          :completed="store.completed"
+          @select="store.selectLevel"
+        />
+      </div>
+
+      <h2 class="mt-5 text-xs font-bold tracking-widest text-muted uppercase">
         Pilih katak
       </h2>
       <div class="mt-2 grid grid-cols-2 gap-2">
@@ -127,8 +140,9 @@ const tongueLabel = computed(() => {
         <li><b class="text-ink">K</b> kroak &middot; <b class="text-ink">Drag mouse</b> putar kamera &middot; <b class="text-ink">Scroll</b> zoom</li>
       </ul>
       <p class="mt-3 text-xs text-subtle">
-        Jurang di tengah level hanya bisa dilewati dengan berayun: bidik
-        lentera di atas jurang, ayun, lalu lompat saat sampai seberang.
+        Jurang hanya bisa dilewati dengan berayun: bidik lentera di atas
+        jurang, ayun, lalu lompat saat sampai seberang. Jamur merah
+        melontarkanmu ke atas; buku terbang membawamu menyeberang.
       </p>
 
       <h2 class="mt-5 text-xs font-bold tracking-widest text-muted uppercase">
@@ -230,14 +244,25 @@ const tongueLabel = computed(() => {
         <h2 class="font-display text-2xl font-bold text-ink">Level selesai!</h2>
         <p class="mt-2 text-sm text-muted">
           Kamu mencapai portal dalam {{ winTimeText }} dan makan
-          {{ store.winFlies }} dari 5 lalat.
+          {{ store.winFlies }} dari {{ store.winFliesTotal }} lalat.
+        </p>
+        <button
+          v-if="store.hasNext"
+          type="button"
+          class="mt-5 w-full rounded-full bg-primary py-3 font-display text-base font-bold text-white transition hover:bg-primary-hover"
+          @click="store.nextLevel()"
+        >
+          Level Berikutnya &rarr;
+        </button>
+        <p v-else class="mt-5 text-sm font-semibold text-success">
+          Semua level selesai, hebat!
         </p>
         <button
           type="button"
-          class="mt-5 w-full rounded-full bg-primary py-3 font-display text-base font-bold text-white transition hover:bg-primary-hover"
+          class="mt-2 w-full rounded-full border border-hairline-strong bg-surface-2 py-3 font-display text-base font-bold text-ink transition hover:bg-surface-3"
           @click="store.rematch()"
         >
-          Main Lagi
+          Ulangi Level
         </button>
         <button
           type="button"
