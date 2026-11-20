@@ -53,12 +53,33 @@ export interface FrogRemoteView {
   pressedButtons: string[];
 }
 
-/** Slot render satu katak (model + state animasi squash/hop). */
+/** Slot render satu katak (model + state animasi squash/hop/kedip). */
 interface FrogSlot {
   model: FrogModel;
   yaw: number;
   squash: number;
   hop: number;
+  /** Waktu sampai kedip berikutnya (detik). */
+  blinkIn: number;
+  /** Progres kedip 0..1 (0 = tidak kedip). */
+  blinkPhase: number;
+  /** onGround frame sebelumnya (buat squash saat lepas landas). */
+  wasGround: boolean;
+  /** Waktu hidup slot (buat napas idle). */
+  time: number;
+}
+
+function newSlot(model: FrogModel): FrogSlot {
+  return {
+    model,
+    yaw: Math.PI,
+    squash: 0,
+    hop: 0,
+    blinkIn: 2 + Math.random() * 2,
+    blinkPhase: 0,
+    wasGround: true,
+    time: 0,
+  };
 }
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -538,12 +559,7 @@ export class FrogScene {
     // Katak pemain (oranye solo / sesuai kursi di co-op). Lidah
     // dipindah ke scene supaya koordinat dunia-nya tidak ikut rotasi
     // badan katak.
-    this.slot0 = {
-      model: buildFrogModel(myColor),
-      yaw: Math.PI,
-      squash: 0,
-      hop: 0,
-    };
+    this.slot0 = newSlot(buildFrogModel(myColor));
     this.scene.add(this.slot0.model.group);
     this.scene.add(this.slot0.model.tongue);
   }
@@ -551,7 +567,7 @@ export class FrogScene {
   /** Tambah katak pasangan (co-op): model ke-2 + lidahnya. */
   addPartner(color: FrogColor): void {
     if (this.slot1) return;
-    this.slot1 = { model: buildFrogModel(color), yaw: Math.PI, squash: 0, hop: 0 };
+    this.slot1 = newSlot(buildFrogModel(color));
     this.scene.add(this.slot1.model.group);
     this.scene.add(this.slot1.model.tongue);
   }
@@ -958,13 +974,47 @@ export class FrogScene {
     g.rotation.y = slot.yaw;
 
     // Squash and stretch: memanjang saat melayang, gepeng saat mendarat.
+    // Lepas landas: squash sebentar (jongkok sebelum lompat).
+    if (slot.wasGround && !f.onGround && f.vel.y > 1) slot.squash = 0.12;
+    slot.wasGround = f.onGround;
+    slot.time += dt;
     slot.squash = Math.max(0, slot.squash - dt);
+    const moving = f.onGround && hSpeed > 0.5;
     let sy = 1;
     if (slot.squash > 0) sy = 0.78;
     else if (!f.onGround && Math.abs(f.vel.y) > 2) sy = 1.12;
-    else if (f.onGround && hSpeed > 0.5) sy = 1 + Math.sin(slot.hop) * 0.03;
+    else if (moving) sy = 1 + Math.sin(slot.hop) * 0.03;
+    else sy = 1 + Math.sin(slot.time * 2.2) * 0.02; // Napas idle.
     const sxz = 1 / Math.sqrt(sy);
-    slot.model.body.scale.set(sxz, sy, sxz);
+    const m = slot.model;
+    m.body.scale.set(sxz, sy, sxz);
+
+    // Jalan wobbly ala Froggin: kaki bergantian, tangan berlawanan,
+    // badan bergoyang. Di udara: kaki ke belakang, tangan ke depan.
+    const step = Math.sin(slot.hop);
+    const air = f.onGround ? 0 : 1;
+    const k = 1 - Math.exp(-10 * dt);
+    const legTarget = moving ? 0.6 : 0;
+    m.legL.rotation.x += ((moving ? step * legTarget : -0.7 * air) - m.legL.rotation.x) * k;
+    m.legR.rotation.x += ((moving ? -step * legTarget : -0.7 * air) - m.legR.rotation.x) * k;
+    m.armL.rotation.x += ((moving ? -step * 0.4 : 0.5 * air) - m.armL.rotation.x) * k;
+    m.armR.rotation.x += ((moving ? step * 0.4 : 0.5 * air) - m.armR.rotation.x) * k;
+    m.body.rotation.z += ((moving ? step * 0.06 : 0) - m.body.rotation.z) * k;
+    m.body.rotation.x += ((moving ? 0.05 : 0) - m.body.rotation.x) * k;
+
+    // Kedip: tiap 2-5 detik, mata menutup 0.12 detik.
+    slot.blinkIn -= dt;
+    if (slot.blinkIn <= 0 && slot.blinkPhase <= 0) slot.blinkPhase = 0.001;
+    if (slot.blinkPhase > 0) {
+      slot.blinkPhase += dt / 0.12;
+      if (slot.blinkPhase >= 1) {
+        slot.blinkPhase = 0;
+        slot.blinkIn = 2 + Math.random() * 3;
+      }
+    }
+    const eyeSy = slot.blinkPhase > 0 ? 1 - Math.sin(slot.blinkPhase * Math.PI) * 0.9 : 1;
+    m.eyeL.scale.y = eyeSy;
+    m.eyeR.scale.y = eyeSy;
 
     // Lidah: terbang (ujung merayap ke anchor) atau nempel.
     if ((t.mode === "flying" || t.mode === "attached") && t.anchor) {
