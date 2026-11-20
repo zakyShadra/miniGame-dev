@@ -326,6 +326,8 @@ interface FrogThemeCfg {
   tableFloor: boolean;
   /** Props ruangan penyihir padat (F6.9): koin, kertas, bola kristal. */
   workshopProps: boolean;
+  /** Spotlight warna dari arah jendela kaca patri (F6.10). */
+  stainedLight: boolean;
   shelves: boolean;
   candles: boolean;
   bottles: boolean;
@@ -334,10 +336,10 @@ interface FrogThemeCfg {
 }
 
 const THEMES: Record<FrogTheme, FrogThemeCfg> = {
-  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 1.9, fogNear: 30, fogFar: 85, exposure: 1.1, fillColor: 0xff9a3d, fillInt: 8, wallTint: 0xffffff, floor: "wood", sideTex: "wood", topTex: "wood", books: true, tableFloor: true, workshopProps: true, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
-  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, fogNear: 16, fogFar: 55, exposure: 1.05, fillColor: 0x2ee6a8, fillInt: 10, wallTint: 0x7a9a8a, floor: "water", sideTex: "paving", topTex: "moss", books: false, tableFloor: false, workshopProps: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
-  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, fogNear: 30, fogFar: 80, exposure: 1.15, fillColor: 0xffe8c8, fillInt: 9, wallTint: 0xa89ac8, floor: "wood", sideTex: "wood", topTex: "paper", books: true, tableFloor: false, workshopProps: false, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
-  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, fogNear: 35, fogFar: 90, exposure: 1.15, fillColor: 0xd8ffb8, fillInt: 9, wallTint: 0x93b184, floor: "grass", sideTex: "wood", topTex: "moss", books: false, tableFloor: false, workshopProps: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
+  workshop: { bg: 0x2a1f16, hemiSky: 0xffe8c8, hemiGround: 0x4a3421, sun: 0xffd9a0, sunInt: 2.0, fogNear: 30, fogFar: 85, exposure: 1.15, fillColor: 0xff9a3d, fillInt: 8, wallTint: 0xffffff, floor: "wood", sideTex: "wood", topTex: "wood", books: true, tableFloor: true, workshopProps: true, stainedLight: true, shelves: true, candles: true, bottles: true, mushrooms: true, orbs: false },
+  sewer: { bg: 0x0a1f1c, hemiSky: 0x9ad8c8, hemiGround: 0x0a2a22, sun: 0x7fd8b8, sunInt: 1.1, fogNear: 16, fogFar: 55, exposure: 1.05, fillColor: 0x2ee6a8, fillInt: 10, wallTint: 0x7a9a8a, floor: "water", sideTex: "paving", topTex: "moss", books: false, tableFloor: false, workshopProps: false, stainedLight: false, shelves: false, candles: false, bottles: false, mushrooms: false, orbs: true },
+  library: { bg: 0x1f1a2e, hemiSky: 0xd8ccff, hemiGround: 0x2a2438, sun: 0xffe8c8, sunInt: 1.6, fogNear: 30, fogFar: 80, exposure: 1.15, fillColor: 0xffe8c8, fillInt: 9, wallTint: 0xa89ac8, floor: "wood", sideTex: "wood", topTex: "paper", books: true, tableFloor: false, workshopProps: false, stainedLight: false, shelves: true, candles: true, bottles: false, mushrooms: false, orbs: false },
+  garden: { bg: 0x14240f, hemiSky: 0xc8f0a8, hemiGround: 0x1a3016, sun: 0xfff0b8, sunInt: 1.7, fogNear: 35, fogFar: 90, exposure: 1.15, fillColor: 0xd8ffb8, fillInt: 9, wallTint: 0x93b184, floor: "grass", sideTex: "wood", topTex: "moss", books: false, tableFloor: false, workshopProps: false, stainedLight: false, shelves: false, candles: false, bottles: false, mushrooms: true, orbs: false },
 };
 
 export class FrogScene {
@@ -362,6 +364,8 @@ export class FrogScene {
   private sparks: { points: THREE.Points; vel: Float32Array; age: number }[] = [];
   /** Hati melayang aktif (F6.8, ciuman lidah): sprite + kecepatan + umur. */
   private hearts: { sprite: THREE.Sprite; vel: THREE.Vector3; age: number; life: number; phase: number }[] = [];
+  /** Partikel sparkle melayang (F6.10): titik + posisi dasar + fase. */
+  private sparkles: { points: THREE.Points; base: Float32Array; phase: Float32Array } | null = null;
   private doorGroup: THREE.Group | null = null;
   private doorY = 0;
   private buttonDomes: { id: string; mat: THREE.MeshStandardMaterial }[] = [];
@@ -419,6 +423,29 @@ export class FrogScene {
       (level.bounds.minZ + level.bounds.maxZ) / 2,
     );
     this.scene.add(fill);
+
+    // Cahaya kaca patri (F6.10, bengkel): 3 spotlight warna dari arah
+    // jendela (belakang pink, kiri ungu, kanan hijau), tanpa bayangan
+    // (laptop kentang). Kolam cahaya warna jatuh ke meja + buku.
+    if (theme.stainedLight) {
+      // Target di atas buku (bukan y=0): kolam warna jatuh tepat di
+      // atas platform yang dilewati katak (p4 pink, p3 ungu, p2 hijau).
+      const spots: { color: number; from: [number, number, number]; to: [number, number, number] }[] = [
+        { color: 0xff6b9d, from: [0, 6, level.bounds.minZ + 2], to: [0, 3.6, -27] },
+        { color: 0xb8a4ed, from: [level.bounds.minX + 1, 5.5, -15], to: [-2, 2.4, -22] },
+        { color: 0x57d98a, from: [level.bounds.maxX - 1, 5.5, -15], to: [2, 2.4, -10] },
+      ];
+      for (const s of spots) {
+        // Intensitas 200: jarak jendela ke kolam cahaya ~17 m, decay
+        // 1.6 melemahkan ~95x, jadi efektif ~2.1 (sebanding matahari
+        // 2.0) dan tint warna terlihat jelas di atas buku + meja.
+        const spot = new THREE.SpotLight(s.color, 200, 45, 0.8, 0.9, 1.6);
+        spot.position.set(s.from[0], s.from[1], s.from[2]);
+        spot.target.position.set(s.to[0], s.to[1], s.to[2]);
+        this.scene.add(spot);
+        this.scene.add(spot.target);
+      }
+    }
 
     // Lantai bawah (dekoratif, di bawah jurang). Ukuran dari bounds
     // level. Air selokan di y=-3 (katak tenggelam sedikit sebelum
@@ -729,6 +756,8 @@ export class FrogScene {
     this.buildBounceShrooms(level);
     this.buildGoal(level);
     this.buildFlies(level);
+    // Sparkle melayang di udara (F6.10, semua tema, 1 draw call).
+    this.buildSparkles(level);
 
     // Katak pemain (oranye solo / sesuai kursi di co-op). Lidah
     // dipindah ke scene supaya koordinat dunia-nya tidak ikut rotasi
@@ -1207,6 +1236,37 @@ export class FrogScene {
     }
   }
 
+  /** Partikel debu ajaib melayang di udara (F6.10): 90 titik emas,
+   * additive blending, bergoyang pelan (syncSparkles tiap frame). */
+  private buildSparkles(level: LevelDef): void {
+    const rng = mulberry32(123);
+    const b = level.bounds;
+    const n = 90;
+    const pos = new Float32Array(n * 3);
+    const phase = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = b.minX + 2 + rng() * (b.maxX - b.minX - 4);
+      pos[i * 3 + 1] = 0.5 + rng() * 7;
+      pos[i * 3 + 2] = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+      phase[i] = rng() * Math.PI * 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const points = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        color: 0xffd97a,
+        size: 0.12,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    this.scene.add(points);
+    this.sparkles = { points, base: pos.slice(), phase };
+  }
+
   /** Arah bidik lidah dari posisi kursor (sinar kamera). */
   screenToAimDir(clientX: number, clientY: number): THREE.Vector3 {
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -1655,6 +1715,24 @@ export class FrogScene {
     this.waterTex.offset.y += dt * 0.005;
   }
 
+  /** Sparkle melayang (F6.10): tiap titik bergoyang pelan di sekitar
+   * posisi dasarnya (sinus beda fase, 90 titik = murah). */
+  private syncSparkles(time: number): void {
+    const s = this.sparkles;
+    if (!s) return;
+    const attr = s.points.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < s.phase.length; i++) {
+      const ph = s.phase[i]!;
+      attr.setXYZ(
+        i,
+        s.base[i * 3]! + Math.sin(time * 0.3 + ph) * 0.4,
+        s.base[i * 3 + 1]! + Math.sin(time * 0.5 + ph * 1.7) * 0.35,
+        s.base[i * 3 + 2]! + Math.cos(time * 0.25 + ph) * 0.4,
+      );
+    }
+    attr.needsUpdate = true;
+  }
+
   /** Render satu frame solo: sinkron state sim + gambar. */
   render(state: FrogGameState, alpha: number, time: number, dt: number): void {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
@@ -1665,6 +1743,7 @@ export class FrogScene {
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
     this.syncWater(dt);
+    this.syncSparkles(time);
     const f = state.frog;
     this.syncCamera(dt, new THREE.Vector3(f.pos.x, f.pos.y, f.pos.z));
     this.renderer.render(this.scene, this.camera);
@@ -1684,6 +1763,7 @@ export class FrogScene {
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
     this.syncWater(dt);
+    this.syncSparkles(time);
     const f = view.me.frog;
     this.syncCamera(dt, new THREE.Vector3(f.pos.x, f.pos.y, f.pos.z));
     this.renderer.render(this.scene, this.camera);
