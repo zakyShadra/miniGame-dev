@@ -270,6 +270,7 @@ export class FrogRemoteGame {
     for (const ev of snap.events) {
       if (ev.type === "land") this.scene?.playEvent("land", ev.frog);
       if (ev.type === "bounce") this.scene?.playEvent("bounce", ev.frog, ev.mushroomId);
+      if (ev.type === "fly") this.scene?.playEvent("fly", ev.frog, ev.flyId);
       this.playEventSound(ev.type, ev.frog);
     }
 

@@ -209,15 +209,17 @@ export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
 
 /** Tembak lidah katak ke-i sepanjang sinar bidik (origin + aimDir,
  * keduanya dari kamera). Target: anchor level (kecuali yang sekali
- * pakai dan sedang habis) atau katak pasangan (co-op). Anchor kena
- * bila: dalam jangkauan lidah dari mulut, sinar lewat dalam
- * TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target jelas.
- * False bila tidak ada target yang kena. */
+ * pakai dan sedang habis), lalat yang belum dimakan (F6.4: lalat
+ * hanya bisa dimakan dengan lidah), atau katak pasangan (co-op).
+ * Target kena bila: dalam jangkauan lidah dari mulut, sinar lewat
+ * dalam TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target
+ * jelas. False bila tidak ada target yang kena. */
 export function tryFireFrog(
   level: LevelDef,
   frogs: FrogState[],
   tongues: TongueState[],
   usedAnchors: string[],
+  fliesGot: string[],
   i: number,
   origin: Vec3,
   aimDir: Vec3,
@@ -250,6 +252,12 @@ export function tryFireFrog(
     const c = consider(a.id, a.pos, null);
     if (c && (!best || c.rayDist < best.rayDist)) best = c;
   }
+  // Lalat yang belum dimakan adalah target lidah (F6.4).
+  for (const f of level.flies) {
+    if (fliesGot.includes(f.id)) continue;
+    const c = consider(`fly:${f.id}`, f.pos, null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
   // Katak pasangan adalah target lidah (tarik pasangan menyeberang).
   const j = i === 0 ? 1 : 0;
   if (frogs[j]) {
@@ -268,7 +276,7 @@ export function tryFireFrog(
 
 /** Tembak lidah (solo, F1). */
 export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  return tryFireFrog(state.level, [state.frog], [state.tongue], [], 0, origin, aimDir);
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, 0, origin, aimDir);
 }
 
 /** Tembak lidah katak ke-i (co-op). */
@@ -283,6 +291,7 @@ export function tryFireCoop(
     state.frogs,
     state.tongues,
     state.usedAnchors,
+    state.fliesGot,
     i,
     origin,
     aimDir,
@@ -340,7 +349,11 @@ function stepTongue(
       if (def?.oneUse && t.anchorId && !usedAnchors.includes(t.anchorId)) {
         usedAnchors.push(t.anchorId);
       }
-      events.push({ type: "tongue-attach", anchorId: t.anchorId!, frog: i as 0 | 1 });
+      // Lalat: tidak ada bunyi nempel, langsung dimakan di tick yang
+      // sama (eatTongueFlies); bunyi makan dari event "fly".
+      if (!t.anchorId!.startsWith("fly:")) {
+        events.push({ type: "tongue-attach", anchorId: t.anchorId!, frog: i as 0 | 1 });
+      }
     }
     return;
   }
@@ -575,22 +588,26 @@ function stepOne(
   }
 }
 
-/** Lalat yang dimakan katak ke-i (shared, dipakai solo + co-op). */
-function eatFlies(
-  level: LevelDef,
-  frogs: FrogState[],
+/** Lalat yang kena lidah katak ke-i dimakan (F6.4, shared, dipakai
+ * solo + co-op). Lidah yang menempel ke lalat langsung dilepas di
+ * tick yang sama: lalat ditarik ke mulut (efek visual di scene) dan
+ * masuk fliesGot. Proximity lama (makan dengan mendekat) DIHAPUS:
+ * lalat HANYA bisa dimakan dengan lidah. */
+function eatTongueFlies(
+  tongues: TongueState[],
   fliesGot: string[],
   i: number,
   events: CoopSimEvent[],
 ): void {
-  const c = centerPos(frogs[i]!);
-  for (const fly of level.flies) {
-    if (fliesGot.includes(fly.id)) continue;
-    if (len(sub(fly.pos, c)) < 1.3) {
-      fliesGot.push(fly.id);
-      events.push({ type: "fly", flyId: fly.id, frog: i as 0 | 1 });
-    }
-  }
+  const t = tongues[i]!;
+  if (t.mode !== "attached" || !t.anchorId?.startsWith("fly:")) return;
+  const flyId = t.anchorId.slice(4);
+  releaseTongueState(t);
+  // Dua katak menembak lalat yang sama di tick yang sama: yang kedua
+  // tidak memicu event ganda.
+  if (fliesGot.includes(flyId)) return;
+  fliesGot.push(flyId);
+  events.push({ type: "fly", flyId, frog: i as 0 | 1 });
 }
 
 function atGoalPos(level: LevelDef, f: FrogState): boolean {
@@ -629,7 +646,7 @@ export function stepFrog(
     dt,
     events,
   );
-  eatFlies(state.level, [state.frog], state.fliesGot, 0, events);
+  eatTongueFlies([state.tongue], state.fliesGot, 0, events);
   if (atGoalPos(state.level, state.frog)) {
     state.won = true;
     events.push({ type: "win", frog: 0 });
@@ -688,8 +705,8 @@ export function stepCoop(
     });
   }
 
-  eatFlies(level, state.frogs, state.fliesGot, 0, events);
-  eatFlies(level, state.frogs, state.fliesGot, 1, events);
+  eatTongueFlies(state.tongues, state.fliesGot, 0, events);
+  eatTongueFlies(state.tongues, state.fliesGot, 1, events);
 
   // Goal per katak (menempel); menang saat keduanya sudah sampai.
   let justArrived: 0 | 1 = 0;

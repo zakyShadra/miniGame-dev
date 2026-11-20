@@ -213,6 +213,9 @@ export class FrogScene {
   private slot0: FrogSlot;
   private slot1: FrogSlot | null = null;
   private flies: FlyMesh[] = [];
+  /** Lalat yang sedang tersedot ke mulut pemakan (F6.4): id -> waktu
+   * sejak mulai, slot pemakan, posisi awal lalat. */
+  private flySuck = new Map<string, { t: number; slot: number; from: THREE.Vector3 }>();
   private portalRing!: THREE.Mesh;
   private anchorVisuals: { id: string; ring: THREE.Mesh; bulb: THREE.Mesh }[] = [];
   private doorGroup: THREE.Group | null = null;
@@ -929,17 +932,25 @@ export class FrogScene {
   }
 
   /** Event sim ke efek visual: squash katak saat mendarat, jamur
-   * berdenyut saat melontarkan katak. slot 0 = katak sendiri,
-   * 1 = pasangan (co-op). */
-  playEvent(type: string, slot = 0, mushroomId?: string): void {
+   * berdenyut saat melontarkan katak, lalat tersedot ke mulut saat
+   * dimakan lidah (F6.4). slot 0 = katak sendiri, 1 = pasangan
+   * (co-op). id = id jamur (bounce) atau id lalat (fly). */
+  playEvent(type: string, slot = 0, id?: string): void {
     if (type === "land") {
       if (slot === 0) this.slot0.squash = 0.16;
       else if (this.slot1) this.slot1.squash = 0.16;
       return;
     }
-    if (type === "bounce" && mushroomId) {
-      const m = this.bounceShrooms.find((x) => x.id === mushroomId);
+    if (type === "bounce" && id) {
+      const m = this.bounceShrooms.find((x) => x.id === id);
       if (m) m.squash = 0.35;
+      return;
+    }
+    if (type === "fly" && id) {
+      const fly = this.flies.find((x) => x.id === id);
+      if (fly) {
+        this.flySuck.set(id, { t: 0, slot, from: fly.group.position.clone() });
+      }
     }
   }
 
@@ -1058,10 +1069,31 @@ export class FrogScene {
   }
 
   /** Lalat + cincin anchor + portal (dipakai solo dan co-op). */
-  private syncShared(fliesGot: string[], usedAnchors: string[], time: number): void {
+  private syncShared(fliesGot: string[], usedAnchors: string[], time: number, dt: number): void {
     // Lalat: melayang naik-turun + sayap mengepak; hilang saat dimakan.
+    // Lalat yang dimakan lidah (F6.4) tersedot ke mulut pemakan
+    // selama 0.18 detik sambil mengecil, baru hilang.
     for (const fly of this.flies) {
       const eaten = fliesGot.includes(fly.id);
+      const suck = this.flySuck.get(fly.id);
+      if (suck) {
+        suck.t += dt;
+        const p = Math.min(1, suck.t / 0.18);
+        const slot = suck.slot === 1 && this.slot1 ? this.slot1 : this.slot0;
+        const mouth = slot.model.group.position;
+        const e = p * p;
+        fly.group.position.set(
+          suck.from.x + (mouth.x - suck.from.x) * e,
+          suck.from.y + (mouth.y + 0.45 - suck.from.y) * e,
+          suck.from.z + (mouth.z - suck.from.z) * e,
+        );
+        fly.group.scale.setScalar(1 - p * 0.7);
+        if (p >= 1) {
+          fly.group.visible = false;
+          this.flySuck.delete(fly.id);
+        }
+        continue;
+      }
       fly.group.visible = !eaten;
       if (eaten) continue;
       fly.group.position.y = fly.baseY + Math.sin(time * 3 + fly.phase) * 0.15;
@@ -1139,7 +1171,7 @@ export class FrogScene {
   /** Render satu frame solo: sinkron state sim + gambar. */
   render(state: FrogGameState, alpha: number, time: number, dt: number): void {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
-    this.syncShared(state.fliesGot, [], time);
+    this.syncShared(state.fliesGot, [], time, dt);
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
@@ -1156,7 +1188,7 @@ export class FrogScene {
     if (this.slot1 && view.partner) {
       this.syncSlot(this.slot1, view.partner.frog, view.partner.tongue, 1, dt);
     }
-    this.syncShared(view.fliesGot, view.usedAnchors, time);
+    this.syncShared(view.fliesGot, view.usedAnchors, time, dt);
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);

@@ -196,7 +196,10 @@ export class FrogGame {
     if (ev.type === "jump") playJump();
     if (ev.type === "tongue-fire") playTongueFire();
     if (ev.type === "tongue-attach") playTongueStick();
-    if (ev.type === "fly") playEatFly();
+    if (ev.type === "fly") {
+      this.scene.playEvent("fly", 0, ev.flyId);
+      playEatFly();
+    }
     if (ev.type === "bounce") {
       this.scene.playEvent("bounce", 0, ev.mushroomId);
       playBounce();
