@@ -92,8 +92,216 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
   bounds: { minX: -18, maxX: 18, minZ: -46, maxZ: 10, killY: -4 },
 };
 
-export const LEVELS: LevelDef[] = [LEVEL_WORKSHOP, LEVEL_WORKSHOP_COOP];
+// Level 2 "Selokan Bercahaya" (F3): selokan gelap, air di bawah
+// (jatuh = respawn checkpoint). Jalur zigzag ke kiri lalu lurus -z.
+// Puzzle: (1) ayun jurang 7 m, (2) tombol + pintu di z=-27,
+// (3) ayunan ganda: lentera d1 ke pulau tengah, lalu lentera rapuh d2
+// (sekali pakai) ke seberang; co-op katak ke-2 ditarik lidah pasangan.
+export const LEVEL_SEWER: LevelDef = {
+  id: "selokan",
+  name: "Selokan Bercahaya",
+  theme: "sewer",
+  platforms: [
+    { id: "floor0", min: { x: -8, y: -1, z: -3 }, max: { x: 8, y: 0, z: 8 } },
+    { id: "s1", min: { x: -8, y: 0, z: -9 }, max: { x: -1, y: 1.2, z: -3 } },
+    { id: "s2", min: { x: -8, y: 0, z: -15 }, max: { x: -1, y: 2.4, z: -9 } },
+    // s3 + pintu selebar penuh (x -8..8): pintu yang lebih sempit dari
+    // jalan bisa dilompati diagonal dari tepinya.
+    { id: "s3", min: { x: -8, y: 0, z: -27 }, max: { x: 8, y: 2.4, z: -22 } },
+    { id: "door", min: { x: -8, y: 2.4, z: -27.6 }, max: { x: 8, y: 5.6, z: -27 } },
+    { id: "s4", min: { x: -8, y: 0, z: -33 }, max: { x: 8, y: 3.6, z: -27 } },
+    { id: "island", min: { x: -3, y: 0, z: -42 }, max: { x: 3, y: 3.6, z: -39 } },
+    { id: "goal", min: { x: -8, y: 0, z: -55 }, max: { x: 8, y: 3.6, z: -48 } },
+  ],
+  anchors: [
+    { id: "help1", pos: { x: 0, y: 5.2, z: -5.5 } },
+    { id: "swing1", pos: { x: -4.5, y: 7, z: -18.5 } },
+    { id: "d1", pos: { x: 0, y: 7.5, z: -36 } },
+    { id: "d2", pos: { x: 0, y: 7.5, z: -45 }, oneUse: true },
+  ],
+  flies: [
+    { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
+    { id: "f2", pos: { x: -4, y: 2.8, z: -6 } },
+    { id: "f3", pos: { x: -4, y: 4, z: -12 } },
+    { id: "f4", pos: { x: -4.5, y: 5, z: -18.5 } },
+    { id: "f5", pos: { x: 0, y: 5, z: -30 } },
+    { id: "f6", pos: { x: 0, y: 5.2, z: -36 } },
+    { id: "f7", pos: { x: 0, y: 5.2, z: -51.5 } },
+  ],
+  spawn: { x: 0, y: 0, z: 5 },
+  spawn2: { x: 2.5, y: 0, z: 5 },
+  buttons: [
+    { id: "btn-a", pos: { x: -6.5, y: 2.4, z: -23.5 }, radius: 1.1 },
+    { id: "btn-b", pos: { x: 5, y: 3.6, z: -30 }, radius: 1.1 },
+  ],
+  door: { platformId: "door", buttonIds: ["btn-a", "btn-b"] },
+  goal: { pos: { x: 0, y: 3.6, z: -51.5 }, radius: 1.8 },
+  bounds: { minX: -18, maxX: 18, minZ: -56, maxZ: 10, killY: -4 },
+};
+
+// Level 3 "Atap Perpustakaan" (F3): tangga buku raksasa naik ke kanan,
+// lalu buku terbang (platform bergerak, sumbu z, amplitudo 3 m,
+// periode 6 dtk) menyeberangi jurang 12 m, pintu di rak atas, dan
+// ayun ke atap goal. Puzzle: (1) buku terbang, (2) tombol + pintu,
+// (3) ayun jurang 7 m.
+export const LEVEL_LIBRARY: LevelDef = {
+  id: "atap",
+  name: "Atap Perpustakaan",
+  theme: "library",
+  platforms: [
+    { id: "floor0", min: { x: -8, y: -1, z: -3 }, max: { x: 8, y: 0, z: 8 } },
+    { id: "b1", min: { x: 2, y: 0, z: -8 }, max: { x: 10, y: 1.2, z: -3 } },
+    { id: "b2", min: { x: 4, y: 0, z: -13 }, max: { x: 12, y: 2.4, z: -8 } },
+    { id: "b3", min: { x: 6, y: 0, z: -18 }, max: { x: 14, y: 3.6, z: -13 } },
+    // Buku terbang: papan melayang (tebal 0.6 m), naik saat di ujung
+    // dekat b3 (z -21..-18) dan ujung dekat b4 (z -27..-24).
+    { id: "book1", min: { x: 8, y: 3, z: -24 }, max: { x: 11, y: 3.6, z: -21 } },
+    { id: "b4", min: { x: 6, y: 0, z: -36 }, max: { x: 14, y: 3.6, z: -30 } },
+    { id: "door", min: { x: 6, y: 3.6, z: -36.6 }, max: { x: 14, y: 6.8, z: -36 } },
+    { id: "b5", min: { x: 6, y: 0, z: -42 }, max: { x: 14, y: 4.8, z: -36 } },
+    { id: "goal", min: { x: 4, y: 0, z: -55 }, max: { x: 14, y: 4.8, z: -49 } },
+  ],
+  movers: [{ platformId: "book1", axis: "z", amplitude: 3, period: 6 }],
+  anchors: [
+    { id: "help1", pos: { x: 6, y: 5.5, z: -5.5 } },
+    { id: "swing", pos: { x: 10, y: 8.5, z: -45.5 } },
+  ],
+  flies: [
+    { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
+    { id: "f2", pos: { x: 6, y: 2.8, z: -5.5 } },
+    { id: "f3", pos: { x: 8, y: 4, z: -10.5 } },
+    { id: "f4", pos: { x: 10, y: 5.2, z: -15.5 } },
+    { id: "f5", pos: { x: 9.5, y: 5, z: -22.5 } },
+    { id: "f6", pos: { x: 10, y: 6.4, z: -38 } },
+    { id: "f7", pos: { x: 9, y: 6.4, z: -52 } },
+  ],
+  spawn: { x: 0, y: 0, z: 5 },
+  spawn2: { x: 2.5, y: 0, z: 5 },
+  buttons: [
+    { id: "btn-a", pos: { x: 8, y: 3.6, z: -32 }, radius: 1.1 },
+    { id: "btn-b", pos: { x: 12, y: 4.8, z: -39 }, radius: 1.1 },
+  ],
+  door: { platformId: "door", buttonIds: ["btn-a", "btn-b"] },
+  goal: { pos: { x: 9, y: 4.8, z: -52 }, radius: 1.8 },
+  bounds: { minX: -18, maxX: 18, minZ: -56, maxZ: 10, killY: -4 },
+};
+
+// Level 4 "Taman Jamur" (F3): taman terbuka, naik vertikal dengan
+// jamur lompat (apex ~3.27 m, anak tangga 2.4 m tidak bisa dilompati
+// biasa). Puzzle: (1) rantai 2 jamur lompat, (2) tombol + pintu di
+// ketinggian, (3) piring spora bergerak menyeberangi jurang 12 m.
+export const LEVEL_GARDEN: LevelDef = {
+  id: "taman",
+  name: "Taman Jamur",
+  theme: "garden",
+  platforms: [
+    { id: "floor0", min: { x: -8, y: -1, z: -3 }, max: { x: 8, y: 0, z: 8 } },
+    { id: "g1", min: { x: -6, y: 0, z: -10 }, max: { x: 6, y: 1.2, z: -3 } },
+    { id: "g2", min: { x: -6, y: 0, z: -16 }, max: { x: 6, y: 3.6, z: -10 } },
+    { id: "g3", min: { x: -6, y: 0, z: -22 }, max: { x: 6, y: 6, z: -16 } },
+    { id: "door", min: { x: -6, y: 6, z: -22.6 }, max: { x: 6, y: 9.2, z: -22 } },
+    { id: "g4", min: { x: -6, y: 0, z: -28 }, max: { x: 6, y: 7.2, z: -22 } },
+    // Piring spora: papan melayang (tebal 0.6 m), ujung dekat g4
+    // (z -32..-29) dan ujung dekat goal (z -38..-35).
+    { id: "spore1", min: { x: -1.5, y: 6.6, z: -35 }, max: { x: 1.5, y: 7.2, z: -32 } },
+    { id: "goal", min: { x: -8, y: 0, z: -47 }, max: { x: 8, y: 7.2, z: -40 } },
+  ],
+  movers: [{ platformId: "spore1", axis: "z", amplitude: 3, period: 7 }],
+  mushrooms: [
+    { id: "m1", pos: { x: 0, y: 1.2, z: -7 }, radius: 1.2 },
+    { id: "m2", pos: { x: 0, y: 3.6, z: -13 }, radius: 1.2 },
+  ],
+  anchors: [{ id: "help1", pos: { x: 0, y: 5.2, z: -5.5 } }],
+  flies: [
+    { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
+    { id: "f2", pos: { x: 3, y: 2.8, z: -6.5 } },
+    { id: "f3", pos: { x: 0, y: 5.2, z: -10.5 } },
+    { id: "f4", pos: { x: -3, y: 5.2, z: -13 } },
+    { id: "f5", pos: { x: 0, y: 7.8, z: -19 } },
+    { id: "f6", pos: { x: 0, y: 8.6, z: -34 } },
+    { id: "f7", pos: { x: 0, y: 8.8, z: -43.5 } },
+  ],
+  spawn: { x: 0, y: 0, z: 5 },
+  spawn2: { x: 2.5, y: 0, z: 5 },
+  buttons: [
+    { id: "btn-a", pos: { x: -4, y: 6, z: -18 }, radius: 1.1 },
+    { id: "btn-b", pos: { x: 4, y: 7.2, z: -25 }, radius: 1.1 },
+  ],
+  door: { platformId: "door", buttonIds: ["btn-a", "btn-b"] },
+  goal: { pos: { x: 0, y: 7.2, z: -43.5 }, radius: 1.8 },
+  bounds: { minX: -18, maxX: 18, minZ: -48, maxZ: 10, killY: -4 },
+};
+
+export const LEVELS: LevelDef[] = [
+  LEVEL_WORKSHOP,
+  LEVEL_WORKSHOP_COOP,
+  LEVEL_SEWER,
+  LEVEL_LIBRARY,
+  LEVEL_GARDEN,
+];
 
 export function getLevel(id: string): LevelDef {
   return LEVELS.find((l) => l.id === id) ?? LEVEL_WORKSHOP;
+}
+
+// Satu entri di level select (F3): level baru punya satu definisi
+// untuk solo + co-op (spawn2 di definisi yang sama); Bengkel memakai
+// dua definisi lama (bengkel solo, workshop-coop co-op).
+export interface LevelMeta {
+  id: string;
+  name: string;
+  desc: string;
+  /** Jumlah puzzle co-op di level ini. */
+  puzzles: number;
+  /** Id definisi level solo. */
+  soloId: string;
+  /** Id definisi level co-op. */
+  coopId: string;
+}
+
+export const LEVEL_PACK: LevelMeta[] = [
+  {
+    id: "bengkel",
+    name: "Bengkel Penyihir",
+    desc: "Tutorial: lompat, ayun lidah, dan portal pertama.",
+    puzzles: 2,
+    soloId: "bengkel",
+    coopId: "workshop-coop",
+  },
+  {
+    id: "selokan",
+    name: "Selokan Bercahaya",
+    desc: "Selokan gelap: ayunan ganda dan lentera rapuh.",
+    puzzles: 3,
+    soloId: "selokan",
+    coopId: "selokan",
+  },
+  {
+    id: "atap",
+    name: "Atap Perpustakaan",
+    desc: "Buku raksasa dan buku terbang di atap perpustakaan.",
+    puzzles: 3,
+    soloId: "atap",
+    coopId: "atap",
+  },
+  {
+    id: "taman",
+    name: "Taman Jamur",
+    desc: "Melenting di jamur lompat dan melayang di atas spora.",
+    puzzles: 3,
+    soloId: "taman",
+    coopId: "taman",
+  },
+];
+
+export function getLevelMeta(id: string): LevelMeta {
+  return LEVEL_PACK.find((m) => m.id === id) ?? LEVEL_PACK[0]!;
+}
+
+/** Id pack dari id definisi level (solo atau co-op). */
+export function packIdOfDef(defId: string): string {
+  return (
+    LEVEL_PACK.find((m) => m.soloId === defId || m.coopId === defId)?.id ??
+    "bengkel"
+  );
 }
