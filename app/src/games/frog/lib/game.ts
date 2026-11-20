@@ -5,6 +5,17 @@ import { getLevel } from "../../../../../shared/frog/levels";
 import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene } from "./scene";
 import {
+  playBounce,
+  playCroak,
+  playDoorOpen,
+  playEatFly,
+  playJump,
+  playLand,
+  playTongueFire,
+  playTongueStick,
+  playWin,
+} from "./audio";
+import {
   TICK_DT,
   createFrogGame,
   releaseTongue,
@@ -47,6 +58,10 @@ export class FrogGame {
   private hudT = 0;
   private keys = new Set<string>();
   private jumpQueued = false;
+  /** Input analog joystick sentuh (x kanan +, y bawah +). */
+  private touch = { x: 0, y: 0 };
+  /** Status pintu frame sebelumnya (buat bunyi saat terbuka). */
+  private prevDoorOpen = false;
   private drag: DragOrbit;
   private disposed = false;
   private won = false;
@@ -105,6 +120,9 @@ export class FrogGame {
         for (const ev of events) this.handleEvent(ev);
         this.acc -= TICK_DT;
       }
+      // Pintu latch terbuka (transisi): bunyi gemuruh besi.
+      if (this.state.doorOpen && !this.prevDoorOpen) playDoorOpen();
+      this.prevDoorOpen = this.state.doorOpen;
       const alpha = this.acc / TICK_DT;
       this.scene.render(this.state, alpha, this.state.time, dt);
       this.syncCroak();
@@ -138,10 +156,25 @@ export class FrogGame {
     );
   }
 
-  /** Kroak: bubble teks di atas katak selama 1.4 detik. */
+  /** Kroak: bubble teks di atas katak selama 1.4 detik + bunyi. */
   croak(): void {
     if (this.won) return;
+    playCroak();
     this.croakUntil = this.state.time + CROAK_DURATION;
+  }
+
+  /** Input sentuh (dari FrogTouchControls): joystick analog + lompat. */
+  setTouchMove(x: number, y: number): void {
+    this.touch = { x, y };
+  }
+
+  queueJump(): void {
+    this.jumpQueued = true;
+  }
+
+  /** Orbit kamera dari drag sentuh (dx piksel, skala sama seperti drag mouse). */
+  orbitBy(dx: number): void {
+    this.scene.addOrbit(dx * 0.005);
   }
 
   private syncCroak(): void {
@@ -156,10 +189,21 @@ export class FrogGame {
   }
 
   private handleEvent(ev: FrogSimEvent): void {
-    if (ev.type === "land") this.scene.playEvent("land");
-    if (ev.type === "bounce") this.scene.playEvent("bounce", 0, ev.mushroomId);
+    if (ev.type === "land") {
+      this.scene.playEvent("land");
+      playLand();
+    }
+    if (ev.type === "jump") playJump();
+    if (ev.type === "tongue-fire") playTongueFire();
+    if (ev.type === "tongue-attach") playTongueStick();
+    if (ev.type === "fly") playEatFly();
+    if (ev.type === "bounce") {
+      this.scene.playEvent("bounce", 0, ev.mushroomId);
+      playBounce();
+    }
     if (ev.type === "win" && !this.won) {
       this.won = true;
+      playWin();
       this.opts.onWin(this.state.time, this.state.fliesGot.length);
     }
   }
@@ -172,6 +216,9 @@ export class FrogGame {
     let right = 0;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) right += 1;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) right -= 1;
+    // Joystick sentuh: atas = maju (y bawah +), kanan = kanan.
+    fwd += -this.touch.y;
+    right += this.touch.x;
     // Maju = menjauhi kamera; kanan = tegak lurus maju (searah jarum jam
     // dilihat dari atas).
     const yaw = this.scene.cameraYaw;

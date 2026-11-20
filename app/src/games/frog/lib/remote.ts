@@ -25,6 +25,18 @@ import type {
 import type { FrogSnap, FrogSnapshot } from "../../../../../shared/types";
 import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene, type FrogRemoteView } from "./scene";
+import {
+  attenByDistance,
+  playBounce,
+  playCroak,
+  playDoorOpen,
+  playEatFly,
+  playJump,
+  playLand,
+  playTongueFire,
+  playTongueStick,
+  playWin,
+} from "./audio";
 
 export interface FrogCoopHud {
   fliesGot: number;
@@ -124,6 +136,11 @@ export class FrogRemoteGame {
   private keys = new Set<string>();
   private jumpQueued = false;
   private jumpSendPending = false;
+  /** Input analog joystick sentuh (x kanan +, y bawah +). */
+  private touch = { x: 0, y: 0 };
+  /** Status pintu + kroak pasangan snapshot sebelumnya (buat bunyi). */
+  private prevDoorOpen = false;
+  private prevPartnerCroakUntil = 0;
   private drag: DragOrbit;
   private disposed = false;
   private over = false;
@@ -183,6 +200,8 @@ export class FrogRemoteGame {
     };
     this.over = false;
     this.acc = 0;
+    this.prevDoorOpen = false;
+    this.prevPartnerCroakUntil = 0;
 
     // Hook debug buat QA Playwright (bukan bagian gameplay).
     (window as unknown as { __frogRemote?: unknown }).__frogRemote = {
@@ -251,12 +270,43 @@ export class FrogRemoteGame {
     for (const ev of snap.events) {
       if (ev.type === "land") this.scene?.playEvent("land", ev.frog);
       if (ev.type === "bounce") this.scene?.playEvent("bounce", ev.frog, ev.mushroomId);
+      this.playEventSound(ev.type, ev.frog);
     }
+
+    // Pintu terbuka (transisi): gemuruh besi. Kroak pasangan (croakUntil
+    // naik): kroak dengan volume atenuasi jarak.
+    if (snap.doorOpen && !this.prevDoorOpen) playDoorOpen();
+    this.prevDoorOpen = snap.doorOpen;
+    if (snap.croakUntil[this.partnerIndex] > this.prevPartnerCroakUntil) {
+      playCroak(this.partnerVol());
+    }
+    this.prevPartnerCroakUntil = snap.croakUntil[this.partnerIndex];
 
     if (snap.won && !this.over) {
       this.over = true;
+      playWin();
       this.opts.onWin(snap.t, snap.fliesGot.length);
     }
+  }
+
+  /** Volume bunyi pasangan dari jarak kedua katak (snapshot terakhir). */
+  private partnerVol(): number {
+    const snap = this.curSnap;
+    if (!snap) return 0.5;
+    const me = snap.frogs[this.myIndex];
+    const p = snap.frogs[this.partnerIndex];
+    return attenByDistance(Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z));
+  }
+
+  /** Bunyi event sim server: saya penuh, pasangan teratenuasi jarak. */
+  private playEventSound(type: string, frog: 0 | 1): void {
+    const vol = frog === this.myIndex ? 1 : this.partnerVol();
+    if (type === "jump") playJump(vol);
+    else if (type === "land") playLand(vol);
+    else if (type === "tongue-fire") playTongueFire(vol);
+    else if (type === "tongue-attach") playTongueStick(vol);
+    else if (type === "fly") playEatFly(vol);
+    else if (type === "bounce") playBounce(vol);
   }
 
   /** Tembak / lepas lidah (klik kiri atau tombol J). Optimis lokal +
@@ -283,8 +333,24 @@ export class FrogRemoteGame {
   /** Kroak: bubble lokal langsung + kirim ke server (buat pasangan). */
   croak(): void {
     if (this.over || !this.pred) return;
+    playCroak();
     this.croakUntilMe = this.pred.time + CROAK_DURATION;
     this.opts.onCroak();
+  }
+
+  /** Input sentuh (dari FrogTouchControls): joystick analog + lompat. */
+  setTouchMove(x: number, y: number): void {
+    this.touch = { x, y };
+  }
+
+  queueJump(): void {
+    this.jumpQueued = true;
+    this.jumpSendPending = true;
+  }
+
+  /** Orbit kamera dari drag sentuh (dx piksel, skala sama seperti drag mouse). */
+  orbitBy(dx: number): void {
+    this.scene?.addOrbit(dx * 0.005);
   }
 
   /** Alpha interpolasi pasangan (0..1, render 100 ms di masa lalu). */
@@ -370,6 +436,9 @@ export class FrogRemoteGame {
     let right = 0;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) right += 1;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) right -= 1;
+    // Joystick sentuh: atas = maju (y bawah +), kanan = kanan.
+    fwd += -this.touch.y;
+    right += this.touch.x;
     const yaw = this.scene?.cameraYaw ?? 0;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
