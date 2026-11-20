@@ -100,6 +100,10 @@ export const useFrogStore = defineStore("frog", () => {
       onCroak: (pos) => {
         croakPos.value = pos;
       },
+      onPrefChange: () => {
+        highCam.value = game?.highCam ?? highCam.value;
+        aimFacing.value = game?.aimFacing ?? aimFacing.value;
+      },
     });
   }
 

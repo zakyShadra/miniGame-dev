@@ -79,6 +79,9 @@ export interface FrogRemoteOptions {
   onCroak: () => void;
   onHud: (hud: FrogCoopHud) => void;
   onWin: (time: number, fliesGot: number) => void;
+  /** Dipanggil saat preferensi F6 (kamera/bidik/jilat) berubah via
+   * tombol keyboard, supaya store bisa menyinkronkan label HUD. */
+  onPrefChange?: () => void;
 }
 
 export interface FrogRemoteStart {
@@ -424,18 +427,21 @@ export class FrogRemoteGame {
     this.highCam = !this.highCam;
     if (this.scene) this.scene.highCam = this.highCam;
     writePref(HIGH_CAM_KEY, this.highCam);
+    this.opts.onPrefChange?.();
   }
 
   /** Toggle bidik arah hadap (F6.14, tombol HUD / tombol B). */
   toggleAimFacing(): void {
     this.aimFacing = !this.aimFacing;
     writePref(AIM_FACING_KEY, this.aimFacing);
+    this.opts.onPrefChange?.();
   }
 
   /** Toggle mode jilat saja (F6.15, tombol HUD / tombol L). */
   toggleLickMode(): void {
     this.lickMode = !this.lickMode;
     writePref(LICK_KEY, this.lickMode);
+    this.opts.onPrefChange?.();
   }
 
   /** Alpha interpolasi pasangan (0..1, render 100 ms di masa lalu). */

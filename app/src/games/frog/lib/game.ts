@@ -56,6 +56,9 @@ export interface FrogGameOptions {
   onHud: (hud: FrogHud) => void;
   onWin: (time: number, fliesGot: number) => void;
   onCroak: (pos: { x: number; y: number } | null) => void;
+  /** Dipanggil saat preferensi F6 (kamera/bidik) berubah via tombol
+   * keyboard, supaya store bisa menyinkronkan label HUD. */
+  onPrefChange?: () => void;
 }
 
 const CROAK_DURATION = 1.4;
@@ -216,12 +219,14 @@ export class FrogGame {
     this.highCam = !this.highCam;
     this.scene.highCam = this.highCam;
     writePref(HIGH_CAM_KEY, this.highCam);
+    this.opts.onPrefChange?.();
   }
 
   /** Toggle bidik arah hadap (F6.14, tombol HUD / tombol B). */
   toggleAimFacing(): void {
     this.aimFacing = !this.aimFacing;
     writePref(AIM_FACING_KEY, this.aimFacing);
+    this.opts.onPrefChange?.();
   }
 
   private syncCroak(): void {

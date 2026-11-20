@@ -316,6 +316,11 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
         winFlies.value = flies;
         finishMatch("players");
       },
+      onPrefChange: () => {
+        highCam.value = remote?.highCam ?? highCam.value;
+        aimFacing.value = remote?.aimFacing ?? aimFacing.value;
+        lickMode.value = remote?.lickMode ?? lickMode.value;
+      },
     });
     remote.start({
       myIndex: myIdx,
