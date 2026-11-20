@@ -23,11 +23,18 @@ export const TICK_HZ = 60;
 export const TICK_DT = 1 / TICK_HZ;
 export const GRAVITY = 22;
 export const JUMP_VEL = 9;
-export const MOVE_SPEED = 6;
+/** Gerak dasar merangkak (F6.7, Froggin): 4 m/s, dari 6 m/s.
+ * Lompatan tetap mencapai platform yang ada: jarak lompat datar maks
+ * ~3.3 m, celah lompatan terlebar antar platform (buku terbang atap
+ * ke b4, 3 m) masih bisa dilewati. */
+export const MOVE_SPEED = 4;
 export const GROUND_ACCEL = 40;
 export const AIR_ACCEL = 18;
-export const GROUND_FRICTION = 30;
-/** Kecepatan horizontal maks saat berayun (pegas boleh melampaui 6). */
+/** Friksi tanah RENDAH (F6.7): katak "terpeleset" saat berhenti
+ * mendadak, meluncur ~0.6 m dari kecepatan penuh sebelum berhenti
+ * (dari 30, berhenti hampir seketika). */
+export const GROUND_FRICTION = 14;
+/** Kecepatan horizontal maks saat berayun (pegas boleh melampaui 4). */
 export const SWING_MAX_SPEED = 11;
 export const TONGUE_RANGE = 12;
 export const TONGUE_TIMEOUT = 5;

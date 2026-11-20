@@ -69,6 +69,10 @@ interface FrogSlot {
   wasGround: boolean;
   /** Waktu hidup slot (buat napas idle). */
   time: number;
+  /** Sisa waktu goyang terpeleset (detik, F6.7). */
+  slideT: number;
+  /** Kecepatan horizontal frame sebelumnya (buat deteksi berhenti mendadak). */
+  prevHSpeed: number;
 }
 
 function newSlot(model: FrogModel): FrogSlot {
@@ -81,6 +85,8 @@ function newSlot(model: FrogModel): FrogSlot {
     blinkPhase: 0,
     wasGround: true,
     time: 0,
+    slideT: 0,
+    prevHSpeed: 0,
   };
 }
 
@@ -972,8 +978,8 @@ export class FrogScene {
    * (bounce), id lalat (fly), atau id cincin (ring). */
   playEvent(type: string, slot = 0, id?: string): void {
     if (type === "land") {
-      if (slot === 0) this.slot0.squash = 0.16;
-      else if (this.slot1) this.slot1.squash = 0.16;
+      if (slot === 0) this.slot0.squash = 0.22;
+      else if (this.slot1) this.slot1.squash = 0.22;
       return;
     }
     if (type === "bounce" && id) {
@@ -1042,45 +1048,67 @@ export class FrogScene {
     const y = f.prevPos.y + (f.pos.y - f.prevPos.y) * alpha;
     const z = f.prevPos.z + (f.pos.z - f.prevPos.z) * alpha;
     const g = slot.model.group;
-    // Hop bob: badan naik-turun kecil saat bergerak di tanah.
+    // Hop bob MERANGKAK (F6.7): badan naik-turun lebih besar saat
+    // jalan (0.09 m, dari 0.06), langkah 4 kaki lebih jelas.
     const hSpeed = Math.hypot(f.vel.x, f.vel.z);
     let bob = 0;
     if (f.onGround && hSpeed > 0.5) {
-      slot.hop += dt * hSpeed * 1.6;
-      bob = Math.abs(Math.sin(slot.hop)) * 0.06;
+      slot.hop += dt * hSpeed * 2.0;
+      bob = Math.abs(Math.sin(slot.hop)) * 0.09;
     }
     g.position.set(x, y + bob, z);
     slot.yaw = lerpAngle(slot.yaw, f.facing, 1 - Math.exp(-12 * dt));
     g.rotation.y = slot.yaw;
 
-    // Squash and stretch: memanjang saat melayang, gepeng saat mendarat.
+    // Terpeleset (F6.7): berhenti mendadak dari kecepatan > 2 m/s di
+    // tanah (perlambatan > 8 m/s2, friksi sim 14) = goyang 0.35 detik.
+    if (f.onGround && slot.prevHSpeed > 2 && slot.prevHSpeed - hSpeed > 8 * dt) {
+      slot.slideT = 0.35;
+    }
+    slot.prevHSpeed = hSpeed;
+    slot.slideT = Math.max(0, slot.slideT - dt);
+
+    // Squash and stretch (F6.7, lebih besar): jongkok sebelum lompat,
+    // MEMANJANG saat melenting ke udara (1.18), MEMIPIH saat mendarat
+    // (0.70, dari 0.78).
     // Lepas landas: squash sebentar (jongkok sebelum lompat).
-    if (slot.wasGround && !f.onGround && f.vel.y > 1) slot.squash = 0.12;
+    if (slot.wasGround && !f.onGround && f.vel.y > 1) slot.squash = 0.14;
     slot.wasGround = f.onGround;
     slot.time += dt;
     slot.squash = Math.max(0, slot.squash - dt);
     const moving = f.onGround && hSpeed > 0.5;
     let sy = 1;
-    if (slot.squash > 0) sy = 0.78;
-    else if (!f.onGround && Math.abs(f.vel.y) > 2) sy = 1.12;
-    else if (moving) sy = 1 + Math.sin(slot.hop) * 0.03;
+    if (slot.squash > 0) sy = 0.7;
+    else if (!f.onGround && Math.abs(f.vel.y) > 2) sy = 1.18;
+    else if (moving) sy = 1 + Math.sin(slot.hop) * 0.04;
     else sy = 1 + Math.sin(slot.time * 2.2) * 0.02; // Napas idle.
     const sxz = 1 / Math.sqrt(sy);
     const m = slot.model;
     m.body.scale.set(sxz, sy, sxz);
+    // Merangkak: badan menunduk sedikit saat jalan (posisi jongkok).
+    m.body.position.y = moving ? -0.02 : 0;
 
-    // Jalan wobbly ala Froggin: kaki bergantian, tangan berlawanan,
-    // badan bergoyang. Di udara: kaki ke belakang, tangan ke depan.
+    // Jalan wobbly ala Froggin (F6.7, lebih besar): kaki bergantian
+    // lebih jelas (0.85, dari 0.6), tangan berlawanan, badan bergoyang
+    // (roll 0.12, dari 0.06) + goyang kiri-kanan (yaw 0.07). Di udara:
+    // kaki ke belakang, tangan ke depan. Saat terpeleset: badan
+    // bergetar + condong ke depan.
     const step = Math.sin(slot.hop);
     const air = f.onGround ? 0 : 1;
     const k = 1 - Math.exp(-10 * dt);
-    const legTarget = moving ? 0.6 : 0;
+    const legTarget = moving ? 0.85 : 0;
     m.legL.rotation.x += ((moving ? step * legTarget : -0.7 * air) - m.legL.rotation.x) * k;
     m.legR.rotation.x += ((moving ? -step * legTarget : -0.7 * air) - m.legR.rotation.x) * k;
-    m.armL.rotation.x += ((moving ? -step * 0.4 : 0.5 * air) - m.armL.rotation.x) * k;
-    m.armR.rotation.x += ((moving ? step * 0.4 : 0.5 * air) - m.armR.rotation.x) * k;
-    m.body.rotation.z += ((moving ? step * 0.06 : 0) - m.body.rotation.z) * k;
-    m.body.rotation.x += ((moving ? 0.05 : 0) - m.body.rotation.x) * k;
+    m.armL.rotation.x += ((moving ? -step * 0.55 : 0.5 * air) - m.armL.rotation.x) * k;
+    m.armR.rotation.x += ((moving ? step * 0.55 : 0.5 * air) - m.armR.rotation.x) * k;
+    const slideK = slot.slideT / 0.35;
+    const wobble = slot.slideT > 0 ? Math.sin(slot.slideT * 28) * 0.1 * slideK : 0;
+    const rollTarget = (moving ? step * 0.12 : 0) + wobble;
+    const pitchTarget = (moving ? 0.05 : 0) + 0.1 * slideK;
+    const yawTarget = moving ? step * 0.07 : 0;
+    m.body.rotation.z += (rollTarget - m.body.rotation.z) * k;
+    m.body.rotation.x += (pitchTarget - m.body.rotation.x) * k;
+    m.body.rotation.y += (yawTarget - m.body.rotation.y) * k;
 
     // Kedip: tiap 2-5 detik, mata menutup 0.12 detik.
     slot.blinkIn -= dt;

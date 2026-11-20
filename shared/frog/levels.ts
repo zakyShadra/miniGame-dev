@@ -2,7 +2,7 @@
 // satu jurang yang wajib dilewati dengan ayun lidah, 5 lalat, goal
 // di ujung. Jalur utama mengarah ke -z (dari spawn z=5 ke goal z=-34).
 // Lompatan antar platform naik 1.2 m (tinggi lompat maks ~1.84 m);
-// jurang 7 m tidak bisa dilompati (jarak lompat maks ~4.9 m).
+// jurang 7 m tidak bisa dilompati (jarak lompat maks ~3.3 m).
 
 import type { LevelDef } from "./types";
 
@@ -177,8 +177,10 @@ export const LEVEL_LIBRARY: LevelDef = {
     { id: "b2", min: { x: 4, y: 0, z: -13 }, max: { x: 12, y: 2.4, z: -8 } },
     { id: "b3", min: { x: 6, y: 0, z: -18 }, max: { x: 14, y: 3.6, z: -13 } },
     // Buku terbang: papan melayang (tebal 0.6 m), naik saat di ujung
-    // dekat b3 (z -21..-18) dan ujung dekat b4 (z -27..-24).
-    { id: "book1", min: { x: 8, y: 3, z: -24 }, max: { x: 11, y: 3.6, z: -21 } },
+    // dekat b3 (z -22..-19) dan ujung dekat b4 (z -28..-25). Celah ke
+    // b4 2 m di ujung jauh (F6.7: lompat 4 m/s ~3.3 m, lompat dari
+    // tepi buku sampai dengan margin).
+    { id: "book1", min: { x: 8, y: 3, z: -25 }, max: { x: 11, y: 3.6, z: -22 } },
     { id: "b4", min: { x: 6, y: 0, z: -36 }, max: { x: 14, y: 3.6, z: -30 } },
     { id: "door", min: { x: 6, y: 3.6, z: -36.6 }, max: { x: 14, y: 6.8, z: -36 } },
     { id: "b5", min: { x: 6, y: 0, z: -42 }, max: { x: 14, y: 4.8, z: -36 } },
@@ -231,8 +233,11 @@ export const LEVEL_GARDEN: LevelDef = {
   ],
   movers: [{ platformId: "spore1", axis: "z", amplitude: 3, period: 7 }],
   mushrooms: [
-    { id: "m1", pos: { x: 0, y: 1.2, z: -7 }, radius: 1.2 },
-    { id: "m2", pos: { x: 0, y: 3.6, z: -13 }, radius: 1.2 },
+    // Jamur 1 m dari tepi platform (F6.7): loncatan 12 m/s + lari
+    // 4 m/s mendarat di platform berikutnya (dari -7/-13, loncatan
+    // di 4 m/s jatuh 0.8 m sebelum tepi).
+    { id: "m1", pos: { x: 0, y: 1.2, z: -8 }, radius: 1.2 },
+    { id: "m2", pos: { x: 0, y: 3.6, z: -14 }, radius: 1.2 },
   ],
   anchors: [{ id: "help1", pos: { x: 0, y: 5.2, z: -5.5 } }],
   flies: [
