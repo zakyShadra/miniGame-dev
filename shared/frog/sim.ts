@@ -426,9 +426,11 @@ function stepTongue(
       // Lalat: tidak ada bunyi nempel, langsung dimakan di tick yang
       // sama (eatTongueFlies); bunyi makan dari event "fly". Cincin
       // sama: langsung aktif di tick yang sama (activateRings); bunyi
-      // + sparkle dari event "ring".
-      if (!t.anchorId!.startsWith("fly:") && !t.anchorId!.startsWith("ring:")) {
-        events.push({ type: "tongue-attach", anchorId: t.anchorId!, frog: i as 0 | 1 });
+      // + sparkle dari event "ring". anchorId bisa null di sim
+      // prediksi co-op (snapToTongue tidak membawa id): pakai ?.
+      // supaya step pred tidak crash saat lidah snapshot menempel.
+      if (!t.anchorId?.startsWith("fly:") && !t.anchorId?.startsWith("ring:")) {
+        events.push({ type: "tongue-attach", anchorId: t.anchorId ?? "", frog: i as 0 | 1 });
       }
     }
     return;
