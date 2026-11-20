@@ -160,6 +160,31 @@ export function hasLineOfSight(platforms: PlatformDef[], a: Vec3, b: Vec3): bool
   return true;
 }
 
+/** Sinar origin + dir (dir ternormalisasi) memotong AABB? Kembalikan
+ * jarak t ke titik masuk terdekat, atau null bila tidak kena / origin
+ * di dalam kotak (tidak ada permukaan di depan sinar). Slab test,
+ * t >= 0. Dipakai F6.1 (lidah nempel dinding). */
+function rayHitsBox(origin: Vec3, dir: Vec3, p: PlatformDef): number | null {
+  let tmin = 0;
+  let tmax = Infinity;
+  for (const ax of ["x", "y", "z"] as const) {
+    const d = dir[ax];
+    if (Math.abs(d) < 1e-9) {
+      if (origin[ax] < p.min[ax] || origin[ax] > p.max[ax]) return null;
+    } else {
+      let t1 = (p.min[ax] - origin[ax]) / d;
+      let t2 = (p.max[ax] - origin[ax]) / d;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return null;
+    }
+  }
+  // tmin 0 = origin di dalam / tepat di permukaan kotak.
+  if (tmin <= 0) return null;
+  return tmin;
+}
+
 /** Platform aktif: pintu hilang dari tabrakan saat terbuka. */
 function activePlatforms(level: LevelDef, doorOpen: boolean): PlatformDef[] {
   if (!doorOpen || !level.door) return level.platforms;
@@ -210,9 +235,11 @@ export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
 /** Tembak lidah katak ke-i sepanjang sinar bidik (origin + aimDir,
  * keduanya dari kamera). Target: anchor level (kecuali yang sekali
  * pakai dan sedang habis), lalat yang belum dimakan (F6.4: lalat
- * hanya bisa dimakan dengan lidah), atau katak pasangan (co-op).
- * Target kena bila: dalam jangkauan lidah dari mulut, sinar lewat
- * dalam TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target
+ * hanya bisa dimakan dengan lidah), katak pasangan (co-op), atau
+ * permukaan platform/dinding padat pertama yang dipotong sinar
+ * (F6.1, fallback bila tidak ada target titik yang kena). Target
+ * kena bila: dalam jangkauan lidah dari mulut, sinar lewat dalam
+ * TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target
  * jelas. False bila tidak ada target yang kena. */
 export function tryFireFrog(
   level: LevelDef,
@@ -263,6 +290,35 @@ export function tryFireFrog(
   if (frogs[j]) {
     const c = consider(`frog:${j}`, centerPos(frogs[j]!), j as 0 | 1);
     if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
+  // Dinding / permukaan platform (F6.1): bila tidak ada target titik
+  // yang kena bidik, lidah nempel ke permukaan platform padat pertama
+  // yang dipotong sinar (sisi tegak, atas, atau bawah). Platform
+  // bergerak dikecualikan: posisi def-nya statis, posisi sim-nya
+  // bergeser, jadi titik tempel bisa melayang di udara. Langit/latar
+  // bukan target: sinar yang tidak memotong platform apa pun gagal.
+  if (!best) {
+    const moverIds = new Set((level.movers ?? []).map((m) => m.platformId));
+    let wallT = Infinity;
+    let wall: { id: string; pos: Vec3 } | null = null;
+    for (const p of plats) {
+      if (moverIds.has(p.id)) continue;
+      const t = rayHitsBox(origin, aimDir, p);
+      if (t === null || t >= wallT) continue;
+      const hit = {
+        x: origin.x + aimDir.x * t,
+        y: origin.y + aimDir.y * t,
+        z: origin.z + aimDir.z * t,
+      };
+      const md = len(sub(hit, mouth));
+      if (md > TONGUE_RANGE || md < 0.5) continue;
+      // Garis pandang mulut ke titik tempel jelas (platform yang
+      // ditempel sendiri dikecualikan: titiknya ada di permukaannya).
+      if (!hasLineOfSight(plats.filter((q) => q.id !== p.id), mouth, hit)) continue;
+      wall = { id: `wall:${p.id}`, pos: hit };
+      wallT = t;
+    }
+    if (wall) best = { id: wall.id, pos: wall.pos, rayDist: 0, frog: null };
   }
   if (!best) return false;
   t.mode = "flying";
