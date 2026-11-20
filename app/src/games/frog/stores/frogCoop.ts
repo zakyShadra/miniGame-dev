@@ -21,7 +21,7 @@ import {
   getPlayerKey,
 } from "../../../lib/party";
 import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
-import { HIGH_CAM_KEY, readPref } from "../lib/preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref } from "../lib/preferences";
 import { FrogRemoteGame, type FrogCoopHud } from "../lib/remote";
 
 export type FrogCoopPhase = "form" | "waiting" | "playing" | "over";
@@ -64,6 +64,8 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
   const hud = ref<FrogCoopHud>(freshHud());
   /** Kamera sudut tinggi aktif (F6.13, cermin state game). */
   const highCam = ref(readPref(HIGH_CAM_KEY));
+  /** Bidik arah hadap aktif (F6.14, cermin state game). */
+  const aimFacing = ref(readPref(AIM_FACING_KEY));
   const winner = ref<FrogCoopWinner | null>(null);
   const winTime = ref(0);
   const winFlies = ref(0);
@@ -396,6 +398,12 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     highCam.value = remote?.highCam ?? highCam.value;
   }
 
+  /** Toggle bidik arah hadap (F6.14, tombol HUD). */
+  function toggleAim(): void {
+    remote?.toggleAimFacing();
+    aimFacing.value = remote?.aimFacing ?? aimFacing.value;
+  }
+
   return {
     status,
     phase,
@@ -414,6 +422,7 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     winFlies,
     winFliesTotal,
     highCam,
+    aimFacing,
     selectedLevel,
     unlocked,
     completed,
@@ -437,5 +446,6 @@ export const useFrogCoopStore = defineStore("frog-coop", () => {
     touchCroak,
     touchOrbit,
     toggleCamera,
+    toggleAim,
   };
 });

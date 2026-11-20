@@ -7,7 +7,7 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { getLevel, getLevelMeta, LEVEL_PACK } from "../../../../../shared/frog/levels";
 import { markCompleted, readCompleted, readUnlocked } from "../lib/progress";
-import { HIGH_CAM_KEY, readPref } from "../lib/preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref } from "../lib/preferences";
 import { FrogGame, type FrogHud } from "../lib/game";
 
 export type FrogPhase = "setup" | "playing" | "won";
@@ -42,6 +42,8 @@ export const useFrogStore = defineStore("frog", () => {
   const hud = ref<FrogHud>(freshHud());
   /** Kamera sudut tinggi aktif (F6.13, cermin state game). */
   const highCam = ref(readPref(HIGH_CAM_KEY));
+  /** Bidik arah hadap aktif (F6.14, cermin state game). */
+  const aimFacing = ref(readPref(AIM_FACING_KEY));
   const winTime = ref(0);
   const winFlies = ref(0);
   const winFliesTotal = ref(5);
@@ -148,6 +150,12 @@ export const useFrogStore = defineStore("frog", () => {
     highCam.value = game?.highCam ?? highCam.value;
   }
 
+  /** Toggle bidik arah hadap (F6.14, tombol HUD). */
+  function toggleAim(): void {
+    game?.toggleAimFacing();
+    aimFacing.value = game?.aimFacing ?? aimFacing.value;
+  }
+
   function toSetup(): void {
     disposeGame();
     croakPos.value = null;
@@ -169,6 +177,7 @@ export const useFrogStore = defineStore("frog", () => {
     winFliesTotal,
     croakPos,
     highCam,
+    aimFacing,
     selectLevel,
     begin,
     attachGame,
@@ -181,5 +190,6 @@ export const useFrogStore = defineStore("frog", () => {
     touchCroak,
     touchOrbit,
     toggleCamera,
+    toggleAim,
   };
 });

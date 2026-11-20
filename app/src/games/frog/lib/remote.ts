@@ -11,6 +11,7 @@ import {
   TICK_DT,
   TONGUE_TIMEOUT,
   createCoopGame,
+  mouthPos,
   releaseTongueCoop,
   stepCoop,
   tryFireCoop,
@@ -25,7 +26,7 @@ import type {
 import type { FrogSnap, FrogSnapshot } from "../../../../../shared/types";
 import { DragOrbit } from "../../naval/lib/cameraDrag";
 import { FrogScene, type FrogRemoteView } from "./scene";
-import { HIGH_CAM_KEY, readPref, writePref } from "./preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref, writePref } from "./preferences";
 import {
   attenByDistance,
   playBounce,
@@ -166,6 +167,8 @@ export class FrogRemoteGame {
   private fps = 0;
   /** Kamera sudut tinggi (F6.13, dari localStorage). */
   highCam = readPref(HIGH_CAM_KEY);
+  /** Bidik lidah ke arah hadap katak (F6.14, dari localStorage). */
+  aimFacing = readPref(AIM_FACING_KEY);
 
   constructor(container: HTMLElement, opts: FrogRemoteOptions) {
     this.container = container;
@@ -359,6 +362,19 @@ export class FrogRemoteGame {
       this.opts.onRelease();
       return;
     }
+    // Bidik arah hadap (F6.14): dari mulut ke arah katak menghadap
+    // (miring ke atas 0.35, sama seperti solo). Origin + dir yang
+    // sama dikirim ke server supaya sim server setuju.
+    if (this.aimFacing) {
+      const f = this.pred.frogs[this.myIndex].facing;
+      const dir = { x: Math.sin(f), y: 0.35, z: Math.cos(f) };
+      const l = Math.hypot(dir.x, dir.y, dir.z);
+      const origin = mouthPos(this.pred.frogs[this.myIndex]);
+      const d = { x: dir.x / l, y: dir.y / l, z: dir.z / l };
+      tryFireCoop(this.pred, this.myIndex, origin, d);
+      this.opts.onFire(origin, d);
+      return;
+    }
     const rect = this.container.getBoundingClientRect();
     const mx = this.lastMouse?.x ?? rect.left + rect.width / 2;
     const my = this.lastMouse?.y ?? rect.top + rect.height / 2;
@@ -398,6 +414,12 @@ export class FrogRemoteGame {
     this.highCam = !this.highCam;
     if (this.scene) this.scene.highCam = this.highCam;
     writePref(HIGH_CAM_KEY, this.highCam);
+  }
+
+  /** Toggle bidik arah hadap (F6.14, tombol HUD / tombol B). */
+  toggleAimFacing(): void {
+    this.aimFacing = !this.aimFacing;
+    writePref(AIM_FACING_KEY, this.aimFacing);
   }
 
   /** Alpha interpolasi pasangan (0..1, render 100 ms di masa lalu). */
@@ -610,6 +632,8 @@ export class FrogRemoteGame {
       this.croak();
     } else if (e.code === "KeyC") {
       this.toggleHighCam();
+    } else if (e.code === "KeyB") {
+      this.toggleAimFacing();
     }
   };
 

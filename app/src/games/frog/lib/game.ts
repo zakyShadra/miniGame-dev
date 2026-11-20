@@ -22,11 +22,12 @@ import {
 import {
   TICK_DT,
   createFrogGame,
+  mouthPos,
   releaseTongue,
   stepFrog,
   tryFire,
 } from "../../../../../shared/frog/sim";
-import { HIGH_CAM_KEY, readPref, writePref } from "./preferences";
+import { AIM_FACING_KEY, HIGH_CAM_KEY, readPref, writePref } from "./preferences";
 import type { FrogGameState, FrogSimEvent } from "../../../../../shared/frog/types";
 
 export interface FrogHud {
@@ -83,6 +84,9 @@ export class FrogGame {
   private fps = 0;
   /** Kamera sudut tinggi (F6.13, dari localStorage). */
   highCam = readPref(HIGH_CAM_KEY);
+  /** Bidik lidah ke arah hadap katak (F6.14, dari localStorage).
+   * Default false (bidik klik mouse, sinar kamera). */
+  aimFacing = readPref(AIM_FACING_KEY);
 
   constructor(container: HTMLElement, opts: FrogGameOptions) {
     this.container = container;
@@ -156,6 +160,21 @@ export class FrogGame {
       releaseTongue(this.state);
       return;
     }
+    // Bidik arah hadap (F6.14): lidah meluncur dari mulut ke arah
+    // katak menghadap (miring ke atas 0.35 supaya lentera di atas
+    // masih kena toleransi bidik), tanpa klik mouse. Cocok untuk
+    // gamepad/mobile. Default: sinar kamera dari posisi kursor.
+    if (this.aimFacing) {
+      const f = this.state.frog.facing;
+      const dir = { x: Math.sin(f), y: 0.35, z: Math.cos(f) };
+      const l = Math.hypot(dir.x, dir.y, dir.z);
+      tryFire(this.state, mouthPos(this.state.frog), {
+        x: dir.x / l,
+        y: dir.y / l,
+        z: dir.z / l,
+      });
+      return;
+    }
     // Bidik dari posisi kursor terakhir; belum ada = tengah layar.
     // Sinar berawal di kamera (paralaks kamera vs mulut terlalu besar
     // untuk cone dari mulut).
@@ -196,6 +215,12 @@ export class FrogGame {
     this.highCam = !this.highCam;
     this.scene.highCam = this.highCam;
     writePref(HIGH_CAM_KEY, this.highCam);
+  }
+
+  /** Toggle bidik arah hadap (F6.14, tombol HUD / tombol B). */
+  toggleAimFacing(): void {
+    this.aimFacing = !this.aimFacing;
+    writePref(AIM_FACING_KEY, this.aimFacing);
   }
 
   private syncCroak(): void {
@@ -307,6 +332,8 @@ export class FrogGame {
       this.croak();
     } else if (e.code === "KeyC") {
       this.toggleHighCam();
+    } else if (e.code === "KeyB") {
+      this.toggleAimFacing();
     }
   };
 
