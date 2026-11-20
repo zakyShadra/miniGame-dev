@@ -34,28 +34,30 @@ function std(color: string, roughness = 0.4): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
 
-/** Kaki belakang: paha gemuk + telapak lebar pipih + 3 jari melebar. */
+/** Kaki belakang: paha gemuk + telapak lebar pipih + 3 jari melebar.
+ * Merentang ke samping ala Froggin (F6.6): kaki keluar dari badan,
+ * telapak menghadap keluar. */
 function buildHindLeg(side: 1 | -1, mat: THREE.Material): THREE.Group {
   const leg = new THREE.Group();
-  leg.position.set(side * 0.38, 0.18, -0.08);
+  leg.position.set(side * 0.45, 0.18, -0.08);
   // Paha: menonjol ke samping (katak duduk, kaki menekuk).
   const thigh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 20, 14), mat);
   thigh.scale.set(0.9, 0.7, 1.3);
-  thigh.position.set(side * 0.06, 0.02, -0.02);
-  thigh.rotation.z = side * -0.4;
+  thigh.position.set(side * 0.09, 0.02, -0.02);
+  thigh.rotation.z = side * -0.55;
   leg.add(thigh);
   // Telapak: lebar, pipih, menjulur ke depan-samping.
   const foot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), mat);
   foot.scale.set(1.25, 0.32, 1.7);
-  foot.position.set(side * 0.1, -0.12, 0.14);
-  foot.rotation.y = side * 0.35;
+  foot.position.set(side * 0.14, -0.12, 0.14);
+  foot.rotation.y = side * 0.55;
   leg.add(foot);
   // 3 jari di ujung telapak.
   for (let i = -1; i <= 1; i++) {
     const toe = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), mat);
     toe.scale.set(1, 0.5, 1.4);
-    toe.position.set(side * 0.1 + i * 0.07, -0.13, 0.34);
-    toe.rotation.y = side * 0.35 + i * 0.25;
+    toe.position.set(side * 0.14 + i * 0.07, -0.13, 0.34);
+    toe.rotation.y = side * 0.55 + i * 0.25;
     leg.add(toe);
   }
   return leg;
@@ -114,14 +116,15 @@ export function buildFrogModel(color: FrogColor): FrogModel {
   const body = new THREE.Group();
   group.add(body);
 
-  // Kulit: texture prosedural (bintik/bercak) + kilau halus.
+  // Kulit: texture prosedural (bintik/bercak) + kilau halus. F6.6:
+  // roughness 0.3 (glossy ala Froggin).
   const skin = new THREE.MeshStandardMaterial({
     map: getFrogSkinTexture(color),
-    roughness: 0.38,
+    roughness: 0.3,
     bumpMap: getFrogSkinTexture(color),
     bumpScale: 0.6,
   });
-  const legMat = std(s.legs, 0.42);
+  const legMat = std(s.legs, 0.32);
 
   // Badan RENDAH + LEBAR (duduk pipih, bukan tegak): r 0.38,
   // scale (1.2, 0.72, 1.05) = lebar 0.91m, tinggi 0.55m.
@@ -135,6 +138,16 @@ export function buildFrogModel(color: FrogColor): FrogModel {
   belly.scale.set(1.1, 0.55, 0.45);
   belly.position.set(0, 0.2, 0.27);
   body.add(belly);
+
+  // Pantat BESAR 2 lobus, signature Froggin (F6.6): menonjol ke
+  // belakang dari badan, terlihat jelas dari kamera belakang.
+  // Referensi: f6-walk-pantat-katak.png.
+  for (const side of [-1, 1] as const) {
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.2, 24, 18), skin);
+    lobe.scale.set(1, 0.92, 1);
+    lobe.position.set(side * 0.17, 0.3, -0.33);
+    body.add(lobe);
+  }
 
   const eyeL = buildEye(-1, s.iris);
   const eyeR = buildEye(1, s.iris);
