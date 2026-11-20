@@ -17,6 +17,9 @@ export const LEVEL_WORKSHOP: LevelDef = {
     { id: "p2", min: { x: 0, y: 0, z: -13 }, max: { x: 8, y: 2.4, z: -8 } },
     // Jurang z -13..-20 (tanpa lantai). Seberang jurang:
     { id: "p3", min: { x: -6, y: 0, z: -25 }, max: { x: 4, y: 2.4, z: -20 } },
+    // Pijakan tengah jurang (F6.2): tersembunyi sampai cincin r1 kena
+    // lidah. Alternatif ayun: lompat p2 -> step1 -> p3.
+    { id: "step1", min: { x: -3.5, y: 0, z: -18 }, max: { x: -0.5, y: 1.2, z: -15 }, hiddenUntil: "r1" },
     { id: "p4", min: { x: -4, y: 0, z: -30 }, max: { x: 6, y: 3.6, z: -25 } },
     // Platform goal.
     { id: "goal", min: { x: -8, y: 0, z: -38 }, max: { x: 8, y: 3.6, z: -30 } },
@@ -27,6 +30,11 @@ export const LEVEL_WORKSHOP: LevelDef = {
     // Anchor latihan di atas p1 + p4 (opsional).
     { id: "help1", pos: { x: 0, y: 5.2, z: -5.5 } },
     { id: "help2", pos: { x: -2, y: 6.5, z: -28 } },
+  ],
+  rings: [
+    // Cincin emas di atas jurang (sisi kiri, jauh dari anchor swing +
+    // lalat f4): kena lidah = step1 muncul + sparkle biru.
+    { id: "r1", pos: { x: -2, y: 4.5, z: -16.5 } },
   ],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
@@ -59,6 +67,10 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
     { id: "p1", min: { x: -6, y: 0, z: -8 }, max: { x: 2, y: 1.2, z: -3 } },
     { id: "p2", min: { x: 0, y: 0, z: -13 }, max: { x: 8, y: 2.4, z: -8 } },
     { id: "p3", min: { x: -6, y: 0, z: -25 }, max: { x: 4, y: 2.4, z: -20 } },
+    // Pijakan tengah jurang 1 (F6.2): tersembunyi sampai cincin r1
+    // kena lidah. Jurang ke-2 SENGAJA tanpa cincin: puzzle lentera
+    // rapuh + tarik pasangan harus tetap wajib.
+    { id: "step1", min: { x: -3.5, y: 0, z: -18 }, max: { x: -0.5, y: 1.2, z: -15 }, hiddenUntil: "r1" },
     // Pintu besi: menutup celah z=-25 (satu-satunya jalan p3 -> p4).
     { id: "door", min: { x: -4, y: 2.4, z: -25.6 }, max: { x: 6, y: 5.6, z: -25 } },
     { id: "p4", min: { x: -4, y: 0, z: -30 }, max: { x: 6, y: 3.6, z: -25 } },
@@ -72,6 +84,7 @@ export const LEVEL_WORKSHOP_COOP: LevelDef = {
     // Lentera rapuh di atas jurang ke-2: sekali pakai.
     { id: "fragile", pos: { x: 1, y: 7.5, z: -33.5 }, oneUse: true },
   ],
+  rings: [{ id: "r1", pos: { x: -2, y: 4.5, z: -16.5 } }],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
     { id: "f2", pos: { x: -2, y: 2.8, z: -5.5 } },
@@ -105,6 +118,9 @@ export const LEVEL_SEWER: LevelDef = {
     { id: "floor0", min: { x: -8, y: -1, z: -3 }, max: { x: 8, y: 0, z: 8 } },
     { id: "s1", min: { x: -8, y: 0, z: -9 }, max: { x: -1, y: 1.2, z: -3 } },
     { id: "s2", min: { x: -8, y: 0, z: -15 }, max: { x: -1, y: 2.4, z: -9 } },
+    // Pijakan tengah jurang 1 (F6.2): tersembunyi sampai cincin r1
+    // kena lidah. Alternatif ayun swing1.
+    { id: "step1", min: { x: -3, y: 0, z: -20 }, max: { x: 0, y: 1.2, z: -17 }, hiddenUntil: "r1" },
     // s3 + pintu selebar penuh (x -8..8): pintu yang lebih sempit dari
     // jalan bisa dilompati diagonal dari tepinya.
     { id: "s3", min: { x: -8, y: 0, z: -27 }, max: { x: 8, y: 2.4, z: -22 } },
@@ -120,6 +136,11 @@ export const LEVEL_SEWER: LevelDef = {
     { id: "swing1", pos: { x: -4.5, y: 7, z: -18.5 } },
     { id: "d1", pos: { x: 0, y: 7.5, z: -36 } },
     { id: "d2", pos: { x: 0, y: 7.5, z: -47 }, oneUse: true },
+  ],
+  rings: [
+    // Cincin di tepi kanan jurang 1 (jauh dari lalat f4 di x -4.5):
+    // kena lidah = step1 muncul + sparkle biru.
+    { id: "r1", pos: { x: -1.5, y: 4, z: -18.5 } },
   ],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },

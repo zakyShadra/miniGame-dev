@@ -11,6 +11,7 @@ import {
   playEatFly,
   playJump,
   playLand,
+  playRing,
   playTongueFire,
   playTongueStick,
   playWin,
@@ -199,6 +200,10 @@ export class FrogGame {
     if (ev.type === "fly") {
       this.scene.playEvent("fly", 0, ev.flyId);
       playEatFly();
+    }
+    if (ev.type === "ring") {
+      this.scene.playEvent("ring", 0, ev.ringId);
+      playRing();
     }
     if (ev.type === "bounce") {
       this.scene.playEvent("bounce", 0, ev.mushroomId);

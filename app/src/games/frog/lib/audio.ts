@@ -28,6 +28,7 @@ const THROTTLE_MS: Record<string, number> = {
   win: 1000,
   bounce: 200,
   land: 150,
+  ring: 300,
 };
 const lastPlayed: Record<string, number> = {};
 
@@ -222,6 +223,21 @@ export function playLand(vol = 1): void {
     const ac = ready("land");
     if (!ac) return;
     tone(ac, "sine", ac.currentTime, 0.1, 90, 50, 0.14 * clampVol(vol));
+  } catch {
+    // Audio gagal: abaikan.
+  }
+}
+
+/** Cincin emas aktif (F6.2): lonceng cerah 2 nada + kilau. */
+export function playRing(vol = 1): void {
+  try {
+    const ac = ready("ring");
+    if (!ac) return;
+    const now = ac.currentTime;
+    const v = clampVol(vol);
+    tone(ac, "sine", now, 0.25, 880, 880, 0.2 * v);
+    tone(ac, "sine", now + 0.09, 0.3, 1318.5, 1318.5, 0.18 * v);
+    noise(ac, now, 0.3, "highpass", 6000, 9000, 0.05 * v);
   } catch {
     // Audio gagal: abaikan.
   }

@@ -177,6 +177,8 @@ export interface FrogSnapshot {
   t: number
   frogs: [FrogSnap, FrogSnap]
   fliesGot: string[]
+  /** Id cincin emas yang sudah diaktifkan (F6.2). */
+  ringsHit: string[]
   usedAnchors: string[]
   buttonDown: boolean
   doorOpen: boolean

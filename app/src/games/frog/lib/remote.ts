@@ -33,6 +33,7 @@ import {
   playEatFly,
   playJump,
   playLand,
+  playRing,
   playTongueFire,
   playTongueStick,
   playWin,
@@ -121,6 +122,7 @@ export class FrogRemoteGame {
   private shared = {
     t: 0,
     fliesGot: [] as string[],
+    ringsHit: [] as string[],
     usedAnchors: [] as string[],
     doorOpen: false,
     buttonDown: false,
@@ -192,6 +194,7 @@ export class FrogRemoteGame {
     this.shared = {
       t: 0,
       fliesGot: [],
+      ringsHit: [],
       usedAnchors: [],
       doorOpen: false,
       buttonDown: false,
@@ -220,6 +223,7 @@ export class FrogRemoteGame {
     this.curRecvAt = performance.now();
     this.shared.t = snap.t;
     this.shared.fliesGot = [...snap.fliesGot];
+    this.shared.ringsHit = [...snap.ringsHit];
     this.shared.usedAnchors = [...snap.usedAnchors];
     this.shared.doorOpen = snap.doorOpen;
     this.shared.buttonDown = snap.buttonDown;
@@ -271,6 +275,7 @@ export class FrogRemoteGame {
       if (ev.type === "land") this.scene?.playEvent("land", ev.frog);
       if (ev.type === "bounce") this.scene?.playEvent("bounce", ev.frog, ev.mushroomId);
       if (ev.type === "fly") this.scene?.playEvent("fly", ev.frog, ev.flyId);
+      if (ev.type === "ring") this.scene?.playEvent("ring", ev.frog, ev.ringId);
       this.playEventSound(ev.type, ev.frog);
     }
 
@@ -307,6 +312,7 @@ export class FrogRemoteGame {
     else if (type === "tongue-fire") playTongueFire(vol);
     else if (type === "tongue-attach") playTongueStick(vol);
     else if (type === "fly") playEatFly(vol);
+    else if (type === "ring") playRing(vol);
     else if (type === "bounce") playBounce(vol);
   }
 
@@ -423,6 +429,7 @@ export class FrogRemoteGame {
       me: { frog: me, tongue: pred.tongues[this.myIndex] },
       partner,
       fliesGot: this.shared.fliesGot,
+      ringsHit: this.shared.ringsHit,
       usedAnchors: this.shared.usedAnchors,
       doorOpen: this.shared.doorOpen,
       pressedButtons: pressed,

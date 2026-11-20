@@ -44,11 +44,15 @@ export interface TongueState {
   flyTime: number;
 }
 
-/** Platform padat (AABB). Katak berdiri di atas max.y. */
+/** Platform padat (AABB). Katak berdiri di atas max.y.
+ * hiddenUntil: platform tersembunyi (tidak ada di tabrakan + tidak
+ * dirender) sampai cincin emas itu kena lidah (F6.2). */
 export interface PlatformDef {
   id: string;
   min: Vec3;
   max: Vec3;
+  /** Id cincin yang memunculkan platform ini (F6.2). */
+  hiddenUntil?: string;
 }
 
 /** Titik tempel lidah (lentera gantung / kait balok). */
@@ -61,6 +65,14 @@ export interface AnchorDef {
 }
 
 export interface FlyDef {
+  id: string;
+  pos: Vec3;
+}
+
+/** Target cincin emas (F6.2): tembak lidah ke cincin = aktivasi
+ * (platform tersembunyi yang terikat ke cincin ini muncul) + efek
+ * sparkle biru. Satu kali pakai per match. */
+export interface RingDef {
   id: string;
   pos: Vec3;
 }
@@ -110,6 +122,8 @@ export interface LevelDef {
   platforms: PlatformDef[];
   anchors: AnchorDef[];
   flies: FlyDef[];
+  /** Target cincin emas (F6.2). */
+  rings?: RingDef[];
   spawn: Vec3;
   /** Spawn katak ke-2 (co-op, hijau). Kosong = level solo. */
   spawn2?: Vec3;
@@ -133,6 +147,8 @@ export interface FrogGameState {
   tongue: TongueState;
   /** Id lalat yang sudah dimakan. */
   fliesGot: string[];
+  /** Id cincin emas yang sudah diaktifkan (F6.2). */
+  ringsHit: string[];
   /** Pintu sedang terbuka. Solo (F3): sekali ditekan tombolnya,
    * pintu terbuka permanen (latch) supaya 1 katak bisa lewat. */
   doorOpen: boolean;
@@ -161,6 +177,7 @@ export type FrogSimEvent =
   | { type: "tongue-attach"; anchorId: string }
   | { type: "tongue-release" }
   | { type: "fly"; flyId: string }
+  | { type: "ring"; ringId: string }
   | { type: "respawn" }
   | { type: "bounce"; mushroomId: string }
   | { type: "win" };
@@ -172,6 +189,8 @@ export interface FrogCoopState {
   tongues: [TongueState, TongueState];
   /** Id lalat yang sudah dimakan (bersama). */
   fliesGot: string[];
+  /** Id cincin emas yang sudah diaktifkan (bersama, F6.2). */
+  ringsHit: string[];
   /** Id anchor sekali pakai yang sedang habis. */
   usedAnchors: string[];
   /** Ada katak berdiri di salah satu tombol. */

@@ -78,6 +78,7 @@ export function createFrogGame(level: LevelDef = getLevel("bengkel")): FrogGameS
     frog: freshFrog(level.spawn),
     tongue: freshTongue(),
     fliesGot: [],
+    ringsHit: [],
     doorOpen: false,
     buttonDown: false,
     pressedButtons: [],
@@ -94,6 +95,7 @@ export function createCoopGame(
     frogs: [freshFrog(level.spawn), freshFrog(level.spawn2 ?? level.spawn)],
     tongues: [freshTongue(), freshTongue()],
     fliesGot: [],
+    ringsHit: [],
     usedAnchors: [],
     buttonDown: false,
     doorOpen: false,
@@ -197,21 +199,29 @@ export function moverOffset(m: MoverDef, t: number): number {
 }
 
 /** Platform di waktu t: posisi penggerak diterapkan + pintu difilter
- * bila terbuka. Dipakai sim (tabrakan) dan scene (render). */
-export function platformsAt(level: LevelDef, t: number, doorOpen: boolean): PlatformDef[] {
+ * bila terbuka + platform tersembunyi difilter bila cincinnya belum
+ * kena lidah (F6.2). Dipakai sim (tabrakan) dan scene (render). */
+export function platformsAt(
+  level: LevelDef,
+  t: number,
+  doorOpen: boolean,
+  ringsHit: string[] = [],
+): PlatformDef[] {
   const movers = new Map((level.movers ?? []).map((m) => [m.platformId, m]));
-  return activePlatforms(level, doorOpen).map((p) => {
-    const m = movers.get(p.id);
-    if (!m) return p;
-    const o = moverOffset(m, t);
-    const dx = m.axis === "x" ? o : 0;
-    const dz = m.axis === "z" ? o : 0;
-    return {
-      id: p.id,
-      min: { x: p.min.x + dx, y: p.min.y, z: p.min.z + dz },
-      max: { x: p.max.x + dx, y: p.max.y, z: p.max.z + dz },
-    };
-  });
+  return activePlatforms(level, doorOpen)
+    .filter((p) => !p.hiddenUntil || ringsHit.includes(p.hiddenUntil))
+    .map((p) => {
+      const m = movers.get(p.id);
+      if (!m) return p;
+      const o = moverOffset(m, t);
+      const dx = m.axis === "x" ? o : 0;
+      const dz = m.axis === "z" ? o : 0;
+      return {
+        id: p.id,
+        min: { x: p.min.x + dx, y: p.min.y, z: p.min.z + dz },
+        max: { x: p.max.x + dx, y: p.max.y, z: p.max.z + dz },
+      };
+    });
 }
 
 /** Id tombol yang sedang tertekan (ada katak berdiri di atasnya). */
@@ -235,18 +245,19 @@ export function pressedButtons(level: LevelDef, frogs: FrogState[]): string[] {
 /** Tembak lidah katak ke-i sepanjang sinar bidik (origin + aimDir,
  * keduanya dari kamera). Target: anchor level (kecuali yang sekali
  * pakai dan sedang habis), lalat yang belum dimakan (F6.4: lalat
- * hanya bisa dimakan dengan lidah), katak pasangan (co-op), atau
- * permukaan platform/dinding padat pertama yang dipotong sinar
- * (F6.1, fallback bila tidak ada target titik yang kena). Target
- * kena bila: dalam jangkauan lidah dari mulut, sinar lewat dalam
- * TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke target
- * jelas. False bila tidak ada target yang kena. */
+ * hanya bisa dimakan dengan lidah), cincin emas yang belum aktif
+ * (F6.2), katak pasangan (co-op), atau permukaan platform/dinding
+ * padat pertama yang dipotong sinar (F6.1, fallback bila tidak ada
+ * target titik yang kena). Target kena bila: dalam jangkauan lidah
+ * dari mulut, sinar lewat dalam TONGUE_RAY_RADIUS darinya, dan garis
+ * pandang mulut ke target jelas. False bila tidak ada target yang kena. */
 export function tryFireFrog(
   level: LevelDef,
   frogs: FrogState[],
   tongues: TongueState[],
   usedAnchors: string[],
   fliesGot: string[],
+  ringsHit: string[],
   i: number,
   origin: Vec3,
   aimDir: Vec3,
@@ -283,6 +294,12 @@ export function tryFireFrog(
   for (const f of level.flies) {
     if (fliesGot.includes(f.id)) continue;
     const c = consider(`fly:${f.id}`, f.pos, null);
+    if (c && (!best || c.rayDist < best.rayDist)) best = c;
+  }
+  // Cincin emas yang belum aktif adalah target lidah (F6.2).
+  for (const r of level.rings ?? []) {
+    if (ringsHit.includes(r.id)) continue;
+    const c = consider(`ring:${r.id}`, r.pos, null);
     if (c && (!best || c.rayDist < best.rayDist)) best = c;
   }
   // Katak pasangan adalah target lidah (tarik pasangan menyeberang).
@@ -332,7 +349,7 @@ export function tryFireFrog(
 
 /** Tembak lidah (solo, F1). */
 export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
-  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, 0, origin, aimDir);
+  return tryFireFrog(state.level, [state.frog], [state.tongue], [], state.fliesGot, state.ringsHit, 0, origin, aimDir);
 }
 
 /** Tembak lidah katak ke-i (co-op). */
@@ -348,6 +365,7 @@ export function tryFireCoop(
     state.tongues,
     state.usedAnchors,
     state.fliesGot,
+    state.ringsHit,
     i,
     origin,
     aimDir,
@@ -406,8 +424,10 @@ function stepTongue(
         usedAnchors.push(t.anchorId);
       }
       // Lalat: tidak ada bunyi nempel, langsung dimakan di tick yang
-      // sama (eatTongueFlies); bunyi makan dari event "fly".
-      if (!t.anchorId!.startsWith("fly:")) {
+      // sama (eatTongueFlies); bunyi makan dari event "fly". Cincin
+      // sama: langsung aktif di tick yang sama (activateRings); bunyi
+      // + sparkle dari event "ring".
+      if (!t.anchorId!.startsWith("fly:") && !t.anchorId!.startsWith("ring:")) {
         events.push({ type: "tongue-attach", anchorId: t.anchorId!, frog: i as 0 | 1 });
       }
     }
@@ -666,6 +686,28 @@ function eatTongueFlies(
   events.push({ type: "fly", flyId, frog: i as 0 | 1 });
 }
 
+/** Cincin emas yang kena lidah katak ke-i diaktifkan (F6.2, shared,
+ * dipakai solo + co-op). Lidah yang menempel ke cincin langsung
+ * dilepas di tick yang sama: cincin masuk ringsHit (platform
+ * tersembunyi yang terikat muncul mulai tick berikutnya) + event
+ * "ring" (bunyi + sparkle biru di scene). */
+function activateRings(
+  tongues: TongueState[],
+  ringsHit: string[],
+  i: number,
+  events: CoopSimEvent[],
+): void {
+  const t = tongues[i]!;
+  if (t.mode !== "attached" || !t.anchorId?.startsWith("ring:")) return;
+  const ringId = t.anchorId.slice(5);
+  releaseTongueState(t);
+  // Dua katak menembak cincin yang sama di tick yang sama: yang kedua
+  // tidak memicu event ganda.
+  if (ringsHit.includes(ringId)) return;
+  ringsHit.push(ringId);
+  events.push({ type: "ring", ringId, frog: i as 0 | 1 });
+}
+
 function atGoalPos(level: LevelDef, f: FrogState): boolean {
   const g = level.goal;
   return (
@@ -688,8 +730,8 @@ export function stepFrog(
   state.pressedButtons = pressedButtons(state.level, [state.frog]);
   state.buttonDown = state.pressedButtons.length > 0;
   if (state.buttonDown) state.doorOpen = true;
-  const plats = platformsAt(state.level, state.time, state.doorOpen);
-  const prevPlats = platformsAt(state.level, state.time - dt, state.doorOpen);
+  const plats = platformsAt(state.level, state.time, state.doorOpen, state.ringsHit);
+  const prevPlats = platformsAt(state.level, state.time - dt, state.doorOpen, state.ringsHit);
   stepOne(
     state.level,
     [state.frog],
@@ -703,6 +745,7 @@ export function stepFrog(
     events,
   );
   eatTongueFlies([state.tongue], state.fliesGot, 0, events);
+  activateRings([state.tongue], state.ringsHit, 0, events);
   if (atGoalPos(state.level, state.frog)) {
     state.won = true;
     events.push({ type: "win", frog: 0 });
@@ -728,8 +771,8 @@ export function stepCoop(
   state.buttonDown = pressed;
   state.doorOpen = !!level.door && pressed;
 
-  const plats = platformsAt(level, state.time, state.doorOpen);
-  const prevPlats = platformsAt(level, state.time - dt, state.doorOpen);
+  const plats = platformsAt(level, state.time, state.doorOpen, state.ringsHit);
+  const prevPlats = platformsAt(level, state.time - dt, state.doorOpen, state.ringsHit);
   stepOne(level, state.frogs, state.tongues, state.usedAnchors, 0, inputs[0], plats, prevPlats, dt, events);
   stepOne(level, state.frogs, state.tongues, state.usedAnchors, 1, inputs[1], plats, prevPlats, dt, events);
 
@@ -763,6 +806,8 @@ export function stepCoop(
 
   eatTongueFlies(state.tongues, state.fliesGot, 0, events);
   eatTongueFlies(state.tongues, state.fliesGot, 1, events);
+  activateRings(state.tongues, state.ringsHit, 0, events);
+  activateRings(state.tongues, state.ringsHit, 1, events);
 
   // Goal per katak (menempel); menang saat keduanya sudah sampai.
   let justArrived: 0 | 1 = 0;

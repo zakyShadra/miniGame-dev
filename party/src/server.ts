@@ -1821,6 +1821,7 @@ export class Room extends Server<Env> {
         };
       }) as FrogSnapshot["frogs"],
       fliesGot: [...game.fliesGot],
+      ringsHit: [...game.ringsHit],
       usedAnchors: [...game.usedAnchors],
       buttonDown: game.buttonDown,
       doorOpen: game.doorOpen,

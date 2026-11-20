@@ -47,6 +47,8 @@ export interface FrogRemoteView {
   me: FrogRenderState;
   partner: FrogRenderState | null;
   fliesGot: string[];
+  /** Id cincin emas yang sudah diaktifkan (F6.2). */
+  ringsHit: string[];
   usedAnchors: string[];
   doorOpen: boolean;
   /** Id tombol yang sedang tertekan (dihitung client dari posisi katak). */
@@ -218,6 +220,12 @@ export class FrogScene {
   private flySuck = new Map<string, { t: number; slot: number; from: THREE.Vector3 }>();
   private portalRing!: THREE.Mesh;
   private anchorVisuals: { id: string; ring: THREE.Mesh; bulb: THREE.Mesh }[] = [];
+  /** Target cincin emas (F6.2): mesh + material (meredup saat aktif). */
+  private ringVisuals: { id: string; ring: THREE.Mesh; mat: THREE.MeshStandardMaterial }[] = [];
+  /** Mesh platform tersembunyi (F6.2): tak terlihat sampai cincinnya aktif. */
+  private hiddenMeshes: { ringId: string; meshes: THREE.Mesh[] }[] = [];
+  /** Ledakan sparkle biru aktif (F6.2): titik + kecepatan + umur. */
+  private sparks: { points: THREE.Points; vel: Float32Array; age: number }[] = [];
   private doorGroup: THREE.Group | null = null;
   private doorY = 0;
   private buttonDomes: { id: string; mat: THREE.MeshStandardMaterial }[] = [];
@@ -481,6 +489,12 @@ export class FrogScene {
         this.scene.add(box);
         this.scene.add(top);
       }
+      // Platform tersembunyi (F6.2): tak terlihat sampai cincinnya aktif.
+      if (p.hiddenUntil) {
+        box.visible = false;
+        top.visible = false;
+        this.hiddenMeshes.push({ ringId: p.hiddenUntil, meshes: [box, top] });
+      }
     }
 
     // Tombol lantai co-op: alas logam + kubah yang menyala hijau saat ditekan.
@@ -548,6 +562,23 @@ export class FrogScene {
       ring.position.copy(a.pos);
       this.scene.add(ring);
       this.anchorVisuals.push({ id: a.id, ring, bulb });
+    }
+
+    // Target cincin emas (F6.2): torus emas besar menghadap +z (arah
+    // datang katak), lebih besar + lebih terang dari cincin anchor.
+    // Kena lidah = aktivasi + sparkle biru, lalu meredup.
+    for (const r of level.rings ?? []) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: "#ffd700",
+        emissive: "#ff9a2e",
+        emissiveIntensity: 1.6,
+        roughness: 0.3,
+        metalness: 0.8,
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.09, 10, 28), mat);
+      ring.position.copy(r.pos);
+      this.scene.add(ring);
+      this.ringVisuals.push({ id: r.id, ring, mat });
     }
 
     if (theme.shelves) this.buildShelves(level);
@@ -651,6 +682,9 @@ export class FrogScene {
     const skip = new Set([
       level.door?.platformId,
       ...(level.movers ?? []).map((m) => m.platformId),
+      // Platform tersembunyi (F6.2): lilin statis akan melayang di
+      // udara sebelum platformnya muncul.
+      ...level.platforms.filter((p) => p.hiddenUntil).map((p) => p.id),
     ]);
     for (const p of level.platforms) {
       if (skip.has(p.id)) continue;
@@ -933,8 +967,9 @@ export class FrogScene {
 
   /** Event sim ke efek visual: squash katak saat mendarat, jamur
    * berdenyut saat melontarkan katak, lalat tersedot ke mulut saat
-   * dimakan lidah (F6.4). slot 0 = katak sendiri, 1 = pasangan
-   * (co-op). id = id jamur (bounce) atau id lalat (fly). */
+   * dimakan lidah (F6.4), sparkle biru saat cincin emas aktif (F6.2).
+   * slot 0 = katak sendiri, 1 = pasangan (co-op). id = id jamur
+   * (bounce), id lalat (fly), atau id cincin (ring). */
   playEvent(type: string, slot = 0, id?: string): void {
     if (type === "land") {
       if (slot === 0) this.slot0.squash = 0.16;
@@ -951,6 +986,40 @@ export class FrogScene {
       if (fly) {
         this.flySuck.set(id, { t: 0, slot, from: fly.group.position.clone() });
       }
+      return;
+    }
+    if (type === "ring" && id) {
+      const r = (this.level.rings ?? []).find((x) => x.id === id);
+      if (!r) return;
+      // Ledakan sparkle biru: 24 titik menyebar dari cincin, naik
+      // lalu jatuh, memudar dalam 0.9 detik.
+      const n = 24;
+      const pos = new Float32Array(n * 3);
+      const vel = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = r.pos.x + (Math.random() - 0.5) * 0.6;
+        pos[i * 3 + 1] = r.pos.y + (Math.random() - 0.5) * 0.6;
+        pos[i * 3 + 2] = r.pos.z + (Math.random() - 0.5) * 0.6;
+        const a = Math.random() * Math.PI * 2;
+        const sp = 1 + Math.random() * 2;
+        vel[i * 3] = Math.cos(a) * sp;
+        vel[i * 3 + 1] = 1.5 + Math.random() * 2;
+        vel[i * 3 + 2] = Math.sin(a) * sp;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const points = new THREE.Points(
+        geo,
+        new THREE.PointsMaterial({
+          color: 0x66ccff,
+          size: 0.14,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        }),
+      );
+      this.scene.add(points);
+      this.sparks.push({ points, vel, age: 0 });
     }
   }
 
@@ -1068,8 +1137,14 @@ export class FrogScene {
     this.camera.lookAt(target.x, target.y + 1.1, target.z);
   }
 
-  /** Lalat + cincin anchor + portal (dipakai solo dan co-op). */
-  private syncShared(fliesGot: string[], usedAnchors: string[], time: number, dt: number): void {
+  /** Lalat + cincin anchor + cincin emas + portal (dipakai solo dan co-op). */
+  private syncShared(
+    fliesGot: string[],
+    usedAnchors: string[],
+    ringsHit: string[],
+    time: number,
+    dt: number,
+  ): void {
     // Lalat: melayang naik-turun + sayap mengepak; hilang saat dimakan.
     // Lalat yang dimakan lidah (F6.4) tersedot ke mulut pemakan
     // selama 0.18 detik sambil mengecil, baru hilang.
@@ -1117,6 +1192,46 @@ export class FrogScene {
       bulbMat.emissiveIntensity = used ? 0.1 : 1.6;
     }
     this.portalRing.rotation.z = time * 0.4;
+
+    // Cincin emas (F6.2): berdenyut + bercahaya sebelum aktif, meredup
+    // setelah aktif. Platform tersembunyi muncul saat cincinnya aktif.
+    for (const v of this.ringVisuals) {
+      const hit = ringsHit.includes(v.id);
+      v.ring.scale.setScalar(hit ? 1 : pulse);
+      v.mat.emissiveIntensity = hit ? 0.15 : 1.6;
+    }
+    for (const h of this.hiddenMeshes) {
+      const show = ringsHit.includes(h.ringId);
+      for (const m of h.meshes) m.visible = show;
+    }
+  }
+
+  /** Sparkle biru cincin (F6.2): titik menyebar + jatuh + memudar,
+   * dihapus setelah 0.9 detik. */
+  private syncSparks(dt: number): void {
+    for (let i = this.sparks.length - 1; i >= 0; i--) {
+      const s = this.sparks[i]!;
+      s.age += dt;
+      const attr = s.points.geometry.attributes.position as THREE.BufferAttribute;
+      for (let j = 0; j < s.vel.length / 3; j++) {
+        s.vel[j * 3 + 1] -= 3 * dt;
+        attr.setXYZ(
+          j,
+          attr.getX(j) + s.vel[j * 3] * dt,
+          attr.getY(j) + s.vel[j * 3 + 1] * dt,
+          attr.getZ(j) + s.vel[j * 3 + 2] * dt,
+        );
+      }
+      attr.needsUpdate = true;
+      const mat = s.points.material as THREE.PointsMaterial;
+      mat.opacity = 0.95 * Math.max(0, 1 - s.age / 0.9);
+      if (s.age >= 0.9) {
+        this.scene.remove(s.points);
+        s.points.geometry.dispose();
+        mat.dispose();
+        this.sparks.splice(i, 1);
+      }
+    }
   }
 
   /** Pintu meluncur ke bawah saat terbuka (3.2 m = tinggi pintu);
@@ -1171,7 +1286,8 @@ export class FrogScene {
   /** Render satu frame solo: sinkron state sim + gambar. */
   render(state: FrogGameState, alpha: number, time: number, dt: number): void {
     this.syncSlot(this.slot0, state.frog, state.tongue, alpha, dt);
-    this.syncShared(state.fliesGot, [], time, dt);
+    this.syncShared(state.fliesGot, [], state.ringsHit, time, dt);
+    this.syncSparks(dt);
     this.syncDoor(state.doorOpen, state.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
@@ -1188,7 +1304,8 @@ export class FrogScene {
     if (this.slot1 && view.partner) {
       this.syncSlot(this.slot1, view.partner.frog, view.partner.tongue, 1, dt);
     }
-    this.syncShared(view.fliesGot, view.usedAnchors, time, dt);
+    this.syncShared(view.fliesGot, view.usedAnchors, view.ringsHit, time, dt);
+    this.syncSparks(dt);
     this.syncDoor(view.doorOpen, view.pressedButtons, dt);
     this.syncMovers(time);
     this.syncMushrooms(time, dt);
