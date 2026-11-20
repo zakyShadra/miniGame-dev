@@ -27,8 +27,8 @@ defineEmits<{ select: [id: string] }>();
       ]"
       @click="$emit('select', m.id)"
     >
-      <span class="flex items-center gap-2">
-        <span class="font-display text-sm font-bold text-ink">{{ i + 1 }}. {{ m.name }}</span>
+      <span class="flex flex-wrap items-center gap-2">
+        <span class="min-w-0 font-display text-sm font-bold text-ink">{{ i + 1 }}. {{ m.name }}</span>
         <span v-if="completed.includes(m.id)" class="ml-auto shrink-0 text-xs font-bold text-success">
           Selesai ✓
         </span>
