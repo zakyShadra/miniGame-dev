@@ -501,6 +501,11 @@ export class FrogScene {
     return this.orbitYaw;
   }
 
+  /** Posisi kamera dunia (titik asal sinar bidik lidah). */
+  get cameraPosition(): THREE.Vector3 {
+    return this.camera.position.clone();
+  }
+
   /** Stat render buat QA (draw call + segitiga frame terakhir). */
   getStats(): { calls: number; triangles: number } {
     return {

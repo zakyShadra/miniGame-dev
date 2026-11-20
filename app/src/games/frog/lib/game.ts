@@ -123,10 +123,17 @@ export class FrogGame {
       return;
     }
     // Bidik dari posisi kursor terakhir; belum ada = tengah layar.
+    // Sinar berawal di kamera (paralaks kamera vs mulut terlalu besar
+    // untuk cone dari mulut).
     const rect = this.container.getBoundingClientRect();
     const mx = this.lastMouse?.x ?? rect.left + rect.width / 2;
     const my = this.lastMouse?.y ?? rect.top + rect.height / 2;
-    tryFire(this.state, this.scene.screenToAimDir(mx, my));
+    const cam = this.scene.cameraPosition;
+    tryFire(
+      this.state,
+      { x: cam.x, y: cam.y, z: cam.z },
+      this.scene.screenToAimDir(mx, my),
+    );
   }
 
   /** Kroak: bubble teks di atas katak selama 1.4 detik. */

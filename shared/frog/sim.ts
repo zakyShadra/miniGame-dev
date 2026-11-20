@@ -26,8 +26,10 @@ export const SWING_MAX_SPEED = 11;
 export const TONGUE_RANGE = 12;
 export const TONGUE_TIMEOUT = 5;
 export const TONGUE_FLY_TIME = 0.12;
-/** Setengah sudut kerucut bidik lidah (radian, ~34 derajat). */
-export const TONGUE_AIM_CONE = 0.6;
+/** Toleransi bidik: anchor kena bila sinar kamera lewat dalam 1.5 m
+ * darinya. (Cone dari mulut tidak cocok: paralaks kamera vs mulut
+ * mencapai 0.64 rad, melebihi cone.) */
+export const TONGUE_RAY_RADIUS = 1.5;
 export const SPRING_K = 30;
 export const SPRING_DAMP = 2.5;
 /** Setengah lebar badan katak + tinggi badan (meter). */
@@ -114,22 +116,30 @@ export function hasLineOfSight(platforms: PlatformDef[], a: Vec3, b: Vec3): bool
   return true;
 }
 
-/** Tembak lidah ke arah aimDir (ternormalisasi). False bila tidak ada
- * anchor dalam jangkauan + kerucut bidik + garis pandang jelas. */
-export function tryFire(state: FrogGameState, aimDir: Vec3): boolean {
+/** Tembak lidah sepanjang sinar bidik (origin + aimDir, keduanya dari
+ * kamera). Anchor kena bila: dalam jangkauan lidah dari mulut, sinar
+ * lewat dalam TONGUE_RAY_RADIUS darinya, dan garis pandang mulut ke
+ * anchor jelas. False bila tidak ada anchor yang kena. */
+export function tryFire(state: FrogGameState, origin: Vec3, aimDir: Vec3): boolean {
   const t = state.tongue;
   if (t.mode !== "idle") return false;
   const mouth = mouthPos(state.frog);
-  let best: { id: string; pos: Vec3; angle: number } | null = null;
+  let best: { id: string; pos: Vec3; rayDist: number } | null = null;
   for (const a of state.level.anchors) {
-    const d = sub(a.pos, mouth);
-    const dist = len(d);
-    if (dist > TONGUE_RANGE || dist < 0.5) continue;
-    const cos = (d.x * aimDir.x + d.y * aimDir.y + d.z * aimDir.z) / dist;
-    const angle = Math.acos(Math.max(-1, Math.min(1, cos)));
-    if (angle > TONGUE_AIM_CONE) continue;
+    const md = sub(a.pos, mouth);
+    const mouthDist = len(md);
+    if (mouthDist > TONGUE_RANGE || mouthDist < 0.5) continue;
+    // Jarak anchor ke sinar bidik (titik terdekat di sinar).
+    const od = sub(a.pos, origin);
+    const along = od.x * aimDir.x + od.y * aimDir.y + od.z * aimDir.z;
+    if (along < 0) continue;
+    const cx = origin.x + aimDir.x * along;
+    const cy = origin.y + aimDir.y * along;
+    const cz = origin.z + aimDir.z * along;
+    const rayDist = Math.hypot(a.pos.x - cx, a.pos.y - cy, a.pos.z - cz);
+    if (rayDist > TONGUE_RAY_RADIUS) continue;
     if (!hasLineOfSight(state.level.platforms, mouth, a.pos)) continue;
-    if (!best || angle < best.angle) best = { id: a.id, pos: { ...a.pos }, angle };
+    if (!best || rayDist < best.rayDist) best = { id: a.id, pos: { ...a.pos }, rayDist };
   }
   if (!best) return false;
   t.mode = "flying";
@@ -299,8 +309,20 @@ export function stepFrog(
     f.vel.z = 0;
   }
 
-  // Checkpoint: posisi terakhir saat berpijak di tanah.
-  if (f.onGround) f.checkpoint = { ...f.pos };
+  // Checkpoint: posisi terakhir saat berpijak di tanah DENGAN TOPANGAN
+  // (tengah katak 0.3 m di dalam tepi platform). Tanpa margin, checkpoint
+  // bisa tepat di ujung dan katak jatuh lagi begitu respawn.
+  if (f.onGround) {
+    const supported = plats.some(
+      (p) =>
+        f.pos.x > p.min.x + 0.3 &&
+        f.pos.x < p.max.x - 0.3 &&
+        f.pos.z > p.min.z + 0.3 &&
+        f.pos.z < p.max.z - 0.3 &&
+        Math.abs(f.pos.y - p.max.y) < 0.01,
+    );
+    if (supported) f.checkpoint = { ...f.pos };
+  }
 
   // Jatuh keluar arena: respawn di checkpoint.
   if (f.pos.y < b.killY) {
