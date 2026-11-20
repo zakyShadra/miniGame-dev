@@ -155,6 +155,7 @@ export class FrogGame {
 
   private handleEvent(ev: FrogSimEvent): void {
     if (ev.type === "land") this.scene.playEvent("land");
+    if (ev.type === "bounce") this.scene.playEvent("bounce", 0, ev.mushroomId);
     if (ev.type === "win" && !this.won) {
       this.won = true;
       this.opts.onWin(this.state.time, this.state.fliesGot.length);
