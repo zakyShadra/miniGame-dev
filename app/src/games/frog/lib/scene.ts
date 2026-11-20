@@ -1018,7 +1018,7 @@ export class FrogScene {
 
     // Lidah: terbang (ujung merayap ke anchor) atau nempel.
     if ((t.mode === "flying" || t.mode === "attached") && t.anchor) {
-      const mouth = new THREE.Vector3(x, y + 0.62, z);
+      const mouth = new THREE.Vector3(x, y + 0.35, z);
       const target = new THREE.Vector3(t.anchor.x, t.anchor.y, t.anchor.z);
       if (t.mode === "flying") {
         const p = 1 - t.flyTime / TONGUE_FLY_TIME;

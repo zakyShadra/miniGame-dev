@@ -195,12 +195,14 @@ function rng(seed: number): () => number {
   };
 }
 
-const FROG_SKIN: Record<string, { base: string; spot: string; seed: number }> = {
-  orange: { base: "#ff8c42", spot: "#3b82f6", seed: 42 },
-  purple: { base: "#8b5cf6", spot: "#7dd3fc", seed: 77 },
+const FROG_SKIN: Record<string, { base: string; spot: string; seed: number; blotch: boolean }> = {
+  orange: { base: "#e8552d", spot: "#5b4bc4", seed: 42, blotch: true },
+  green: { base: "#7ec850", spot: "#f5d90a", seed: 77, blotch: false },
 };
 
-/** Kulit katak ala Froggin: gradasi vertikal + bintik biru lembut.
+/** Kulit katak ala Froggin (key art): gradasi vertikal + bintik.
+ * Hijau: bintik kuning kecil bulat. Oranye-merah: bercak biru-ungu
+ * BESAR tidak beraturan (beberapa lingkaran bertumpuk).
  * UV bola: v=1 di atas (punggung), jadi bintik di separuh atas kanvas. */
 const frogSkinCache = new Map<string, THREE.CanvasTexture>();
 export function getFrogSkinTexture(color: string): THREE.CanvasTexture {
@@ -217,21 +219,33 @@ export function getFrogSkinTexture(color: string): THREE.CanvasTexture {
     grad.addColorStop(1, "rgba(255,255,255,0.14)");
     g.fillStyle = grad;
     g.fillRect(0, 0, s, s);
-    // Bintik biru (8, tepi lembut, di separuh atas = punggung).
     const r = rng(skin.seed);
-    for (let i = 0; i < 8; i++) {
-      const cx = r() * s;
-      const cy = r() * s * 0.55;
-      const rad = 10 + r() * 18;
+    const dot = (cx: number, cy: number, rad: number, alpha: number) => {
       const spot = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
       spot.addColorStop(0, skin.spot);
       spot.addColorStop(0.7, skin.spot);
       spot.addColorStop(1, "rgba(0,0,0,0)");
-      g.globalAlpha = 0.85;
+      g.globalAlpha = alpha;
       g.fillStyle = spot;
       g.beginPath();
       g.arc(cx, cy, rad, 0, Math.PI * 2);
       g.fill();
+    };
+    if (skin.blotch) {
+      // Bercak besar: 4 gumpal, tiap gumpal 3-5 lingkaran bertumpuk.
+      for (let i = 0; i < 4; i++) {
+        const cx = r() * s;
+        const cy = r() * s * 0.5;
+        const n = 3 + Math.floor(r() * 3);
+        for (let j = 0; j < n; j++) {
+          dot(cx + (r() - 0.5) * 50, cy + (r() - 0.5) * 40, 18 + r() * 26, 0.9);
+        }
+      }
+    } else {
+      // Bintik kuning kecil (10, tepi lembut, di separuh atas).
+      for (let i = 0; i < 10; i++) {
+        dot(r() * s, r() * s * 0.55, 8 + r() * 12, 0.9);
+      }
     }
     g.globalAlpha = 1;
   });
