@@ -1,6 +1,7 @@
 // Tipe state room. Dipakai app/ (Vue) dan party/ (Worker) lewat import relatif.
 // JANGAN tambah dependency di sini: file ini harus tetap murni TypeScript.
 
+import type { CoopSimEvent, FrogColor } from "./frog/types";
 import type { ShipId, SimEvent } from "./naval/types";
 
 export interface PieceState {
@@ -60,13 +61,16 @@ export interface ChessRoomState {
 
 export interface RoomState {
   code: string
-  // Jenis room: puzzle (jigsaw), catur, atau naval co-op. Room lama di
-  // SQLite belum punya field ini, dinormalisasi jadi "puzzle" saat load.
-  kind: "puzzle" | "chess" | "naval"
-  // State catur; null di room puzzle/naval.
+  // Jenis room: puzzle (jigsaw), catur, naval co-op, atau katak co-op.
+  // Room lama di SQLite belum punya field ini, dinormalisasi jadi
+  // "puzzle" saat load.
+  kind: "puzzle" | "chess" | "naval" | "frog"
+  // State catur; null di room puzzle/naval/katak.
   chess: ChessRoomState | null
-  // State naval co-op; null di room puzzle/catur.
+  // State naval co-op; null di room puzzle/catur/katak.
   naval: NavalRoomState | null
+  // State katak co-op; null di room puzzle/catur/naval.
+  frog: FrogRoomState | null
   imageUrl: string
   imageName: string
   imageW: number
@@ -121,6 +125,65 @@ export interface NavalShipSnap {
   turn: number
   lastFireAt: number
   abilityReadyAt: number
+}
+
+// State room katak co-op (2 pemain, oranye + ungu). Kursi diikat ke
+// playerKey (stabil antar reconnect), sama seperti kursi catur/naval.
+// Pemenang "players" = kedua katak sampai portal; "abandoned" =
+// partner terputus dan tidak kembali dalam 60 detik (room bubar,
+// tidak ada forfeit ke bot karena ini co-op murni).
+export interface FrogRoomState {
+  levelId: string
+  status: "waiting" | "playing" | "paused" | "over"
+  seats: Array<{
+    key: string
+    name: string
+    seatKey: "p1" | "p2"
+    color: FrogColor
+  }>
+  winner: "players" | "abandoned" | null
+  // playerKey yang sudah minta rematch (menunggu pemain lain).
+  rematchPendingBy: string | null
+  // Naik tiap rematch; client pakai ini buat deteksi game baru.
+  gameNumber: number
+}
+
+// Satu katak dalam snapshot (subset FrogState + lidah yang dirender).
+export interface FrogSnap {
+  x: number
+  y: number
+  z: number
+  vx: number
+  vy: number
+  vz: number
+  facing: number
+  onGround: boolean
+  tongue: {
+    mode: "idle" | "flying" | "attached"
+    /** Ujung lidah (anchor statis / posisi katak pasangan). */
+    ax: number
+    ay: number
+    az: number
+    /** Indeks katak yang ditempeli (null = anchor statis / idle). */
+    anchorFrog: 0 | 1 | null
+  }
+}
+
+// Snapshot sim katak per tick (20 Hz). Indeks 0 = p1 (oranye),
+// 1 = p2 (ungu). croakUntil = jam game saat bubble kroak hilang
+// per katak (0 = tidak kroak).
+export interface FrogSnapshot {
+  /** Waktu game (detik) sejak match mulai. */
+  t: number
+  frogs: [FrogSnap, FrogSnap]
+  fliesGot: string[]
+  usedAnchors: string[]
+  buttonDown: boolean
+  doorOpen: boolean
+  atGoal: [boolean, boolean]
+  won: boolean
+  croakUntil: [number, number]
+  events: CoopSimEvent[]
 }
 
 // Snapshot sim per tick (20 Hz). winnerId = id kapal pemenang dari sim

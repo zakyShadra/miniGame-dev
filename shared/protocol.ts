@@ -3,6 +3,8 @@
 
 import type { ShipId } from "./naval/types";
 import type {
+  FrogRoomState,
+  FrogSnapshot,
   NavalRoomState,
   NavalSnapshot,
   PieceState,
@@ -89,7 +91,48 @@ export type ClientMessage =
   | { type: "naval-fire"; aimX: number; aimZ: number }
   | { type: "naval-ability" }
   // Rematch: dua pemain setuju -> match baru, kursi tetap, level sama.
-  | { type: "naval-rematch" };
+  | { type: "naval-rematch" }
+  // Katak co-op (2 pemain, server authoritative, tick 20 Hz, sim 60 Hz
+  // dengan 3 substep per tick). p1 = katak oranye (spawn A), p2 = katak
+  // ungu (spawn B). Level selalu workshop-coop (F2).
+  | {
+      type: "create-frog"
+      name: string
+      color: string
+      playerKey: string
+    }
+  | {
+      type: "join-frog"
+      name: string
+      color: string
+      playerKey: string
+    }
+  // Input kendali katak (20 Hz). moveX/moveZ = arah gerak di ruang
+  // dunia (sudah relatif kamera, dihitung client). jump = tepi naik
+  // (server memakai sekali lalu membersihkan). seq = nomor urut client.
+  | {
+      type: "frog-input"
+      moveX: number
+      moveZ: number
+      jump: boolean
+      seq: number
+    }
+  // Tembak lidah (dikirim segera, tidak menunggu tick input): sinar
+  // bidik dari kamera (origin + arah). Server yang menentukan target
+  // (anchor / katak pasangan) dan menolak bila tidak kena.
+  | {
+      type: "frog-fire"
+      ox: number
+      oy: number
+      oz: number
+      dx: number
+      dy: number
+      dz: number
+    }
+  | { type: "frog-release" }
+  | { type: "frog-croak" }
+  // Rematch: dua pemain setuju -> match baru, kursi + warna tetap.
+  | { type: "frog-rematch" };
 
 export type ServerMessage =
   | { type: "hello"; id: string }
@@ -108,4 +151,7 @@ export type ServerMessage =
   | { type: "solved"; at: number }
   // Naval co-op: state room (kursi, status, pemenang) + snapshot sim.
   | { type: "naval-room"; room: NavalRoomState; players: PlayerState[] }
-  | { type: "naval-snapshot"; snap: NavalSnapshot };
+  | { type: "naval-snapshot"; snap: NavalSnapshot }
+  // Katak co-op: state room (kursi, status, pemenang) + snapshot sim.
+  | { type: "frog-room"; room: FrogRoomState; players: PlayerState[] }
+  | { type: "frog-snapshot"; snap: FrogSnapshot };

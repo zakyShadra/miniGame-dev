@@ -31,6 +31,9 @@ export interface TongueState {
   /** Anchor yang dituju (flying) atau ditempel (attached). */
   anchorId: string | null;
   anchor: Vec3 | null;
+  /** Indeks katak yang ditempeli lidah (co-op): null = anchor statis,
+   * 0/1 = lidah nempel ke katak lain, posisi anchor ikut katak itu. */
+  anchorFrog: 0 | 1 | null;
   /** Jarak katak ke anchor saat ini (m). */
   length: number;
   /** Panjang tali istirahat pegas (m), 75% jarak saat attach. */
@@ -52,11 +55,28 @@ export interface PlatformDef {
 export interface AnchorDef {
   id: string;
   pos: Vec3;
+  /** Sekali pakai (co-op): habis dipakai satu katak, lentera rapuh ini
+   * padam sampai semua katak kembali ke sisi spawn (anti deadlock). */
+  oneUse?: boolean;
 }
 
 export interface FlyDef {
   id: string;
   pos: Vec3;
+}
+
+/** Tombol lantai co-op: tertekan bila ada katak berdiri di atasnya. */
+export interface ButtonDef {
+  id: string;
+  pos: Vec3;
+  radius: number;
+}
+
+/** Pintu co-op: platform yang hilang dari tabrakan selama ada tombol
+ * yang tertekan (tombol di salah satu sisi menahan pintu terbuka). */
+export interface DoorDef {
+  platformId: string;
+  buttonIds: string[];
 }
 
 export interface LevelDef {
@@ -66,6 +86,12 @@ export interface LevelDef {
   anchors: AnchorDef[];
   flies: FlyDef[];
   spawn: Vec3;
+  /** Spawn katak ke-2 (co-op, ungu). Kosong = level solo. */
+  spawn2?: Vec3;
+  /** Tombol lantai (co-op). */
+  buttons?: ButtonDef[];
+  /** Pintu (co-op). */
+  door?: DoorDef;
   goal: { pos: Vec3; radius: number };
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number; killY: number };
 }
@@ -99,3 +125,27 @@ export type FrogSimEvent =
   | { type: "fly"; flyId: string }
   | { type: "respawn" }
   | { type: "win" };
+
+/** State match co-op 2 katak (server-authoritative di F2). */
+export interface FrogCoopState {
+  level: LevelDef;
+  frogs: [FrogState, FrogState];
+  tongues: [TongueState, TongueState];
+  /** Id lalat yang sudah dimakan (bersama). */
+  fliesGot: string[];
+  /** Id anchor sekali pakai yang sedang habis. */
+  usedAnchors: string[];
+  /** Ada katak berdiri di salah satu tombol. */
+  buttonDown: boolean;
+  /** Pintu sedang terbuka (ada tombol tertekan). */
+  doorOpen: boolean;
+  /** Per katak: sudah sampai portal (menempel, tidak hilang). */
+  atGoal: [boolean, boolean];
+  /** Menang = kedua katak sudah sampai portal. */
+  won: boolean;
+  /** Waktu game (detik) sejak match mulai. */
+  time: number;
+}
+
+/** Event sim co-op: event solo + indeks katak penyebabnya. */
+export type CoopSimEvent = FrogSimEvent & { frog: 0 | 1 };
