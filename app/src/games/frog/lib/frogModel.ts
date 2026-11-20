@@ -79,15 +79,18 @@ export function buildFrogModel(color: FrogColor): FrogModel {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12), white);
     eye.position.set(side * 0.21, 0.86, 0.14);
     body.add(eye);
+    // Iris + pupil di atas-tengah bola mata (bukan tengah depan):
+    // kamera selalu melihat dari atas, iris di tengah depan terbaca
+    // seperti mata melirik ke bawah.
     const iris = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 10), irisMat);
     iris.scale.set(1, 1, 0.5);
-    iris.position.set(side * 0.21, 0.88, 0.29);
+    iris.position.set(side * 0.21, 0.93, 0.26);
     body.add(iris);
     const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), pupilMat);
-    pupil.position.set(side * 0.21, 0.88, 0.33);
+    pupil.position.set(side * 0.21, 0.93, 0.3);
     body.add(pupil);
     const shine = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), shineMat);
-    shine.position.set(side * 0.21 - 0.05, 0.93, 0.37);
+    shine.position.set(side * 0.21 - 0.05, 0.97, 0.32);
     body.add(shine);
   }
 
