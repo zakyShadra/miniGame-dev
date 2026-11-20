@@ -4,6 +4,7 @@ import { useGameStore } from "./stores/game";
 import { useRoomStore } from "./stores/room";
 import { useChessStore } from "./games/chess/stores/chess";
 import { useNavalStore } from "./games/naval/stores/naval";
+import { useFrogStore } from "./games/frog/stores/frog";
 import BoardCanvas from "./components/BoardCanvas.vue";
 import ChatBox from "./components/ChatBox.vue";
 import GameHeader from "./components/GameHeader.vue";
@@ -14,18 +15,20 @@ import PlayerList from "./components/PlayerList.vue";
 import RoomPanel from "./components/RoomPanel.vue";
 import ChessGame from "./games/chess/components/ChessGame.vue";
 import NavalGame from "./games/naval/components/NavalGame.vue";
+import FrogGame from "./games/frog/components/FrogGame.vue";
 import { loadImageSize } from "./lib/images";
 
 const store = useGameStore();
 const room = useRoomStore();
 const chessStore = useChessStore();
 const navalStore = useNavalStore();
+const frogStore = useFrogStore();
 const inRoom = computed(() => room.status === "connected");
 
-// Layar utama: pemilih game, puzzle, catur, atau naval.
-const screen = ref<"home" | "puzzle" | "chess" | "naval">("home");
+// Layar utama: pemilih game, puzzle, catur, naval, atau katak.
+const screen = ref<"home" | "puzzle" | "chess" | "naval" | "frog">("home");
 
-function pickGame(game: "puzzle" | "chess" | "naval") {
+function pickGame(game: "puzzle" | "chess" | "naval" | "frog") {
   screen.value = game;
 }
 
@@ -36,6 +39,11 @@ function exitChess() {
 
 function exitNaval() {
   navalStore.toSetup();
+  screen.value = "home";
+}
+
+function exitFrog() {
+  frogStore.toSetup();
   screen.value = "home";
 }
 
@@ -122,6 +130,7 @@ async function playAgainSame() {
   <GamePicker v-if="screen === 'home'" @pick="pickGame" />
   <ChessGame v-else-if="screen === 'chess'" @exit="exitChess" />
   <NavalGame v-else-if="screen === 'naval'" @exit="exitNaval" />
+  <FrogGame v-else-if="screen === 'frog'" @exit="exitFrog" />
   <template v-else>
   <div
     v-if="store.status === 'lobby'"

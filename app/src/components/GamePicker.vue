@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import ThemeToggle from "./ThemeToggle.vue";
 
-defineEmits<{ pick: ["puzzle" | "chess" | "naval"] }>();
+defineEmits<{ pick: ["puzzle" | "chess" | "naval" | "frog"] }>();
 </script>
 
 <template>
@@ -19,7 +19,7 @@ defineEmits<{ pick: ["puzzle" | "chess" | "naval"] }>();
       </h1>
       <p class="mt-2 text-sm text-muted">Pilih game, main bareng.</p>
     </div>
-    <div class="flex w-full max-w-2xl flex-col gap-4 sm:flex-row">
+    <div class="grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
       <button
         type="button"
         class="flex flex-1 items-center gap-4 rounded-2xl bg-surface-1 p-6 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
@@ -56,6 +56,19 @@ defineEmits<{ pick: ["puzzle" | "chess" | "naval"] }>();
           <span class="block font-display text-xl font-bold text-ink">Kapal Perang</span>
           <span class="mt-0.5 block text-sm text-muted">
             Duel kapal 3D ala World of Warships, latihan solo dulu.
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        class="flex flex-1 items-center gap-4 rounded-2xl bg-surface-1 p-6 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+        @click="$emit('pick', 'frog')"
+      >
+        <img src="/icons/frog.svg" alt="" class="h-12 w-12 shrink-0" />
+        <span>
+          <span class="block font-display text-xl font-bold text-ink">Katak Penyihir</span>
+          <span class="mt-0.5 block text-sm text-muted">
+            Lompat dan ayunkan lidah melewati bengkel penyihir.
           </span>
         </span>
       </button>
