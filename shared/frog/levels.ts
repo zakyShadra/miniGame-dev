@@ -110,14 +110,16 @@ export const LEVEL_SEWER: LevelDef = {
     { id: "s3", min: { x: -8, y: 0, z: -27 }, max: { x: 8, y: 2.4, z: -22 } },
     { id: "door", min: { x: -8, y: 2.4, z: -27.6 }, max: { x: 8, y: 5.6, z: -27 } },
     { id: "s4", min: { x: -8, y: 0, z: -33 }, max: { x: 8, y: 3.6, z: -27 } },
-    { id: "island", min: { x: -3, y: 0, z: -42 }, max: { x: 3, y: 3.6, z: -39 } },
-    { id: "goal", min: { x: -8, y: 0, z: -55 }, max: { x: 8, y: 3.6, z: -48 } },
+    // Pulau tengah sedalam 5 m: ayunan d1 mendarat di z=-42 dengan
+    // momentum maju, pulau 3 m membuat katak meluncur jatuh ke jurang.
+    { id: "island", min: { x: -3, y: 0, z: -44 }, max: { x: 3, y: 3.6, z: -39 } },
+    { id: "goal", min: { x: -8, y: 0, z: -57 }, max: { x: 8, y: 3.6, z: -50 } },
   ],
   anchors: [
     { id: "help1", pos: { x: 0, y: 5.2, z: -5.5 } },
     { id: "swing1", pos: { x: -4.5, y: 7, z: -18.5 } },
     { id: "d1", pos: { x: 0, y: 7.5, z: -36 } },
-    { id: "d2", pos: { x: 0, y: 7.5, z: -45 }, oneUse: true },
+    { id: "d2", pos: { x: 0, y: 7.5, z: -47 }, oneUse: true },
   ],
   flies: [
     { id: "f1", pos: { x: 0, y: 1.6, z: 4 } },
@@ -126,7 +128,7 @@ export const LEVEL_SEWER: LevelDef = {
     { id: "f4", pos: { x: -4.5, y: 5, z: -18.5 } },
     { id: "f5", pos: { x: 0, y: 5, z: -30 } },
     { id: "f6", pos: { x: 0, y: 5.2, z: -36 } },
-    { id: "f7", pos: { x: 0, y: 5.2, z: -51.5 } },
+    { id: "f7", pos: { x: 0, y: 5.2, z: -53.5 } },
   ],
   spawn: { x: 0, y: 0, z: 5 },
   spawn2: { x: 2.5, y: 0, z: 5 },
@@ -135,8 +137,8 @@ export const LEVEL_SEWER: LevelDef = {
     { id: "btn-b", pos: { x: 5, y: 3.6, z: -30 }, radius: 1.1 },
   ],
   door: { platformId: "door", buttonIds: ["btn-a", "btn-b"] },
-  goal: { pos: { x: 0, y: 3.6, z: -51.5 }, radius: 1.8 },
-  bounds: { minX: -18, maxX: 18, minZ: -56, maxZ: 10, killY: -4 },
+  goal: { pos: { x: 0, y: 3.6, z: -53.5 }, radius: 1.8 },
+  bounds: { minX: -18, maxX: 18, minZ: -58, maxZ: 10, killY: -4 },
 };
 
 // Level 3 "Atap Perpustakaan" (F3): tangga buku raksasa naik ke kanan,
