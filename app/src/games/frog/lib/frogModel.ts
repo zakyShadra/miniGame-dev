@@ -1,12 +1,13 @@
-// Model katak kartun dari primitif Three.js: badan gepeng, 2 mata besar,
-// kaki, pipi merona, lidah pink yang bisa meregang. Katak menghadap +z,
-// titik asal di kaki (y=0). Skala cocok dengan sim (lebar ~0.8 m).
-// F4 HD: mata lebih besar + iris, jari kaki (1 draw call instanced),
-// ujung lidah cangkir hisap, bump halus di kulit.
+// Model katak ala Froggin Around: badan chubby seperti buah pir,
+// mata BESAR menonjol di atas kepala (tanpa tangkai), kulit oranye/
+// ungu cerah dengan bintik biru, kaki pendek gemuk. Katak menghadap
+// +z, titik asal di kaki (y=0). Skala cocok dengan sim (lebar ~0.8 m).
+// F5: bentuk + texture + kaki/tangan/mata diekspos buat animasi
+// (scene.ts: kaki bergantian, goyang, kedip).
 
 import * as THREE from "three";
 import type { FrogColor } from "../../../../../shared/frog/types";
-import { getLeatherNormalTexture, getSkinBumpTexture } from "./textures";
+import { getFrogSkinTexture, getSkinBumpTexture } from "./textures";
 
 export interface FrogModel {
   group: THREE.Group;
@@ -16,144 +17,145 @@ export interface FrogModel {
   tongue: THREE.Group;
   setTongue: (from: THREE.Vector3, to: THREE.Vector3) => void;
   hideTongue: () => void;
+  /** Kaki belakang (pivot di pinggul, putar sumbu X buat melangkah). */
+  legL: THREE.Group;
+  legR: THREE.Group;
+  /** Tangan depan (pivot di bahu, ayun berlawanan dengan kaki). */
+  armL: THREE.Group;
+  armR: THREE.Group;
+  /** Mata (skala Y buat kedip). */
+  eyeL: THREE.Group;
+  eyeR: THREE.Group;
 }
 
-const SKIN: Record<FrogColor, { main: string; belly: string; spot: string; iris: string }> = {
-  orange: { main: "#ff8c42", belly: "#ffd9a0", spot: "#e56f24", iris: "#8a4a12" },
-  purple: { main: "#8b5cf6", belly: "#d8c8ff", spot: "#6d3fd4", iris: "#3d2a7a" },
+const SKIN: Record<FrogColor, { belly: string; iris: string }> = {
+  orange: { belly: "#ffe3b3", iris: "#7a3b12" },
+  purple: { belly: "#e6dcff", iris: "#2e1a5e" },
 };
 
 function std(color: string, roughness = 0.6): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
 
-/** Material kulit: bump halus + normal kulit samar (bukan flat). */
-function skinMat(color: string, roughness = 0.55): THREE.MeshStandardMaterial {
-  const bump = getSkinBumpTexture();
+/** Kulit: texture bintik biru + bump halus, agak mengkilap. */
+function skinMat(color: FrogColor): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
-    color,
-    roughness,
-    bumpMap: bump,
-    bumpScale: 0.015,
-    normalMap: getLeatherNormalTexture(),
-    normalScale: new THREE.Vector2(0.12, 0.12),
+    map: getFrogSkinTexture(color),
+    roughness: 0.38,
+    bumpMap: getSkinBumpTexture(),
+    bumpScale: 0.012,
   });
 }
 
 export function buildFrogModel(color: FrogColor): FrogModel {
   const skin = SKIN[color];
+  const mat = skinMat(color);
   const group = new THREE.Group();
   const body = new THREE.Group();
   group.add(body);
 
-  // Badan: bola gepeng + perut lebih terang di depan bawah.
-  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 14), skinMat(skin.main));
-  torso.scale.set(1, 0.78, 1.05);
-  torso.position.y = 0.42;
+  // Badan: bola tegak seperti buah pir (chubby, bukan gepeng).
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 18), mat);
+  torso.scale.set(1, 1.02, 0.95);
+  torso.position.y = 0.46;
   body.add(torso);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), skinMat(skin.belly, 0.65));
-  belly.scale.set(0.85, 0.62, 0.7);
-  belly.position.set(0, 0.34, 0.2);
+  // Perut krem menonjol di depan bawah.
+  const belly = new THREE.Mesh(
+    new THREE.SphereGeometry(0.36, 20, 14),
+    std(skin.belly, 0.5),
+  );
+  belly.scale.set(0.92, 0.88, 0.72);
+  belly.position.set(0, 0.38, 0.16);
   body.add(belly);
-  // Bintik punggung (3 titik gelap, ciri katak).
-  for (const [sx, sz, r] of [
-    [-0.16, -0.1, 0.07],
-    [0.18, -0.05, 0.06],
-    [0.02, -0.28, 0.05],
-  ] as const) {
-    const spot = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 8), std(skin.spot));
-    spot.scale.set(1, 0.4, 1);
-    spot.position.set(sx, 0.72, sz);
-    body.add(spot);
-  }
 
-  // Mata: tangkai + bola putih besar + iris + pupil + kilau.
-  const white = std("#ffffff", 0.3);
-  const irisMat = std(skin.iris, 0.3);
-  const pupilMat = std("#1a1a1a", 0.25);
+  // Mata BESAR menonjol di atas kepala (tanpa tangkai): bola putih +
+  // iris besar + pupil + kilau. Tiap mata satu grup (buat kedip).
+  const white = std("#ffffff", 0.25);
+  const irisMat = std(skin.iris, 0.25);
+  const pupilMat = std("#141414", 0.2);
   const shineMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
+  const eyes: THREE.Group[] = [];
   for (const side of [-1, 1]) {
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.18, 8), skinMat(skin.main));
-    stalk.position.set(side * 0.21, 0.72, 0.12);
-    body.add(stalk);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12), white);
-    eye.position.set(side * 0.21, 0.86, 0.14);
-    body.add(eye);
-    // Iris + pupil di atas-tengah bola mata (bukan tengah depan):
-    // kamera selalu melihat dari atas, iris di tengah depan terbaca
-    // seperti mata melirik ke bawah.
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 10), irisMat);
+    const eye = new THREE.Group();
+    eye.position.set(side * 0.17, 0.79, 0.16);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.23, 20, 16), white);
+    eye.add(ball);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 12), irisMat);
     iris.scale.set(1, 1, 0.5);
-    iris.position.set(side * 0.21, 0.93, 0.26);
-    body.add(iris);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), pupilMat);
-    pupil.position.set(side * 0.21, 0.93, 0.3);
-    body.add(pupil);
-    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), shineMat);
-    shine.position.set(side * 0.21 - 0.05, 0.97, 0.32);
-    body.add(shine);
+    iris.position.set(0, 0.06, 0.19);
+    eye.add(iris);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), pupilMat);
+    pupil.position.set(0, 0.06, 0.23);
+    eye.add(pupil);
+    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), shineMat);
+    shine.position.set(-0.06, 0.13, 0.2);
+    eye.add(shine);
+    body.add(eye);
+    eyes.push(eye);
   }
 
-  // Senyum: busur torus tipis. Pipi merona: 2 cakram pink.
+  // Senyum lebar + pipi merona.
   const smile = new THREE.Mesh(
-    new THREE.TorusGeometry(0.16, 0.018, 6, 16, Math.PI),
+    new THREE.TorusGeometry(0.24, 0.022, 6, 20, Math.PI),
     std("#7a3b12", 0.5),
   );
-  smile.position.set(0, 0.52, 0.4);
+  smile.position.set(0, 0.54, 0.39);
   smile.rotation.set(0.25, 0, Math.PI);
   body.add(smile);
   for (const side of [-1, 1]) {
-    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), std("#ff9d9d", 0.7));
+    const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), std("#ff9d9d", 0.7));
     cheek.scale.set(1, 0.7, 0.4);
-    cheek.position.set(side * 0.3, 0.5, 0.32);
+    cheek.position.set(side * 0.31, 0.5, 0.31);
     body.add(cheek);
   }
 
-  // Kaki belakang: paha gepeng + telapak. Kaki depan: silinder kecil.
-  // Jari kaki: 3 per telapak, 1 draw call instanced.
-  const legMat = skinMat(skin.main);
+  // Kaki belakang: pivot di pinggul, paha gemuk + telapak lebar +
+  // 3 jari. Tangan depan: pivot di bahu, lengan pendek + telapak.
+  const legs: THREE.Group[] = [];
+  const arms: THREE.Group[] = [];
   for (const side of [-1, 1]) {
-    const thigh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), legMat);
-    thigh.scale.set(0.6, 0.8, 1.1);
-    thigh.position.set(side * 0.4, 0.22, -0.08);
-    body.add(thigh);
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), legMat);
-    foot.scale.set(0.8, 0.35, 1.4);
-    foot.position.set(side * 0.38, 0.05, 0.22);
-    body.add(foot);
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.28, 8), legMat);
-    arm.position.set(side * 0.26, 0.16, 0.3);
-    arm.rotation.x = 0.3;
-    body.add(arm);
-  }
-  const toeSpots: [number, number, number][] = [];
-  for (const side of [-1, 1]) {
-    for (const dx of [-0.06, 0, 0.06]) toeSpots.push([side * 0.26 + dx, 0.035, 0.4]);
-    for (const dx of [-0.07, 0, 0.07]) toeSpots.push([side * 0.38 + dx, 0.035, 0.44]);
-  }
-  const toes = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.032, 6, 6),
-    legMat,
-    toeSpots.length,
-  );
-  const tm = new THREE.Matrix4();
-  toeSpots.forEach((p, i) => {
-    tm.makeScale(1, 0.7, 1.2);
-    tm.setPosition(p[0], p[1], p[2]);
-    toes.setMatrixAt(i, tm);
-  });
-  toes.instanceMatrix.needsUpdate = true;
-  body.add(toes);
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.36, 0.3, -0.05);
+    const thigh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), mat);
+    thigh.scale.set(0.62, 0.85, 1.15);
+    thigh.position.set(0, -0.08, -0.02);
+    leg.add(thigh);
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), mat);
+    foot.scale.set(0.85, 0.35, 1.5);
+    foot.position.set(0, -0.24, 0.22);
+    leg.add(foot);
+    for (const dx of [-0.07, 0, 0.07]) {
+      const toe = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), mat);
+      toe.scale.set(1, 0.7, 1.2);
+      toe.position.set(dx, -0.26, 0.42);
+      leg.add(toe);
+    }
+    body.add(leg);
+    legs.push(leg);
 
-  // Lidah: silinder yang dipanjangkan di antara mulut dan target
-  // (geometri digeser supaya pangkal di origin, ujung di +y).
-  // Ujungnya cangkir hisap pipih yang mengkilap (F4).
+    const arm = new THREE.Group();
+    arm.position.set(side * 0.28, 0.38, 0.28);
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.3, 8), mat);
+    upper.position.set(0, -0.12, 0.05);
+    upper.rotation.x = 0.4;
+    arm.add(upper);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), mat);
+    hand.scale.set(1, 0.7, 1.2);
+    hand.position.set(0, -0.26, 0.12);
+    arm.add(hand);
+    body.add(arm);
+    arms.push(arm);
+  }
+
+  // Lidah: silinder pink tebal (Froggin: lidah exaggerated) yang
+  // dipanjangkan di antara mulut dan target (geometri digeser supaya
+  // pangkal di origin, ujung di +y). Ujung cangkir hisap mengkilap.
   const tongue = new THREE.Group();
-  const tongueGeo = new THREE.CylinderGeometry(0.045, 0.06, 1, 8);
+  const tongueGeo = new THREE.CylinderGeometry(0.055, 0.07, 1, 8);
   tongueGeo.translate(0, 0.5, 0);
-  const tongueMesh = new THREE.Mesh(tongueGeo, std("#ff7d9c", 0.35));
+  const tongueMesh = new THREE.Mesh(tongueGeo, std("#ff7d9c", 0.3));
   const tip = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 10, 8),
+    new THREE.SphereGeometry(0.14, 10, 8),
     new THREE.MeshStandardMaterial({ color: "#ff5c85", roughness: 0.2 }),
   );
   tip.position.y = 1;
@@ -179,5 +181,17 @@ export function buildFrogModel(color: FrogColor): FrogModel {
     tongue.visible = false;
   }
 
-  return { group, body, tongue, setTongue, hideTongue };
+  return {
+    group,
+    body,
+    tongue,
+    setTongue,
+    hideTongue,
+    legL: legs[0]!,
+    legR: legs[1]!,
+    armL: arms[0]!,
+    armR: arms[1]!,
+    eyeL: eyes[0]!,
+    eyeR: eyes[1]!,
+  };
 }

@@ -183,6 +183,62 @@ export function getWaterTexture(): THREE.CanvasTexture {
   return waterTex;
 }
 
+/** RNG deterministik (mulberry32) supaya bintik katak sama tiap load. */
+function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const FROG_SKIN: Record<string, { base: string; spot: string; seed: number }> = {
+  orange: { base: "#ff8c42", spot: "#3b82f6", seed: 42 },
+  purple: { base: "#8b5cf6", spot: "#7dd3fc", seed: 77 },
+};
+
+/** Kulit katak ala Froggin: gradasi vertikal + bintik biru lembut.
+ * UV bola: v=1 di atas (punggung), jadi bintik di separuh atas kanvas. */
+const frogSkinCache = new Map<string, THREE.CanvasTexture>();
+export function getFrogSkinTexture(color: string): THREE.CanvasTexture {
+  const hit = frogSkinCache.get(color);
+  if (hit) return hit;
+  const skin = FROG_SKIN[color] ?? FROG_SKIN.orange!;
+  const tex = paint(512, (g, s) => {
+    g.fillStyle = skin.base;
+    g.fillRect(0, 0, s, s);
+    // Gradasi: lebih gelap di punggung, lebih terang di perut.
+    const grad = g.createLinearGradient(0, 0, 0, s);
+    grad.addColorStop(0, "rgba(0,0,0,0.20)");
+    grad.addColorStop(0.5, "rgba(0,0,0,0)");
+    grad.addColorStop(1, "rgba(255,255,255,0.14)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, s, s);
+    // Bintik biru (8, tepi lembut, di separuh atas = punggung).
+    const r = rng(skin.seed);
+    for (let i = 0; i < 8; i++) {
+      const cx = r() * s;
+      const cy = r() * s * 0.55;
+      const rad = 10 + r() * 18;
+      const spot = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      spot.addColorStop(0, skin.spot);
+      spot.addColorStop(0.7, skin.spot);
+      spot.addColorStop(1, "rgba(0,0,0,0)");
+      g.globalAlpha = 0.85;
+      g.fillStyle = spot;
+      g.beginPath();
+      g.arc(cx, cy, rad, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  });
+  frogSkinCache.set(color, tex);
+  return tex;
+}
+
 /** Bump halus kulit katak: bintik abu-abu kecil (bumpMap, bukan map). */
 let skinBumpTex: THREE.CanvasTexture | null = null;
 export function getSkinBumpTexture(): THREE.CanvasTexture {
